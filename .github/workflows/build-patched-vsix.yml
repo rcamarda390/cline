@@ -1,0 +1,136 @@
+name: build-patched-vsix
+
+on:
+    pull_request:
+        branches:
+            - patched
+    push:
+        branches:
+            - patched
+
+permissions:
+    contents: read
+
+concurrency:
+    group: build-patched-vsix-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    build-and-validate:
+        name: Build and validate VSIX
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                shell: bash
+
+        steps:
+            - name: Checkout patched source
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+                  lfs: true
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.14
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+
+            - name: Install workspace dependencies
+              run: bun install --frozen-lockfile
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build SDK packages
+              run: bun run build:sdk
+
+            - name: Run extension quality checks
+              working-directory: apps/vscode
+              run: bun run ci:check-all
+
+            - name: Run Bedrock prompt-cache regression tests
+              working-directory: apps/vscode
+              run: bun test src/sdk/bedrock-config.test.ts
+
+            - name: Install VSIX packaging tool
+              run: npm install --global @vscode/vsce@3.6.0
+
+            - name: Build VSIX
+              id: package
+              working-directory: apps/vscode
+              run: |
+                  set -euo pipefail
+                  VERSION=$(node -p "require('./package.json').version")
+                  SHORT_SHA=${GITHUB_SHA::7}
+                  VSIX_NAME="cline-${VERSION}-prompt-cache-fix-${SHORT_SHA}.vsix"
+                  mkdir -p "$GITHUB_WORKSPACE/artifacts"
+                  vsce package \
+                    --no-dependencies \
+                    --allow-package-secrets sendgrid \
+                    --out "$GITHUB_WORKSPACE/artifacts/$VSIX_NAME"
+                  echo "vsix_name=$VSIX_NAME" >> "$GITHUB_OUTPUT"
+
+            - name: Validate VSIX structure and manifest
+              env:
+                  VSIX_NAME: ${{ steps.package.outputs.vsix_name }}
+              run: |
+                  set -euo pipefail
+                  VSIX_PATH="$GITHUB_WORKSPACE/artifacts/$VSIX_NAME"
+                  test -s "$VSIX_PATH"
+                  unzip -t "$VSIX_PATH"
+                  unzip -Z1 "$VSIX_PATH" | grep -Fx 'extension/package.json'
+                  unzip -Z1 "$VSIX_PATH" | grep -Fx 'extension/dist/extension.js'
+                  unzip -p "$VSIX_PATH" extension/package.json > "$RUNNER_TEMP/vsix-package.json"
+                  node - "$RUNNER_TEMP/vsix-package.json" <<'NODE'
+                  const fs = require("node:fs")
+                  const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"))
+                  const expected = {
+                    name: "claude-dev",
+                    publisher: "saoudrizwan",
+                  }
+                  for (const [key, value] of Object.entries(expected)) {
+                    if (manifest[key] !== value) {
+                      throw new Error(`Unexpected ${key}: ${manifest[key]} (expected ${value})`)
+                    }
+                  }
+                  if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) {
+                    throw new Error(`Invalid extension version: ${manifest.version}`)
+                  }
+                  if (!manifest.engines?.vscode) {
+                    throw new Error("Missing engines.vscode")
+                  }
+                  console.log(`Validated ${manifest.publisher}.${manifest.name} ${manifest.version}`)
+                  console.log(`VS Code engine: ${manifest.engines.vscode}`)
+                  NODE
+
+            - name: Generate checksum and build provenance
+              env:
+                  VSIX_NAME: ${{ steps.package.outputs.vsix_name }}
+              run: |
+                  set -euo pipefail
+                  cd "$GITHUB_WORKSPACE/artifacts"
+                  sha256sum "$VSIX_NAME" > "$VSIX_NAME.sha256"
+                  {
+                    echo "repository=$GITHUB_REPOSITORY"
+                    echo "commit=$GITHUB_SHA"
+                    echo "ref=$GITHUB_REF"
+                    echo "workflow_run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                    echo "upstream_fix=cline/cline#12261"
+                    echo "upstream_fix_commit=0c3ed2d276a8724b2b46b02a3dbaef886e46d5f6"
+                    cat "$VSIX_NAME.sha256"
+                  } > build-info.txt
+
+            - name: Upload validated VSIX
+              uses: actions/upload-artifact@v4
+              with:
+                  name: cline-prompt-cache-fix-${{ github.run_number }}
+                  path: |
+                      artifacts/*.vsix
+                      artifacts/*.sha256
+                      artifacts/build-info.txt
+                  if-no-files-found: error
+                  retention-days: 30
