@@ -120,7 +120,10 @@ function createHandlerForProvider(
 				awsBedrockApiKey: options.awsBedrockApiKey,
 				awsUseCrossRegionInference: options.awsUseCrossRegionInference,
 				awsUseGlobalInference: options.awsUseGlobalInference,
-				awsBedrockUsePromptCache: options.awsBedrockUsePromptCache,
+				awsBedrockUsePromptCache:
+					mode === "plan"
+						? (options.planModeAwsBedrockUsePromptCache ?? options.awsBedrockUsePromptCache)
+						: (options.actModeAwsBedrockUsePromptCache ?? options.awsBedrockUsePromptCache),
 				awsUseProfile: options.awsUseProfile,
 				awsProfile: options.awsProfile,
 				awsBedrockEndpoint: options.awsBedrockEndpoint,
