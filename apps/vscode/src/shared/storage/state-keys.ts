@@ -273,7 +273,7 @@ const USER_SETTINGS_FIELDS = {
 	hooksEnabled: { default: true as boolean },
 	yoloModeToggled: { default: false as boolean },
 	autoApproveAllToggled: { default: false as boolean },
-	useAutoCondense: { default: false as boolean },
+	useAutoCondense: { default: true as boolean },
 	subagentsEnabled: { default: false as boolean },
 	clineWebToolsEnabled: { default: true as boolean },
 	worktreesEnabled: { default: false as boolean },
