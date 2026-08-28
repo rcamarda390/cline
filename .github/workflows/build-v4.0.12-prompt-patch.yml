@@ -16,7 +16,7 @@ jobs:
           cache-dependency-path: apps/vscode/package-lock.json
       - name: Install extension dependencies
         working-directory: apps/vscode
-        run: npm install --ignore-scripts
+        run: npm install
       - name: Install webview dependencies
         working-directory: apps/vscode/webview-ui
         run: npm ci --ignore-scripts
