@@ -409,11 +409,19 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 						<TooltipTrigger>
 							<div className="flex items-center gap-2">
 								<VSCodeCheckbox
-									checked={apiConfiguration?.awsBedrockUsePromptCache || false}
+									checked={
+										(apiConfiguration?.[
+											currentMode === "plan" ? "planModeAwsBedrockUsePromptCache" : "actModeAwsBedrockUsePromptCache"
+										] ?? apiConfiguration?.awsBedrockUsePromptCache) || false
+									}
 									disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
 									onChange={(e: any) => {
 										const isChecked = e.target.checked === true
-										handleFieldChange("awsBedrockUsePromptCache", isChecked)
+										handleModeFieldChange(
+											{ plan: "planModeAwsBedrockUsePromptCache", act: "actModeAwsBedrockUsePromptCache" },
+											isChecked,
+											currentMode,
+										)
 									}}>
 									Use prompt caching
 								</VSCodeCheckbox>
