@@ -63,6 +63,21 @@ jobs:
             - name: Install VSIX packaging tool
               run: npm install --global @vscode/vsce@3.6.0
 
+            - name: Stamp fork build identity
+              working-directory: apps/vscode
+              run: |
+                  set -euo pipefail
+                  BASE_VERSION=$(node -p "require('./package.json').version")
+                  PATCH_VERSION="${BASE_VERSION}-prompt-patch"
+                  node - "$PATCH_VERSION" <<'NODE'
+                  const fs = require("node:fs")
+                  const path = "package.json"
+                  const packageJson = JSON.parse(fs.readFileSync(path, "utf8"))
+                  packageJson.version = process.argv[2]
+                  fs.writeFileSync(path, `${JSON.stringify(packageJson, null, "\t")}\n`)
+                  NODE
+                  echo "Stamped VSIX version: $PATCH_VERSION"
+
             - name: Build VSIX
               id: package
               working-directory: apps/vscode
@@ -70,7 +85,7 @@ jobs:
                   set -euo pipefail
                   VERSION=$(node -p "require('./package.json').version")
                   SHORT_SHA=${GITHUB_SHA::7}
-                  VSIX_NAME="cline-${VERSION}-prompt-cache-fix-${SHORT_SHA}.vsix"
+                  VSIX_NAME="cline-${VERSION}-${SHORT_SHA}.vsix"
                   mkdir -p "$GITHUB_WORKSPACE/artifacts"
                   vsce package \
                     --no-dependencies \
@@ -101,8 +116,8 @@ jobs:
                       throw new Error(`Unexpected ${key}: ${manifest[key]} (expected ${value})`)
                     }
                   }
-                  if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) {
-                    throw new Error(`Invalid extension version: ${manifest.version}`)
+                  if (!/^\d+\.\d+\.\d+-prompt-patch$/.test(manifest.version)) {
+                    throw new Error(`Invalid fork extension version: ${manifest.version}`)
                   }
                   if (!manifest.engines?.vscode) {
                     throw new Error("Missing engines.vscode")
