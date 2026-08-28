@@ -54,7 +54,11 @@ jobs:
 
             - name: Run Bedrock prompt-cache regression tests
               working-directory: apps/vscode
-              run: bun test src/sdk/bedrock-config.test.ts
+              run: |
+                  bun test src/sdk/bedrock-config.test.ts
+                  bun test src/shared/proto-conversions/models/api-configuration-conversion.test.ts
+                  cd webview-ui
+                  bun run test src/components/settings/utils/__tests__/providerUtils.test.ts
 
             - name: Install VSIX packaging tool
               run: npm install --global @vscode/vsce@3.6.0
@@ -121,6 +125,7 @@ jobs:
                     echo "workflow_run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
                     echo "upstream_fix=cline/cline#12261"
                     echo "upstream_fix_commit=0c3ed2d276a8724b2b46b02a3dbaef886e46d5f6"
+                    echo "fork_enhancement=independent Bedrock prompt-cache controls for Plan and Act modes"
                     cat "$VSIX_NAME.sha256"
                   } > build-info.txt
 
