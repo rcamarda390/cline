@@ -706,4 +706,6 @@ message ModelsApiConfiguration {
   optional OpenRouterModelInfo plan_mode_vertex_custom_model_info = 245;
   optional bool act_mode_vertex_custom_model_selected = 246;
   optional OpenRouterModelInfo act_mode_vertex_custom_model_info = 247;
+  optional bool plan_mode_aws_bedrock_use_prompt_cache = 248;
+  optional bool act_mode_aws_bedrock_use_prompt_cache = 249;
 }
