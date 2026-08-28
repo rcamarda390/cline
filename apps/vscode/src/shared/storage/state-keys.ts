@@ -12,7 +12,7 @@ import { ClineRulesToggles } from "@shared/cline-rules"
 import { DEFAULT_FOCUS_CHAIN_SETTINGS, FocusChainSettings } from "@shared/FocusChainSettings"
 import { HistoryItem } from "@shared/HistoryItem"
 import { DEFAULT_MCP_DISPLAY_MODE, McpDisplayMode } from "@shared/McpDisplayMode"
-import { toLegacyApiProvider } from "@shared/model-catalog/provider-helpers"
+import { WorkspaceRoot } from "@shared/multi-root/types"
 import { GlobalInstructionsFile } from "@shared/remote-config/schema"
 import { Mode } from "@shared/storage/types"
 import { TelemetrySetting } from "@shared/TelemetrySetting"
@@ -75,22 +75,18 @@ const GLOBAL_STATE_FIELDS = {
 	mcpResponsesCollapsed: { default: false as boolean },
 	terminalReuseEnabled: { default: true as boolean },
 	vscodeTerminalExecutionMode: {
-		// Defaults only apply when no value is stored, so users who previously
-		// chose either mode keep their saved preference.
 		default: "vscodeTerminal" as "vscodeTerminal" | "backgroundExec",
 	},
 	isNewUser: { default: true as boolean },
 	welcomeViewCompleted: { default: undefined as boolean | undefined },
 	mcpDisplayMode: { default: DEFAULT_MCP_DISPLAY_MODE as McpDisplayMode },
+	workspaceRoots: { default: undefined as WorkspaceRoot[] | undefined },
+	primaryRootIndex: { default: 0 as number },
 	multiRootEnabled: { default: true as boolean },
 	lastDismissedInfoBannerVersion: { default: 0 as number },
 	lastDismissedModelBannerVersion: { default: 0 as number },
 	lastDismissedCliBannerVersion: { default: 0 as number },
-	// Organization id of the last successful managed remote-config publish.
-	// Persistent evidence that this install is managed: the session gate uses it
-	// to fail closed when the user's identity cannot be resolved (API unreachable)
-	// instead of starting an unpoliced session. Cleared on explicit no-config.
-	lastManagedOrganizationId: { default: undefined as string | undefined },
+	nativeToolCallEnabled: { default: true as boolean },
 	remoteRulesToggles: { default: {} as ClineRulesToggles },
 	remoteWorkflowToggles: { default: {} as ClineRulesToggles },
 	remoteSkillsToggles: { default: {} as ClineRulesToggles },
@@ -111,6 +107,8 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	awsUseCrossRegionInference: { default: undefined as boolean | undefined },
 	awsUseGlobalInference: { default: undefined as boolean | undefined },
 	awsBedrockUsePromptCache: { default: undefined as boolean | undefined },
+	planModeAwsBedrockUsePromptCache: { default: undefined as boolean | undefined },
+	actModeAwsBedrockUsePromptCache: { default: undefined as boolean | undefined },
 	awsAuthentication: { default: undefined as string | undefined },
 	awsUseProfile: { default: undefined as boolean | undefined },
 	awsProfile: { default: undefined as string | undefined },
@@ -145,6 +143,7 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	ocaMode: { default: "internal" as string },
 	aihubmixBaseUrl: { default: undefined as string | undefined },
 	aihubmixAppCode: { default: undefined as string | undefined },
+	enableParallelToolCalling: { default: true as boolean },
 
 	// Plan mode configurations
 	planModeApiModelId: { default: undefined as string | undefined },
@@ -155,6 +154,8 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	planModeVsCodeLmModelSelector: { default: undefined as LanguageModelChatSelector | undefined },
 	planModeAwsBedrockCustomSelected: { default: undefined as boolean | undefined },
 	planModeAwsBedrockCustomModelBaseId: { default: undefined as string | undefined },
+	planModeVertexCustomModelSelected: { default: undefined as boolean | undefined },
+	planModeVertexCustomModelInfo: { default: undefined as ModelInfo | undefined },
 	planModeOpenRouterModelId: { default: undefined as string | undefined },
 	planModeOpenRouterModelInfo: { default: undefined as ModelInfo | undefined },
 	planModeClineModelId: { default: undefined as string | undefined },
@@ -201,6 +202,8 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	actModeVsCodeLmModelSelector: { default: undefined as LanguageModelChatSelector | undefined },
 	actModeAwsBedrockCustomSelected: { default: undefined as boolean | undefined },
 	actModeAwsBedrockCustomModelBaseId: { default: undefined as string | undefined },
+	actModeVertexCustomModelSelected: { default: undefined as boolean | undefined },
+	actModeVertexCustomModelInfo: { default: undefined as ModelInfo | undefined },
 	actModeOpenRouterModelId: { default: undefined as string | undefined },
 	actModeOpenRouterModelInfo: { default: undefined as ModelInfo | undefined },
 	actModeClineModelId: { default: undefined as string | undefined },
@@ -239,17 +242,8 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	actModeVercelAiGatewayModelInfo: { default: undefined as ModelInfo | undefined },
 
 	// Model-specific settings
-	// The transform folds SDK provider-id spellings (e.g. `openai-compatible`)
-	// back to the legacy `ApiProvider` spelling (`openai`) when state written
-	// by older builds or other hosts is loaded from disk.
-	planModeApiProvider: {
-		default: DEFAULT_API_PROVIDER as ApiProvider,
-		transform: (v: any) => (typeof v === "string" ? toLegacyApiProvider(v) : v),
-	},
-	actModeApiProvider: {
-		default: DEFAULT_API_PROVIDER as ApiProvider,
-		transform: (v: any) => (typeof v === "string" ? toLegacyApiProvider(v) : v),
-	},
+	planModeApiProvider: { default: DEFAULT_API_PROVIDER as ApiProvider },
+	actModeApiProvider: { default: DEFAULT_API_PROVIDER as ApiProvider },
 
 	// Deprecated model settings
 	hicapModelId: { default: undefined as string | undefined },
@@ -273,16 +267,25 @@ const USER_SETTINGS_FIELDS = {
 	enableCheckpointsSetting: { default: true as boolean },
 	shellIntegrationTimeout: { default: 4000 as number },
 	defaultTerminalProfile: { default: "default" as string },
+	terminalOutputLineLimit: { default: 500 as number },
+	maxConsecutiveMistakes: { default: 3 as number },
+	strictPlanModeEnabled: { default: false as boolean },
 	hooksEnabled: { default: true as boolean },
-	useAutoCondense: { default: true as boolean },
+	yoloModeToggled: { default: false as boolean },
+	autoApproveAllToggled: { default: false as boolean },
+	useAutoCondense: { default: false as boolean },
 	subagentsEnabled: { default: false as boolean },
+	clineWebToolsEnabled: { default: true as boolean },
 	worktreesEnabled: { default: false as boolean },
 	preferredLanguage: { default: "English" as string },
 	mode: { default: "act" as Mode },
 	focusChainSettings: { default: DEFAULT_FOCUS_CHAIN_SETTINGS as FocusChainSettings },
+	customPrompt: { default: undefined as "compact" | undefined },
 	backgroundEditEnabled: { default: false as boolean },
 	optOutOfRemoteConfig: { default: false as boolean },
-	showFeatureTips: { default: false as boolean },
+	doubleCheckCompletionEnabled: { default: false as boolean },
+	lazyTeammateModeEnabled: { default: false as boolean },
+	showFeatureTips: { default: true as boolean },
 
 	// OpenTelemetry configuration
 	openTelemetryEnabled: { default: true as boolean },
@@ -417,8 +420,8 @@ export const GlobalStateAndSettingKeys = Array.from(GlobalStateAndSettingsKeySet
 export const GLOBAL_STATE_DEFAULTS = extractDefaults(GLOBAL_STATE_FIELDS)
 export const SETTINGS_DEFAULTS = extractDefaults(SETTINGS_FIELDS)
 export const SETTINGS_TRANSFORMS = extractTransforms(SETTINGS_FIELDS)
-const ASYNC_PROPERTIES = extractMetadata({ ...GLOBAL_STATE_FIELDS, ...SETTINGS_FIELDS }, "isAsync")
-const COMPUTED_PROPERTIES = extractMetadata({ ...GLOBAL_STATE_FIELDS, ...SETTINGS_FIELDS }, "isComputed")
+export const ASYNC_PROPERTIES = extractMetadata({ ...GLOBAL_STATE_FIELDS, ...SETTINGS_FIELDS }, "isAsync")
+export const COMPUTED_PROPERTIES = extractMetadata({ ...GLOBAL_STATE_FIELDS, ...SETTINGS_FIELDS }, "isComputed")
 
 // ============================================================================
 // HELPER FUNCTIONS
