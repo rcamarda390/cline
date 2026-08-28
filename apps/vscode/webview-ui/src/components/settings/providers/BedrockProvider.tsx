@@ -50,8 +50,8 @@ interface BedrockProviderProps {
 }
 
 export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: BedrockProviderProps) => {
-	const { apiConfiguration, remoteConfigSettings } = useExtensionState()
-	const { handleFieldChange, handleModeFieldChange, handleModeFieldsChange } = useApiConfigurationHandlers()
+	const { apiConfiguration, remoteConfigSettings, planActSeparateModelsSetting } = useExtensionState()
+	const { handleFieldChange, handleFieldsChange, handleModeFieldChange, handleModeFieldsChange } = useApiConfigurationHandlers()
 
 	const { selectedModelId, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode)
 	const modeFields = getModeSpecificFields(apiConfiguration, currentMode)
@@ -401,36 +401,93 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 					</Tooltip>
 				)}
 
-				{selectedModelInfo.supportsPromptCache && (
-					<Tooltip>
-						<TooltipContent hidden={remoteConfigSettings?.awsBedrockUsePromptCache === undefined}>
-							This setting is managed by your organization's remote configuration
-						</TooltipContent>
-						<TooltipTrigger>
-							<div className="flex items-center gap-2">
-								<VSCodeCheckbox
-									checked={
-										(apiConfiguration?.[
-											currentMode === "plan" ? "planModeAwsBedrockUsePromptCache" : "actModeAwsBedrockUsePromptCache"
-										] ?? apiConfiguration?.awsBedrockUsePromptCache) || false
-									}
-									disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
-									onChange={(e: any) => {
-										const isChecked = e.target.checked === true
-										handleModeFieldChange(
-											{ plan: "planModeAwsBedrockUsePromptCache", act: "actModeAwsBedrockUsePromptCache" },
-											isChecked,
-											currentMode,
-										)
-									}}>
-									Use prompt caching
-								</VSCodeCheckbox>
-								{remoteConfigSettings?.awsBedrockUsePromptCache !== undefined && (
-									<i className="codicon codicon-lock text-description text-sm" />
-								)}
-							</div>
-						</TooltipTrigger>
-					</Tooltip>
+				{planActSeparateModelsSetting ? (
+					<>
+						{apiConfiguration?.planModeApiProvider === "bedrock" &&
+							normalizeApiConfiguration(apiConfiguration, "plan").selectedModelInfo.supportsPromptCache && (
+								<Tooltip>
+									<TooltipContent hidden={remoteConfigSettings?.awsBedrockUsePromptCache === undefined}>
+										This setting is managed by your organization's remote configuration
+									</TooltipContent>
+									<TooltipTrigger>
+										<div className="flex items-center gap-2">
+											<VSCodeCheckbox
+												checked={
+													(apiConfiguration?.planModeAwsBedrockUsePromptCache ??
+														apiConfiguration?.awsBedrockUsePromptCache) || false
+												}
+												disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
+												onChange={(e: any) =>
+													handleFieldChange("planModeAwsBedrockUsePromptCache", e.target.checked === true)
+												}>
+												Use Plan prompt caching
+											</VSCodeCheckbox>
+											{remoteConfigSettings?.awsBedrockUsePromptCache !== undefined && (
+												<i className="codicon codicon-lock text-description text-sm" />
+											)}
+										</div>
+									</TooltipTrigger>
+								</Tooltip>
+							)}
+						{apiConfiguration?.actModeApiProvider === "bedrock" &&
+							normalizeApiConfiguration(apiConfiguration, "act").selectedModelInfo.supportsPromptCache && (
+								<Tooltip>
+									<TooltipContent hidden={remoteConfigSettings?.awsBedrockUsePromptCache === undefined}>
+										This setting is managed by your organization's remote configuration
+									</TooltipContent>
+									<TooltipTrigger>
+										<div className="flex items-center gap-2">
+											<VSCodeCheckbox
+												checked={
+													(apiConfiguration?.actModeAwsBedrockUsePromptCache ??
+														apiConfiguration?.awsBedrockUsePromptCache) || false
+												}
+												disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
+												onChange={(e: any) =>
+													handleFieldChange("actModeAwsBedrockUsePromptCache", e.target.checked === true)
+												}>
+												Use Act prompt caching
+											</VSCodeCheckbox>
+											{remoteConfigSettings?.awsBedrockUsePromptCache !== undefined && (
+												<i className="codicon codicon-lock text-description text-sm" />
+											)}
+										</div>
+									</TooltipTrigger>
+								</Tooltip>
+							)}
+					</>
+				) : (
+					selectedModelInfo.supportsPromptCache && (
+						<Tooltip>
+							<TooltipContent hidden={remoteConfigSettings?.awsBedrockUsePromptCache === undefined}>
+								This setting is managed by your organization's remote configuration
+							</TooltipContent>
+							<TooltipTrigger>
+								<div className="flex items-center gap-2">
+									<VSCodeCheckbox
+										checked={
+											(apiConfiguration?.planModeAwsBedrockUsePromptCache ??
+												apiConfiguration?.actModeAwsBedrockUsePromptCache ??
+												apiConfiguration?.awsBedrockUsePromptCache) || false
+										}
+										disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
+										onChange={(e: any) => {
+											const isChecked = e.target.checked === true
+											handleFieldsChange({
+												awsBedrockUsePromptCache: isChecked,
+												planModeAwsBedrockUsePromptCache: isChecked,
+												actModeAwsBedrockUsePromptCache: isChecked,
+											})
+										}}>
+										Use prompt caching
+									</VSCodeCheckbox>
+									{remoteConfigSettings?.awsBedrockUsePromptCache !== undefined && (
+										<i className="codicon codicon-lock text-description text-sm" />
+									)}
+								</div>
+							</TooltipTrigger>
+						</Tooltip>
+					)
 				)}
 			</div>
 
