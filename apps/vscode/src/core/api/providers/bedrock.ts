@@ -884,8 +884,12 @@ export class AwsBedrockHandler implements ApiHandler {
 			const budget_tokens = this.options.thinkingBudgetTokens || 0
 			const reasoningOn = modelInfo.supportsReasoning && budget_tokens > 0
 
-			// Claude Opus 4.5+ uses adaptive thinking instead of budgeted extended thinking.
-			const isAdaptiveThinkingModel = isClaudeOpusAdaptiveThinkingModel(modelId)
+			// For custom Bedrock resources (including application inference profile ARNs),
+			// capability detection must use the configured base model because the ARN
+			// does not identify the underlying Claude version.
+			const thinkingCapabilityModelId =
+				(this.options.awsBedrockCustomSelected ? this.options.awsBedrockCustomModelBaseId : undefined) || modelId
+			const isAdaptiveThinkingModel = isClaudeOpusAdaptiveThinkingModel(thinkingCapabilityModelId)
 
 			return {
 				maxTokens: modelInfo.maxTokens || 8192,
@@ -930,7 +934,9 @@ export class AwsBedrockHandler implements ApiHandler {
 		// Get thinking configuration
 		const budget_tokens = this.options.thinkingBudgetTokens || 0
 		const reasoningOn = model.info.supportsReasoning && budget_tokens > 0
-		const isAdaptiveThinkingModel = isClaudeOpusAdaptiveThinkingModel(modelId)
+		const thinkingCapabilityModelId =
+			(this.options.awsBedrockCustomSelected ? this.options.awsBedrockCustomModelBaseId : undefined) || modelId
+		const isAdaptiveThinkingModel = isClaudeOpusAdaptiveThinkingModel(thinkingCapabilityModelId)
 		const adaptiveThinking = isAdaptiveThinkingModel
 			? resolveClaudeOpusAdaptiveThinking(this.options.reasoningEffort, budget_tokens)
 			: undefined
