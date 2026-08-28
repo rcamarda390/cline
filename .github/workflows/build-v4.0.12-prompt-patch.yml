@@ -1,0 +1,43 @@
+name: Build Cline 4.0.12 Prompt Patch
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/v4.0.12-prompt-patch-clean
+jobs:
+  build-vsix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/vscode/package-lock.json
+      - name: Install extension dependencies
+        working-directory: apps/vscode
+        run: npm ci --ignore-scripts
+      - name: Install webview dependencies
+        working-directory: apps/vscode/webview-ui
+        run: npm ci --ignore-scripts
+      - name: Check types and lint
+        working-directory: apps/vscode
+        run: npm run check-types && npm run lint
+      - name: Run webview tests
+        working-directory: apps/vscode
+        run: npm run test:webview
+      - name: Build VSIX
+        working-directory: apps/vscode
+        run: npx vsce package --allow-package-secrets sendgrid --out cline-4.0.12-prompt-patch.vsix
+      - name: Validate package and checksum
+        working-directory: apps/vscode
+        run: |
+          unzip -t cline-4.0.12-prompt-patch.vsix
+          unzip -p cline-4.0.12-prompt-patch.vsix extension/package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s); if(p.version !== "4.0.12-prompt-patch") process.exit(1); console.log(JSON.stringify({name:p.name,version:p.version,engines:p.engines}))})'
+          sha256sum cline-4.0.12-prompt-patch.vsix > cline-4.0.12-prompt-patch.vsix.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cline-4.0.12-prompt-patch
+          path: |
+            apps/vscode/cline-4.0.12-prompt-patch.vsix
+            apps/vscode/cline-4.0.12-prompt-patch.vsix.sha256
