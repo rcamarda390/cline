@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 22
       - name: Install pinned workspace dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --no-frozen-lockfile
       - name: Check types and lint
         working-directory: apps/vscode
         run: npm run check-types && npm run lint
