@@ -288,6 +288,45 @@ describe("AwsBedrockHandler", () => {
 		cacheReadsPrice: 0.3,
 	}
 
+	describe("adaptive thinking for custom Bedrock profiles", () => {
+		const profileArn = "arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:application-inference-profile/test-profile"
+
+		async function captureAnthropicCommand(reasoningEffort: string) {
+			const handler = new AwsBedrockHandler({
+				...mockOptions,
+				apiModelId: profileArn,
+				awsBedrockCustomSelected: true,
+				awsBedrockCustomModelBaseId: "anthropic.claude-sonnet-5",
+				reasoningEffort,
+				thinkingBudgetTokens: 1600,
+			})
+			let capturedCommand: any
+			handler["executeConverseStream"] = async function* (command: any) {
+				capturedCommand = command
+			}
+			const generator = handler["createAnthropicMessage"]("system", [], profileArn, handler.getModel(), false)
+			for await (const _ of generator) {
+				// drain
+			}
+			return capturedCommand
+		}
+
+		it("should omit legacy thinking.type=enabled when Adaptive Thinking is none", async () => {
+			const command = await captureAnthropicCommand("none")
+			should.exist(command)
+			should.not.exist(command.input.additionalModelRequestFields.thinking)
+			should.not.exist(command.input.additionalModelRequestFields.output_config)
+			should.not.exist(command.input.inferenceConfig.temperature)
+		})
+
+		it("should use adaptive thinking and output_config effort for profile ARNs", async () => {
+			const command = await captureAnthropicCommand("medium")
+			command.input.additionalModelRequestFields.thinking.should.deepEqual({ type: "adaptive" })
+			command.input.additionalModelRequestFields.output_config.should.deepEqual({ effort: "medium" })
+			should.not.exist(command.input.inferenceConfig.temperature)
+		})
+	})
+
 	describe("executeConverseStream", () => {
 		let handler: AwsBedrockHandler
 
