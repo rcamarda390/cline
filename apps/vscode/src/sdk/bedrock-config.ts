@@ -70,7 +70,10 @@ export function buildBedrockProviderConfig(configuration: ApiConfiguration, mode
 		sessionToken: trimToUndefined(configuration.awsSessionToken),
 		authentication,
 		profile: usesProfile ? trimToUndefined(configuration.awsProfile) : undefined,
-		usePromptCache: configuration.awsBedrockUsePromptCache,
+		usePromptCache:
+			mode === "plan"
+				? (configuration.planModeAwsBedrockUsePromptCache ?? configuration.awsBedrockUsePromptCache)
+				: (configuration.actModeAwsBedrockUsePromptCache ?? configuration.awsBedrockUsePromptCache),
 		endpoint: trimToUndefined(configuration.awsBedrockEndpoint),
 		customModelBaseId: trimToUndefined(
 			mode === "plan"
