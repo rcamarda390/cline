@@ -105,6 +105,30 @@ describe("buildBedrockProviderConfig", () => {
 		expect(buildBedrockProviderConfig(config, "act").aws?.usePromptCache).toBe(false)
 	})
 
+	it("keeps Plan and Act prompt-cache settings independent", () => {
+		const config: ApiConfiguration = {
+			awsBedrockUsePromptCache: true,
+			planModeAwsBedrockUsePromptCache: true,
+			actModeAwsBedrockUsePromptCache: false,
+			planModeAwsBedrockCustomModelBaseId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
+			actModeAwsBedrockCustomModelBaseId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
+		}
+
+		expect(buildBedrockProviderConfig(config, "plan").aws?.usePromptCache).toBe(true)
+		expect(buildBedrockProviderConfig(config, "act").aws?.usePromptCache).toBe(false)
+	})
+
+	it("falls back to the legacy shared prompt-cache setting after upgrade", () => {
+		const config: ApiConfiguration = {
+			awsBedrockUsePromptCache: true,
+			planModeAwsBedrockCustomModelBaseId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
+			actModeAwsBedrockCustomModelBaseId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
+		}
+
+		expect(buildBedrockProviderConfig(config, "plan").aws?.usePromptCache).toBe(true)
+		expect(buildBedrockProviderConfig(config, "act").aws?.usePromptCache).toBe(true)
+	})
+
 	it("preserves prompt cache for non-Haiku or unknown Bedrock base models", () => {
 		const sonnetConfig: ApiConfiguration = {
 			awsBedrockUsePromptCache: true,

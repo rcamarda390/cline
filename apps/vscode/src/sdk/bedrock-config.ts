@@ -38,8 +38,14 @@ function selectedBedrockBaseModelId(configuration: ApiConfiguration, mode: Mode)
 }
 
 function shouldUseBedrockPromptCache(configuration: ApiConfiguration, mode: Mode): boolean | undefined {
-	if (configuration.awsBedrockUsePromptCache !== true) {
-		return configuration.awsBedrockUsePromptCache
+	const modeSetting =
+		mode === "plan"
+			? configuration.planModeAwsBedrockUsePromptCache
+			: configuration.actModeAwsBedrockUsePromptCache
+	const usePromptCache = modeSetting ?? configuration.awsBedrockUsePromptCache
+
+	if (usePromptCache !== true) {
+		return usePromptCache
 	}
 
 	const baseModelId = selectedBedrockBaseModelId(configuration, mode)?.toLowerCase()
