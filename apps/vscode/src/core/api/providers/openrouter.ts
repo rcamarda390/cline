@@ -154,7 +154,6 @@ export class OpenRouterHandler implements ApiHandler {
 			}
 
 			if (!didOutputUsage && chunk.usage) {
-				// @ts-expect-error-next-line -- OpenRouter returns cache_write_tokens for Anthropic models
 				const cacheWriteTokens = chunk.usage.prompt_tokens_details?.cache_write_tokens || 0
 				yield {
 					type: "usage",
