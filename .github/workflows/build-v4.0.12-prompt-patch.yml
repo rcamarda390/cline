@@ -1,4 +1,4 @@
-name: Build Cline 4.0.12 Prompt Patch
+name: Build Cline 4.0.13 Prompt Patch
 on:
   workflow_dispatch:
   push:
@@ -28,16 +28,16 @@ jobs:
         run: npm run test:webview
       - name: Build VSIX
         working-directory: apps/vscode
-        run: npx vsce package --allow-package-secrets sendgrid --out cline-4.0.12-prompt-patch.vsix
+        run: npx vsce package --allow-package-secrets sendgrid --out cline-4.0.13-prompt-patch.vsix
       - name: Validate package and checksum
         working-directory: apps/vscode
         run: |
-          unzip -t cline-4.0.12-prompt-patch.vsix
-          unzip -p cline-4.0.12-prompt-patch.vsix extension/package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s); if(p.version !== "4.0.12-prompt-patch") process.exit(1); console.log(JSON.stringify({name:p.name,version:p.version,engines:p.engines}))})'
-          sha256sum cline-4.0.12-prompt-patch.vsix > cline-4.0.12-prompt-patch.vsix.sha256
+          unzip -t cline-4.0.13-prompt-patch.vsix
+          unzip -p cline-4.0.13-prompt-patch.vsix extension/package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s); if(p.version !== "4.0.13-prompt-patch") process.exit(1); console.log(JSON.stringify({name:p.name,version:p.version,engines:p.engines}))})'
+          sha256sum cline-4.0.13-prompt-patch.vsix > cline-4.0.13-prompt-patch.vsix.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: cline-4.0.12-prompt-patch
+          name: cline-4.0.13-prompt-patch
           path: |
-            apps/vscode/cline-4.0.12-prompt-patch.vsix
-            apps/vscode/cline-4.0.12-prompt-patch.vsix.sha256
+            apps/vscode/cline-4.0.13-prompt-patch.vsix
+            apps/vscode/cline-4.0.13-prompt-patch.vsix.sha256
