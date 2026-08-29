@@ -415,12 +415,11 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 												checked={
 													(apiConfiguration?.planModeAwsBedrockUsePromptCache ??
 														apiConfiguration?.awsBedrockUsePromptCache) || false
-												}
 												disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
 												onChange={(e: any) =>
 													handleFieldChange("planModeAwsBedrockUsePromptCache", e.target.checked === true)
 												}>
-												Use Plan prompt caching
+												Use prompt caching for Plan mode
 											</VSCodeCheckbox>
 											{remoteConfigSettings?.awsBedrockUsePromptCache !== undefined && (
 												<i className="codicon codicon-lock text-description text-sm" />
@@ -441,12 +440,11 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 												checked={
 													(apiConfiguration?.actModeAwsBedrockUsePromptCache ??
 														apiConfiguration?.awsBedrockUsePromptCache) || false
-												}
 												disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
 												onChange={(e: any) =>
 													handleFieldChange("actModeAwsBedrockUsePromptCache", e.target.checked === true)
 												}>
-												Use Act prompt caching
+												Use prompt caching for Act mode
 											</VSCodeCheckbox>
 											{remoteConfigSettings?.awsBedrockUsePromptCache !== undefined && (
 												<i className="codicon codicon-lock text-description text-sm" />
@@ -465,11 +463,10 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 							<TooltipTrigger>
 								<div className="flex items-center gap-2">
 									<VSCodeCheckbox
-										checked={
-											(apiConfiguration?.planModeAwsBedrockUsePromptCache ??
-												apiConfiguration?.actModeAwsBedrockUsePromptCache ??
-												apiConfiguration?.awsBedrockUsePromptCache) || false
-										}
+										checked={(
+											apiConfiguration?.planModeAwsBedrockUsePromptCache ??
+											apiConfiguration?.actModeAwsBedrockUsePromptCache ??
+											apiConfiguration?.awsBedrockUsePromptCache) || false}
 										disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
 										onChange={(e: any) => {
 											const isChecked = e.target.checked === true
