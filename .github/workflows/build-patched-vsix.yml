@@ -68,7 +68,7 @@ jobs:
               run: |
                   set -euo pipefail
                   BASE_VERSION=$(node -p "require('./package.json').version")
-                  PATCH_VERSION="${BASE_VERSION}-prompt-patch"
+                  PATCH_VERSION="${BASE_VERSION}-prompt-patch.1"
                   node - "$PATCH_VERSION" <<'NODE'
                   const fs = require("node:fs")
                   const path = "package.json"
@@ -84,14 +84,14 @@ jobs:
               run: |
                   set -euo pipefail
                   VERSION=$(node -p "require('./package.json').version")
-                  SHORT_SHA=${GITHUB_SHA::7}
-                  VSIX_NAME="cline-${VERSION}-${SHORT_SHA}.vsix"
+                  VSIX_NAME="cline-${VERSION}.vsix"
                   mkdir -p "$GITHUB_WORKSPACE/artifacts"
                   vsce package \
                     --no-dependencies \
                     --allow-package-secrets sendgrid \
                     --out "$GITHUB_WORKSPACE/artifacts/$VSIX_NAME"
                   echo "vsix_name=$VSIX_NAME" >> "$GITHUB_OUTPUT"
+                  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
             - name: Validate VSIX structure and manifest
               env:
@@ -116,7 +116,7 @@ jobs:
                       throw new Error(`Unexpected ${key}: ${manifest[key]} (expected ${value})`)
                     }
                   }
-                  if (!/^\d+\.\d+\.\d+-prompt-patch$/.test(manifest.version)) {
+                  if (!/^\d+\.\d+\.\d+-prompt-patch\.\d+$/.test(manifest.version)) {
                     throw new Error(`Invalid fork extension version: ${manifest.version}`)
                   }
                   if (!manifest.engines?.vscode) {
@@ -147,7 +147,7 @@ jobs:
             - name: Upload validated VSIX
               uses: actions/upload-artifact@v4
               with:
-                  name: cline-prompt-cache-fix-${{ github.run_number }}
+                  name: cline-${{ steps.package.outputs.version }}
                   path: |
                       artifacts/*.vsix
                       artifacts/*.sha256
