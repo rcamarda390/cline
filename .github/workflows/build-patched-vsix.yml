@@ -1,5 +1,4 @@
-name: build-patched-vsix
-
+name: Build Cline 4.1.16 Prompt Patch
 on:
     pull_request:
         branches:
