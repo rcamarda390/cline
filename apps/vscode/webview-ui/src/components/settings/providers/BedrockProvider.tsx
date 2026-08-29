@@ -414,7 +414,7 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 											<VSCodeCheckbox
 												checked={
 													(apiConfiguration?.planModeAwsBedrockUsePromptCache ??
-														apiConfiguration?.awsBedrockUsePromptCache) || false
+														apiConfiguration?.awsBedrockUsePromptCache) || false}
 												disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
 												onChange={(e: any) =>
 													handleFieldChange("planModeAwsBedrockUsePromptCache", e.target.checked === true)
@@ -439,7 +439,7 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 											<VSCodeCheckbox
 												checked={
 													(apiConfiguration?.actModeAwsBedrockUsePromptCache ??
-														apiConfiguration?.awsBedrockUsePromptCache) || false
+														apiConfiguration?.awsBedrockUsePromptCache) || false}
 												disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
 												onChange={(e: any) =>
 													handleFieldChange("actModeAwsBedrockUsePromptCache", e.target.checked === true)
