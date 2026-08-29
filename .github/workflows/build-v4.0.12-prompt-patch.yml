@@ -1,9 +1,11 @@
-name: Build Cline 4.0.13 Prompt Patch
+name: Build Cline 4.0.12 Prompt Patch
 on:
   workflow_dispatch:
   push:
     branches:
       - work/v4.0.12-prompt-patch-clean
+env:
+  PATCH_VERSION: 4.0.12-prompt-patch.1
 jobs:
   build-vsix:
     runs-on: ubuntu-latest
@@ -28,16 +30,17 @@ jobs:
         run: npm run test:webview
       - name: Build VSIX
         working-directory: apps/vscode
-        run: npx vsce package --allow-package-secrets sendgrid --out cline-4.0.13-prompt-patch.vsix
+        run: npx vsce package --allow-package-secrets sendgrid --out "cline-${PATCH_VERSION}.vsix"
       - name: Validate package and checksum
         working-directory: apps/vscode
         run: |
-          unzip -t cline-4.0.13-prompt-patch.vsix
-          unzip -p cline-4.0.13-prompt-patch.vsix extension/package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s); if(p.version !== "4.0.13-prompt-patch") process.exit(1); console.log(JSON.stringify({name:p.name,version:p.version,engines:p.engines}))})'
-          sha256sum cline-4.0.13-prompt-patch.vsix > cline-4.0.13-prompt-patch.vsix.sha256
+          VSIX_NAME="cline-${PATCH_VERSION}.vsix"
+          unzip -t "$VSIX_NAME"
+          unzip -p "$VSIX_NAME" extension/package.json | PATCH_VERSION="$PATCH_VERSION" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s); if(p.version !== process.env.PATCH_VERSION) process.exit(1); console.log(JSON.stringify({name:p.name,version:p.version,engines:p.engines}))})'
+          sha256sum "$VSIX_NAME" > "$VSIX_NAME.sha256"
       - uses: actions/upload-artifact@v4
         with:
-          name: cline-4.0.13-prompt-patch
+          name: cline-${{ env.PATCH_VERSION }}
           path: |
-            apps/vscode/cline-4.0.13-prompt-patch.vsix
-            apps/vscode/cline-4.0.13-prompt-patch.vsix.sha256
+            apps/vscode/cline-${{ env.PATCH_VERSION }}.vsix
+            apps/vscode/cline-${{ env.PATCH_VERSION }}.vsix.sha256
