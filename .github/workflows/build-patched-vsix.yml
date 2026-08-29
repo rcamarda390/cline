@@ -116,7 +116,7 @@ jobs:
                       throw new Error(`Unexpected ${key}: ${manifest[key]} (expected ${value})`)
                     }
                   }
-                  if (!/^\\d+\\.\\d+\\.\\d+-prompt-patch$/.test(manifest.version)) {
+                  if (!/^\d+\.\d+\.\d+-prompt-patch$/.test(manifest.version)) {
                     throw new Error(`Invalid fork extension version: ${manifest.version}`)
                   }
                   if (!manifest.engines?.vscode) {
