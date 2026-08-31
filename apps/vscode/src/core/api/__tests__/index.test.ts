@@ -40,16 +40,16 @@ describe("buildApiHandler", () => {
 		} as ApiConfiguration
 
 		it("uses only the shared value when Plan/Act models are not split", () => {
-			resolveAwsBedrockUsePromptCache(configuration, "plan", false).should.equal(false)
-			resolveAwsBedrockUsePromptCache(configuration, "act", false).should.equal(false)
+			resolveAwsBedrockUsePromptCache(configuration, "plan", false)!.should.equal(false)
+			resolveAwsBedrockUsePromptCache(configuration, "act", false)!.should.equal(false)
 		})
 
 		it("uses only the Plan value in split Plan mode", () => {
-			resolveAwsBedrockUsePromptCache(configuration, "plan", true).should.equal(true)
+			resolveAwsBedrockUsePromptCache(configuration, "plan", true)!.should.equal(true)
 		})
 
 		it("uses only the Act value in split Act mode", () => {
-			resolveAwsBedrockUsePromptCache(configuration, "act", true).should.equal(false)
+			resolveAwsBedrockUsePromptCache(configuration, "act", true)!.should.equal(false)
 		})
 
 		it("does not fall back to the shared value when a split-mode value is unset", () => {
