@@ -5,7 +5,7 @@ on:
     branches:
       - work/v4.0.12-prompt-patch-clean
 env:
-  PATCH_VERSION: 4.0.12-prompt-patch.1
+  PATCH_VERSION: 4.0.12-prompt-patch.2
 jobs:
   build-vsix:
     runs-on: ubuntu-latest
