@@ -902,8 +902,8 @@ export function getModeSpecificFields(
 				: apiConfiguration.actModeAwsBedrockCustomModelBaseId,
 		awsBedrockUsePromptCache:
 			mode === "plan"
-				? (apiConfiguration.planModeAwsBedrockUsePromptCache ?? apiConfiguration.awsBedrockUsePromptCache)
-				: (apiConfiguration.actModeAwsBedrockUsePromptCache ?? apiConfiguration.awsBedrockUsePromptCache),
+				? apiConfiguration.planModeAwsBedrockUsePromptCache
+				: apiConfiguration.actModeAwsBedrockUsePromptCache,
 
 		// Vertex custom model fields
 		vertexCustomModelSelected:

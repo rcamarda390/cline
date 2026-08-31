@@ -207,6 +207,7 @@ export async function updateApiConfigurationProto(
 			controller.task.api = buildApiHandler(
 				{ ...convertedApiConfigurationFromProto, ulid: controller.task.ulid },
 				currentMode,
+				controller.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
 			);
 		}
 

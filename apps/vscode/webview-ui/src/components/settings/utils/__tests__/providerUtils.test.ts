@@ -1,7 +1,7 @@
 import type { ApiConfiguration, ModelInfo } from "@shared/api"
 import { clinePassDefaultModelId, clinePassModels } from "@shared/api"
 import { describe, expect, it } from "vitest"
-import { normalizeApiConfiguration, syncModeConfigurations } from "../providerUtils"
+import { getModeSpecificFields, normalizeApiConfiguration, syncModeConfigurations } from "../providerUtils"
 
 describe("providerUtils", () => {
 	const freeModelInfo: ModelInfo = {
@@ -16,6 +16,32 @@ describe("providerUtils", () => {
 		cacheWritesPrice: 0,
 		description: "A free model",
 	}
+
+	describe("Bedrock prompt-cache mode fields", () => {
+		it("does not inherit the shared prompt-cache value in Plan mode", () => {
+			const apiConfiguration: ApiConfiguration = {
+				awsBedrockUsePromptCache: true,
+				planModeAwsBedrockUsePromptCache: false,
+				actModeAwsBedrockUsePromptCache: true,
+			}
+			expect(getModeSpecificFields(apiConfiguration, "plan").awsBedrockUsePromptCache).toBe(false)
+		})
+
+		it("does not inherit the shared prompt-cache value in Act mode", () => {
+			const apiConfiguration: ApiConfiguration = {
+				awsBedrockUsePromptCache: true,
+				planModeAwsBedrockUsePromptCache: true,
+				actModeAwsBedrockUsePromptCache: false,
+			}
+			expect(getModeSpecificFields(apiConfiguration, "act").awsBedrockUsePromptCache).toBe(false)
+		})
+
+		it("leaves an unset split-mode prompt-cache value unset", () => {
+			const apiConfiguration: ApiConfiguration = { awsBedrockUsePromptCache: true }
+			expect(getModeSpecificFields(apiConfiguration, "plan").awsBedrockUsePromptCache).toBeUndefined()
+			expect(getModeSpecificFields(apiConfiguration, "act").awsBedrockUsePromptCache).toBeUndefined()
+		})
+	})
 
 	describe("normalizeApiConfiguration cline-pass", () => {
 		it("passes a free (non cline-pass prefixed) model id through with its stored info", () => {

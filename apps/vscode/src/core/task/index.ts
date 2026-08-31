@@ -582,7 +582,11 @@ export class Task {
 				: apiConfiguration.actModeApiProvider;
 
 		// Now that ulid is initialized, we can build the API handler
-		this.api = buildApiHandler(effectiveApiConfiguration, mode);
+		this.api = buildApiHandler(
+			effectiveApiConfiguration,
+			mode,
+			this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+		);
 
 		// Set ulid on browserSession for telemetry tracking
 		this.browserSession.setUlid(this.ulid);

@@ -80,6 +80,20 @@ export interface SingleCompletionHandler {
 	completePrompt(prompt: string): Promise<string>
 }
 
+export function resolveAwsBedrockUsePromptCache(
+	configuration: ApiConfiguration,
+	mode: Mode,
+	planActSeparateModelsSetting: boolean,
+): boolean | undefined {
+	if (!planActSeparateModelsSetting) {
+		return configuration.awsBedrockUsePromptCache
+	}
+
+	return mode === "plan"
+		? configuration.planModeAwsBedrockUsePromptCache
+		: configuration.actModeAwsBedrockUsePromptCache
+}
+
 function createHandlerForProvider(
 	apiProvider: string | undefined,
 	options: Omit<ApiConfiguration, "apiProvider">,
@@ -120,10 +134,7 @@ function createHandlerForProvider(
 				awsBedrockApiKey: options.awsBedrockApiKey,
 				awsUseCrossRegionInference: options.awsUseCrossRegionInference,
 				awsUseGlobalInference: options.awsUseGlobalInference,
-				awsBedrockUsePromptCache:
-					mode === "plan"
-						? (options.planModeAwsBedrockUsePromptCache ?? options.awsBedrockUsePromptCache)
-						: (options.actModeAwsBedrockUsePromptCache ?? options.awsBedrockUsePromptCache),
+				awsBedrockUsePromptCache: options.awsBedrockUsePromptCache,
 				awsUseProfile: options.awsUseProfile,
 				awsProfile: options.awsProfile,
 				awsBedrockEndpoint: options.awsBedrockEndpoint,
@@ -517,8 +528,13 @@ function createHandlerForProvider(
 	}
 }
 
-export function buildApiHandler(configuration: ApiConfiguration, mode: Mode): ApiHandler {
+export function buildApiHandler(
+	configuration: ApiConfiguration,
+	mode: Mode,
+	planActSeparateModelsSetting = true,
+): ApiHandler {
 	const { planModeApiProvider, actModeApiProvider, ...options } = configuration
+	options.awsBedrockUsePromptCache = resolveAwsBedrockUsePromptCache(configuration, mode, planActSeparateModelsSetting)
 
 	const apiProvider = mode === "plan" ? planModeApiProvider : actModeApiProvider
 

@@ -150,7 +150,8 @@ export async function updateApiConfiguration(controller: Controller, request: Up
 					...controller.stateManager.getApiConfiguration(),
 					ulid: controller.task.ulid,
 				},
-				currentMode,
+				currentMode,,
+				controller.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
 			)
 		}
 

@@ -51,7 +51,7 @@ interface BedrockProviderProps {
 
 export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: BedrockProviderProps) => {
 	const { apiConfiguration, remoteConfigSettings, planActSeparateModelsSetting } = useExtensionState()
-	const { handleFieldChange, handleFieldsChange, handleModeFieldChange, handleModeFieldsChange } = useApiConfigurationHandlers()
+	const { handleFieldChange, handleModeFieldChange, handleModeFieldsChange } = useApiConfigurationHandlers()
 
 	const { selectedModelId, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode)
 	const modeFields = getModeSpecificFields(apiConfiguration, currentMode)
@@ -411,7 +411,11 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 							<TooltipTrigger>
 								<div className="flex items-center gap-2">
 									<VSCodeCheckbox
-										checked={modeFields.awsBedrockUsePromptCache || false}
+										checked={
+											(currentMode === "plan"
+												? apiConfiguration?.planModeAwsBedrockUsePromptCache
+												: apiConfiguration?.actModeAwsBedrockUsePromptCache) || false
+										}
 										disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
 										onChange={(e: any) => {
 										const field =
@@ -438,18 +442,10 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 							<TooltipTrigger>
 								<div className="flex items-center gap-2">
 									<VSCodeCheckbox
-										checked={(
-											apiConfiguration?.planModeAwsBedrockUsePromptCache ??
-											apiConfiguration?.actModeAwsBedrockUsePromptCache ??
-											apiConfiguration?.awsBedrockUsePromptCache) || false}
+										checked={apiConfiguration?.awsBedrockUsePromptCache || false}
 										disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
 										onChange={(e: any) => {
-											const isChecked = e.target.checked === true
-											handleFieldsChange({
-												awsBedrockUsePromptCache: isChecked,
-												planModeAwsBedrockUsePromptCache: isChecked,
-												actModeAwsBedrockUsePromptCache: isChecked,
-											})
+											handleFieldChange("awsBedrockUsePromptCache", e.target.checked === true)
 										}}>
 										Use prompt caching
 									</VSCodeCheckbox>

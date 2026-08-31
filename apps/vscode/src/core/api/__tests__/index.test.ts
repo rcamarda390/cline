@@ -10,7 +10,7 @@ import type { Mode } from "@shared/storage/types"
 import sinon from "sinon"
 import { ClineAccountService } from "@/services/account/ClineAccountService"
 import { AuthService } from "@/services/auth/AuthService"
-import { buildApiHandler } from "../index"
+import { buildApiHandler, resolveAwsBedrockUsePromptCache } from "../index"
 
 describe("buildApiHandler", () => {
 	beforeEach(() => {
@@ -31,6 +31,35 @@ describe("buildApiHandler", () => {
 			} as ApiConfiguration,
 			mode,
 		)
+
+	describe("Bedrock prompt-cache mode selection", () => {
+		const configuration = {
+			awsBedrockUsePromptCache: false,
+			planModeAwsBedrockUsePromptCache: true,
+			actModeAwsBedrockUsePromptCache: false,
+		} as ApiConfiguration
+
+		it("uses only the shared value when Plan/Act models are not split", () => {
+			resolveAwsBedrockUsePromptCache(configuration, "plan", false).should.equal(false)
+			resolveAwsBedrockUsePromptCache(configuration, "act", false).should.equal(false)
+		})
+
+		it("uses only the Plan value in split Plan mode", () => {
+			resolveAwsBedrockUsePromptCache(configuration, "plan", true).should.equal(true)
+		})
+
+		it("uses only the Act value in split Act mode", () => {
+			resolveAwsBedrockUsePromptCache(configuration, "act", true).should.equal(false)
+		})
+
+		it("does not fall back to the shared value when a split-mode value is unset", () => {
+			const unsetSplitValues = {
+				awsBedrockUsePromptCache: true,
+			} as ApiConfiguration
+			;(resolveAwsBedrockUsePromptCache(unsetSplitValues, "plan", true) === undefined).should.equal(true)
+			;(resolveAwsBedrockUsePromptCache(unsetSplitValues, "act", true) === undefined).should.equal(true)
+		})
+	})
 
 	describe("cline-pass provider", () => {
 		const freeModelInfo: ModelInfo = {

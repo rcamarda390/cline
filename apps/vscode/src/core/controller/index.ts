@@ -374,7 +374,11 @@ export class Controller {
 		// Update API handler with new mode (buildApiHandler now selects provider based on mode)
 		if (this.task) {
 			const apiConfiguration = this.stateManager.getApiConfiguration()
-			this.task.api = buildApiHandler({ ...apiConfiguration, ulid: this.task.ulid }, modeToSwitchTo)
+			this.task.api = buildApiHandler(
+				{ ...apiConfiguration, ulid: this.task.ulid },
+				modeToSwitchTo,
+				this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+			)
 		}
 
 		await this.postStateToWebview()
@@ -398,7 +402,11 @@ export class Controller {
 		// Update API handler with new mode (buildApiHandler now selects provider based on mode)
 		if (this.task) {
 			const apiConfiguration = this.stateManager.getApiConfiguration()
-			this.task.api = buildApiHandler({ ...apiConfiguration, ulid: this.task.ulid }, modeToSwitchTo)
+			this.task.api = buildApiHandler(
+				{ ...apiConfiguration, ulid: this.task.ulid },
+				modeToSwitchTo,
+				this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+			)
 		}
 
 		await this.postStateToWebview()
