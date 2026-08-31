@@ -1,7 +1,7 @@
 import { StringRequest } from "@shared/proto/cline/common"
 import PROVIDERS from "@shared/providers/providers.json"
 import { Mode } from "@shared/storage/types"
-import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
+import { VSCodeCheckbox, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 import Fuse from "fuse.js"
 import { KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useInterval } from "react-use"
@@ -98,11 +98,39 @@ const ApiOptions = ({
 	initialModelTab,
 }: ApiOptionsProps) => {
 	// Use full context state for immediate save payload
-	const { apiConfiguration, remoteConfigSettings } = useExtensionState()
+	const { apiConfiguration, remoteConfigSettings, planActSeparateModelsSetting } = useExtensionState()
 
-	const { selectedProvider } = normalizeApiConfiguration(apiConfiguration, currentMode, { isClinePassEnabled: true })
+	const { selectedProvider, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode, {
+		isClinePassEnabled: true,
+	})
 
-	const { handleModeFieldChange } = useApiConfigurationHandlers()
+	const { handleFieldChange, handleFieldsChange, handleModeFieldChange } = useApiConfigurationHandlers()
+
+	const promptCacheControlProviders = ["anthropic", "bedrock", "litellm", "oca", "vertex"]
+	const showPromptCacheControl =
+		promptCacheControlProviders.includes(selectedProvider || "") && selectedModelInfo?.supportsPromptCache === true
+
+	const remotePromptCacheValue =
+		selectedProvider === "bedrock"
+			? remoteConfigSettings?.awsBedrockUsePromptCache
+			: selectedProvider === "litellm"
+				? remoteConfigSettings?.liteLlmUsePromptCache
+				: undefined
+
+	const legacySharedPromptCacheValue =
+		selectedProvider === "bedrock"
+			? apiConfiguration?.awsBedrockUsePromptCache
+			: selectedProvider === "litellm"
+				? apiConfiguration?.liteLlmUsePromptCache
+				: true
+	const legacyPlanPromptCacheValue =
+		selectedProvider === "bedrock" ? apiConfiguration?.planModeAwsBedrockUsePromptCache : legacySharedPromptCacheValue
+	const legacyActPromptCacheValue =
+		selectedProvider === "bedrock" ? apiConfiguration?.actModeAwsBedrockUsePromptCache : legacySharedPromptCacheValue
+
+	const sharedPromptCacheChecked = apiConfiguration?.usePromptCache ?? legacySharedPromptCacheValue ?? false
+	const planPromptCacheChecked = apiConfiguration?.planModeUsePromptCache ?? legacyPlanPromptCacheValue ?? false
+	const actPromptCacheChecked = apiConfiguration?.actModeUsePromptCache ?? legacyActPromptCacheValue ?? false
 
 	const [_ollamaModels, setOllamaModels] = useState<string[]>([])
 
@@ -537,6 +565,71 @@ const ApiOptions = ({
 
 			{apiConfiguration && selectedProvider === "aihubmix" && (
 				<AIhubmixProvider currentMode={currentMode} isPopup={isPopup} showModelOptions={showModelOptions} />
+			)}
+
+			{showPromptCacheControl && !planActSeparateModelsSetting && (
+				<div className="flex items-center gap-2">
+					<VSCodeCheckbox
+						checked={remotePromptCacheValue ?? sharedPromptCacheChecked}
+						disabled={remotePromptCacheValue !== undefined}
+						onChange={(e: any) => {
+							const checked = e.target.checked === true
+							if (selectedProvider === "bedrock") {
+								handleFieldsChange({ usePromptCache: checked, awsBedrockUsePromptCache: checked })
+							} else if (selectedProvider === "litellm") {
+								handleFieldsChange({ usePromptCache: checked, liteLlmUsePromptCache: checked })
+							} else {
+								handleFieldChange("usePromptCache", checked)
+							}
+						}}>
+						Use prompt caching
+					</VSCodeCheckbox>
+					{remotePromptCacheValue !== undefined && <i className="codicon codicon-lock text-description text-sm" />}
+				</div>
+			)}
+
+			{showPromptCacheControl && planActSeparateModelsSetting && currentMode === "plan" && (
+				<div className="flex items-center gap-2">
+					<VSCodeCheckbox
+						checked={remotePromptCacheValue ?? planPromptCacheChecked}
+						disabled={remotePromptCacheValue !== undefined}
+						onChange={(e: any) => {
+							const checked = e.target.checked === true
+							if (selectedProvider === "bedrock") {
+								handleFieldsChange({
+									planModeUsePromptCache: checked,
+									planModeAwsBedrockUsePromptCache: checked,
+								})
+							} else {
+								handleFieldChange("planModeUsePromptCache", checked)
+							}
+						}}>
+						Use prompt caching for Plan mode
+					</VSCodeCheckbox>
+					{remotePromptCacheValue !== undefined && <i className="codicon codicon-lock text-description text-sm" />}
+				</div>
+			)}
+
+			{showPromptCacheControl && planActSeparateModelsSetting && currentMode === "act" && (
+				<div className="flex items-center gap-2">
+					<VSCodeCheckbox
+						checked={remotePromptCacheValue ?? actPromptCacheChecked}
+						disabled={remotePromptCacheValue !== undefined}
+						onChange={(e: any) => {
+							const checked = e.target.checked === true
+							if (selectedProvider === "bedrock") {
+								handleFieldsChange({
+									actModeUsePromptCache: checked,
+									actModeAwsBedrockUsePromptCache: checked,
+								})
+							} else {
+								handleFieldChange("actModeUsePromptCache", checked)
+							}
+						}}>
+						Use prompt caching for Act mode
+					</VSCodeCheckbox>
+					{remotePromptCacheValue !== undefined && <i className="codicon codicon-lock text-description text-sm" />}
+				</div>
 			)}
 
 			{apiErrorMessage && (

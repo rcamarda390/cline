@@ -31,6 +31,7 @@ interface AnthropicHandlerOptions extends CommonApiHandlerOptions {
 	apiModelId?: string
 	reasoningEffort?: string
 	thinkingBudgetTokens?: number
+	usePromptCache?: boolean
 }
 
 export class AnthropicHandler implements ApiHandler {
@@ -111,7 +112,7 @@ export class AnthropicHandler implements ApiHandler {
 			: undefined
 		const outputConfig = isAdaptiveThinkingModel && adaptiveThinkingEffort ? { effort: adaptiveThinkingEffort } : undefined
 
-		if (model.info.supportsPromptCache) {
+		if (this.options.usePromptCache && model.info.supportsPromptCache) {
 			const anthropicMessages = sanitizeAnthropicMessages(messages, true)
 			const requestBody: AnthropicMessageCreateParamsStreaming & Record<string, unknown> = {
 				model: modelId,

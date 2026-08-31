@@ -100,6 +100,11 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	// Global configuration (not mode-specific)
 	liteLlmBaseUrl: { default: undefined as string | undefined },
 	liteLlmUsePromptCache: { default: undefined as boolean | undefined },
+	// Provider-neutral prompt-cache preferences. Split-mode values are deliberately
+	// independent and remain stored when Plan/Act model separation is disabled.
+	usePromptCache: { default: undefined as boolean | undefined },
+	planModeUsePromptCache: { default: undefined as boolean | undefined },
+	actModeUsePromptCache: { default: undefined as boolean | undefined },
 	openAiHeaders: { default: {} as Record<string, string> },
 	anthropicBaseUrl: { default: undefined as string | undefined },
 	openRouterProviderSorting: { default: undefined as string | undefined },

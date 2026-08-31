@@ -80,18 +80,51 @@ export interface SingleCompletionHandler {
 	completePrompt(prompt: string): Promise<string>
 }
 
+export function resolvePromptCachePreference(
+	configuration: ApiConfiguration,
+	mode: Mode,
+	planActSeparateModelsSetting: boolean,
+	apiProvider?: string,
+): boolean | undefined {
+	const genericValue = planActSeparateModelsSetting
+		? mode === "plan"
+			? configuration.planModeUsePromptCache
+			: configuration.actModeUsePromptCache
+		: configuration.usePromptCache
+
+	if (genericValue !== undefined) {
+		return genericValue
+	}
+
+	// Upgrade compatibility for provider-specific settings that predate the
+	// provider-neutral prompt-cache preference.
+	if (apiProvider === "bedrock") {
+		return planActSeparateModelsSetting
+			? mode === "plan"
+				? configuration.planModeAwsBedrockUsePromptCache
+				: configuration.actModeAwsBedrockUsePromptCache
+			: configuration.awsBedrockUsePromptCache
+	}
+
+	if (apiProvider === "litellm") {
+		return configuration.liteLlmUsePromptCache ?? true
+	}
+
+	// These providers historically enabled cache control whenever the selected
+	// model advertised prompt-cache support.
+	if (apiProvider === "anthropic" || apiProvider === "oca" || apiProvider === "vertex") {
+		return true
+	}
+
+	return undefined
+}
+
 export function resolveAwsBedrockUsePromptCache(
 	configuration: ApiConfiguration,
 	mode: Mode,
 	planActSeparateModelsSetting: boolean,
 ): boolean | undefined {
-	if (!planActSeparateModelsSetting) {
-		return configuration.awsBedrockUsePromptCache
-	}
-
-	return mode === "plan"
-		? configuration.planModeAwsBedrockUsePromptCache
-		: configuration.actModeAwsBedrockUsePromptCache
+	return resolvePromptCachePreference(configuration, mode, planActSeparateModelsSetting, "bedrock")
 }
 
 function createHandlerForProvider(
@@ -103,6 +136,7 @@ function createHandlerForProvider(
 		case "anthropic":
 			return new AnthropicHandler({
 				onRetryAttempt: options.onRetryAttempt,
+				usePromptCache: options.usePromptCache,
 				apiKey: options.apiKey,
 				anthropicBaseUrl: options.anthropicBaseUrl,
 				apiModelId: mode === "plan" ? options.planModeApiModelId : options.actModeApiModelId,
@@ -134,7 +168,7 @@ function createHandlerForProvider(
 				awsBedrockApiKey: options.awsBedrockApiKey,
 				awsUseCrossRegionInference: options.awsUseCrossRegionInference,
 				awsUseGlobalInference: options.awsUseGlobalInference,
-				awsBedrockUsePromptCache: options.awsBedrockUsePromptCache,
+				awsBedrockUsePromptCache: options.usePromptCache,
 				awsUseProfile: options.awsUseProfile,
 				awsProfile: options.awsProfile,
 				awsBedrockEndpoint: options.awsBedrockEndpoint,
@@ -158,6 +192,7 @@ function createHandlerForProvider(
 					mode === "plan" ? options.planModeThinkingBudgetTokens : options.actModeThinkingBudgetTokens,
 				geminiApiKey: options.geminiApiKey,
 				geminiBaseUrl: options.geminiBaseUrl,
+				usePromptCache: options.usePromptCache,
 				reasoningEffort: mode === "plan" ? options.planModeReasoningEffort : options.actModeReasoningEffort,
 				ulid: options.ulid,
 			})
@@ -341,7 +376,7 @@ function createHandlerForProvider(
 				reasoningEffort: mode === "plan" ? options.planModeReasoningEffort : options.actModeReasoningEffort,
 				thinkingBudgetTokens:
 					mode === "plan" ? options.planModeThinkingBudgetTokens : options.actModeThinkingBudgetTokens,
-				liteLlmUsePromptCache: options.liteLlmUsePromptCache,
+				liteLlmUsePromptCache: options.usePromptCache,
 				ulid: options.ulid,
 			})
 		case "moonshot":
@@ -473,9 +508,10 @@ function createHandlerForProvider(
 				thinkingBudgetTokens:
 					mode === "plan" ? options.planModeThinkingBudgetTokens : options.actModeThinkingBudgetTokens,
 				ocaUsePromptCache:
-					mode === "plan"
-						? options.planModeOcaModelInfo?.supportsPromptCache
-						: options.actModeOcaModelInfo?.supportsPromptCache,
+					options.usePromptCache === true &&
+					(mode === "plan"
+						? options.planModeOcaModelInfo?.supportsPromptCache === true
+						: options.actModeOcaModelInfo?.supportsPromptCache === true),
 				taskId: options.ulid,
 			})
 		case "aihubmix":
@@ -534,9 +570,8 @@ export function buildApiHandler(
 	planActSeparateModelsSetting = true,
 ): ApiHandler {
 	const { planModeApiProvider, actModeApiProvider, ...options } = configuration
-	options.awsBedrockUsePromptCache = resolveAwsBedrockUsePromptCache(configuration, mode, planActSeparateModelsSetting)
-
 	const apiProvider = mode === "plan" ? planModeApiProvider : actModeApiProvider
+	options.usePromptCache = resolvePromptCachePreference(configuration, mode, planActSeparateModelsSetting, apiProvider)
 
 	// Validate thinking budget tokens against model's maxTokens to prevent API errors
 	// wrapped in a try-catch for safety, but this should never throw

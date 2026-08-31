@@ -10,7 +10,7 @@ import type { Mode } from "@shared/storage/types"
 import sinon from "sinon"
 import { ClineAccountService } from "@/services/account/ClineAccountService"
 import { AuthService } from "@/services/auth/AuthService"
-import { buildApiHandler, resolveAwsBedrockUsePromptCache } from "../index"
+import { buildApiHandler, resolvePromptCachePreference } from "../index"
 
 describe("buildApiHandler", () => {
 	beforeEach(() => {
@@ -32,35 +32,51 @@ describe("buildApiHandler", () => {
 			mode,
 		)
 
-	describe("Bedrock prompt-cache mode selection", () => {
+	describe("prompt-cache preference selection", () => {
 		const configuration = {
-			awsBedrockUsePromptCache: false,
-			planModeAwsBedrockUsePromptCache: true,
-			actModeAwsBedrockUsePromptCache: false,
+			usePromptCache: false,
+			planModeUsePromptCache: true,
+			actModeUsePromptCache: false,
 		} as ApiConfiguration
 
 		it("uses only the shared value when Plan/Act models are not split", () => {
-			resolveAwsBedrockUsePromptCache(configuration, "plan", false)!.should.equal(false)
-			resolveAwsBedrockUsePromptCache(configuration, "act", false)!.should.equal(false)
+			resolvePromptCachePreference(configuration, "plan", false, "bedrock")!.should.equal(false)
+			resolvePromptCachePreference(configuration, "act", false, "anthropic")!.should.equal(false)
 		})
 
-		it("uses only the Plan value in split Plan mode", () => {
-			resolveAwsBedrockUsePromptCache(configuration, "plan", true)!.should.equal(true)
+		it("uses a dedicated Plan value when split", () => {
+			resolvePromptCachePreference(configuration, "plan", true, "bedrock")!.should.equal(true)
 		})
 
-		it("uses only the Act value in split Act mode", () => {
-			resolveAwsBedrockUsePromptCache(configuration, "act", true)!.should.equal(false)
+		it("uses a dedicated Act value when split", () => {
+			resolvePromptCachePreference(configuration, "act", true, "bedrock")!.should.equal(false)
 		})
 
-		it("does not fall back to the shared value when a split-mode value is unset", () => {
-			const unsetSplitValues = {
-				awsBedrockUsePromptCache: true,
+		it("does not fall back from an unset split value to the shared generic value", () => {
+			const unsetSplitValues = { usePromptCache: true } as ApiConfiguration
+			;(resolvePromptCachePreference(unsetSplitValues, "plan", true, "bedrock") === undefined).should.equal(true)
+			;(resolvePromptCachePreference(unsetSplitValues, "act", true, "bedrock") === undefined).should.equal(true)
+		})
+
+		it("retains legacy Bedrock values for upgrades until a generic value is written", () => {
+			const legacy = {
+				awsBedrockUsePromptCache: false,
+				planModeAwsBedrockUsePromptCache: true,
+				actModeAwsBedrockUsePromptCache: false,
 			} as ApiConfiguration
-			;(resolveAwsBedrockUsePromptCache(unsetSplitValues, "plan", true) === undefined).should.equal(true)
-			;(resolveAwsBedrockUsePromptCache(unsetSplitValues, "act", true) === undefined).should.equal(true)
+			resolvePromptCachePreference(legacy, "plan", false, "bedrock")!.should.equal(false)
+			resolvePromptCachePreference(legacy, "plan", true, "bedrock")!.should.equal(true)
+			resolvePromptCachePreference(legacy, "act", true, "bedrock")!.should.equal(false)
+		})
+
+		it("preserves historical automatic caching defaults for controllable non-Bedrock providers", () => {
+			const empty = {} as ApiConfiguration
+			resolvePromptCachePreference(empty, "act", false, "anthropic")!.should.equal(true)
+			resolvePromptCachePreference(empty, "act", false, "litellm")!.should.equal(true)
+			resolvePromptCachePreference(empty, "act", false, "oca")!.should.equal(true)
+			resolvePromptCachePreference(empty, "act", false, "vertex")!.should.equal(true)
 		})
 	})
-
 	describe("cline-pass provider", () => {
 		const freeModelInfo: ModelInfo = {
 			...clinePassModelInfoSaneDefaults,

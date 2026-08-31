@@ -1,37 +1,37 @@
 import { describe, expect, it } from "vitest"
 import { buildApiConfigurationPartialRequest } from "../useApiConfigurationHandlers"
 
-describe("prompt-cache partial API updates", () => {
+describe("provider-neutral prompt-cache partial API updates", () => {
 	it("updates only the shared non-split prompt-cache field", () => {
 		const request = buildApiConfigurationPartialRequest({
-			awsBedrockUsePromptCache: false,
+			usePromptCache: false,
 		})
 
-		expect(request.updateMask).toEqual(["awsBedrockUsePromptCache"])
-		expect(request.apiConfiguration?.awsBedrockUsePromptCache).toBe(false)
-		expect(request.apiConfiguration?.planModeAwsBedrockUsePromptCache).toBeUndefined()
-		expect(request.apiConfiguration?.actModeAwsBedrockUsePromptCache).toBeUndefined()
+		expect(request.updateMask).toEqual(["usePromptCache"])
+		expect(request.apiConfiguration?.usePromptCache).toBe(false)
+		expect(request.apiConfiguration?.planModeUsePromptCache).toBeUndefined()
+		expect(request.apiConfiguration?.actModeUsePromptCache).toBeUndefined()
 	})
 
 	it("updates only the Plan prompt-cache field", () => {
 		const request = buildApiConfigurationPartialRequest({
-			planModeAwsBedrockUsePromptCache: true,
+			planModeUsePromptCache: true,
 		})
 
-		expect(request.updateMask).toEqual(["planModeAwsBedrockUsePromptCache"])
-		expect(request.apiConfiguration?.planModeAwsBedrockUsePromptCache).toBe(true)
-		expect(request.apiConfiguration?.awsBedrockUsePromptCache).toBeUndefined()
-		expect(request.apiConfiguration?.actModeAwsBedrockUsePromptCache).toBeUndefined()
+		expect(request.updateMask).toEqual(["planModeUsePromptCache"])
+		expect(request.apiConfiguration?.planModeUsePromptCache).toBe(true)
+		expect(request.apiConfiguration?.usePromptCache).toBeUndefined()
+		expect(request.apiConfiguration?.actModeUsePromptCache).toBeUndefined()
 	})
 
 	it("updates only the Act prompt-cache field", () => {
 		const request = buildApiConfigurationPartialRequest({
-			actModeAwsBedrockUsePromptCache: true,
+			actModeUsePromptCache: true,
 		})
 
-		expect(request.updateMask).toEqual(["actModeAwsBedrockUsePromptCache"])
-		expect(request.apiConfiguration?.actModeAwsBedrockUsePromptCache).toBe(true)
-		expect(request.apiConfiguration?.awsBedrockUsePromptCache).toBeUndefined()
-		expect(request.apiConfiguration?.planModeAwsBedrockUsePromptCache).toBeUndefined()
+		expect(request.updateMask).toEqual(["actModeUsePromptCache"])
+		expect(request.apiConfiguration?.actModeUsePromptCache).toBe(true)
+		expect(request.apiConfiguration?.usePromptCache).toBeUndefined()
+		expect(request.apiConfiguration?.planModeUsePromptCache).toBeUndefined()
 	})
 })

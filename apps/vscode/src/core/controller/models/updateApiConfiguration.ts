@@ -40,6 +40,9 @@ function parseFieldMask(updateMask: string[]): {
  * @returns The alternate mode field name or null if not a mode-specific field
  */
 const independentlyManagedModeFields = new Set([
+	"planModeUsePromptCache",
+	"actModeUsePromptCache",
+	// Legacy Bedrock split fields remain independent for upgrade compatibility.
 	"planModeAwsBedrockUsePromptCache",
 	"actModeAwsBedrockUsePromptCache",
 ])

@@ -247,7 +247,9 @@ export class LiteLlmHandler implements ApiHandler {
 		const modelInfo = await this.modelInfo(modelId)
 		// Automatically enable caching if the model supports it
 		const cacheControl =
-			(modelInfo?.model_info.supports_prompt_caching ?? false) ? { cache_control: { type: "ephemeral" } } : undefined
+			this.options.liteLlmUsePromptCache && (modelInfo?.model_info.supports_prompt_caching ?? false)
+				? { cache_control: { type: "ephemeral" } }
+				: undefined
 
 		if (cacheControl) {
 			// Add cache_control to system message if enabled

@@ -22,6 +22,7 @@ interface VertexHandlerOptions extends CommonApiHandlerOptions {
 	geminiBaseUrl?: string
 	ulid?: string
 	reasoningEffort?: string
+	usePromptCache?: boolean
 }
 
 export class VertexHandler implements ApiHandler {
@@ -119,7 +120,10 @@ export class VertexHandler implements ApiHandler {
 		// Tools are available only when native tools are enabled.
 		const nativeToolsOn = tools?.length ? tools?.length > 0 : false
 
-		const anthropicMessages = sanitizeAnthropicMessages(messages, model.info.supportsPromptCache ?? false)
+		const anthropicMessages = sanitizeAnthropicMessages(
+			messages,
+			Boolean(this.options.usePromptCache && model.info.supportsPromptCache),
+		)
 
 		const requestBody: Record<string, unknown> = {
 			model: modelId,
@@ -130,7 +134,8 @@ export class VertexHandler implements ApiHandler {
 				{
 					text: systemPrompt,
 					type: "text",
-					cache_control: model.info.supportsPromptCache ? { type: "ephemeral" } : undefined,
+					cache_control:
+						this.options.usePromptCache && model.info.supportsPromptCache ? { type: "ephemeral" } : undefined,
 				},
 			],
 			messages: anthropicMessages,

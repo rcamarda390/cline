@@ -249,6 +249,7 @@ message ModelsApiOptions {
   optional string aihubmix_base_url = 42;
   optional string aihubmix_app_code = 43;
   optional bool azure_identity = 44;
+  optional bool use_prompt_cache = 45;
 
   // Plan mode configurations
   optional ApiProvider plan_mode_api_provider = 100;
@@ -337,6 +338,8 @@ message ModelsApiOptions {
   optional OpenRouterModelInfo act_mode_vertex_custom_model_info = 242;
   optional bool plan_mode_aws_bedrock_use_prompt_cache = 243;
   optional bool act_mode_aws_bedrock_use_prompt_cache = 244;
+  optional bool plan_mode_use_prompt_cache = 245;
+  optional bool act_mode_use_prompt_cache = 246;
 }
 
 // Request for updating API configuration (legacy - uses combined configuration)
@@ -612,6 +615,7 @@ message ModelsApiConfiguration {
   optional string nous_research_api_key = 85;
   optional bool azure_identity = 86;
   optional string wandb_api_key = 87;
+  optional bool use_prompt_cache = 88;
 
   // Plan mode configurations
   optional ApiProvider plan_mode_api_provider = 100;
@@ -710,4 +714,6 @@ message ModelsApiConfiguration {
   optional OpenRouterModelInfo act_mode_vertex_custom_model_info = 247;
   optional bool plan_mode_aws_bedrock_use_prompt_cache = 248;
   optional bool act_mode_aws_bedrock_use_prompt_cache = 249;
+  optional bool plan_mode_use_prompt_cache = 250;
+  optional bool act_mode_use_prompt_cache = 251;
 }
