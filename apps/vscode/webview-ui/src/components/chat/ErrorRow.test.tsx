@@ -64,6 +64,7 @@ vi.mock("@/services/grpc-client", () => ({
 	},
 	ModelsServiceClient: {
 		updateApiConfigurationProto: mockUpdateApiConfigurationProto,
+		updateApiConfigurationPartial: mockUpdateApiConfigurationProto,
 	},
 }));
 
