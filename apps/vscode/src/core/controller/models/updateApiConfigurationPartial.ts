@@ -1,4 +1,5 @@
 import { buildApiHandler } from "@core/api"
+import type { ApiConfiguration } from "@shared/api"
 import { Empty } from "@shared/proto/cline/common"
 import { UpdateApiConfigurationPartialRequest } from "@shared/proto/cline/models"
 import { convertProtoToApiConfiguration } from "@shared/proto-conversions/models/api-configuration-conversion"
@@ -31,18 +32,17 @@ export async function updateApiConfigurationPartial(
 			throw new Error("api_configuration is required")
 		}
 
-		// Get current config and convert new values from proto format
-		const currentConfig = controller.stateManager.getApiConfiguration()
+		// Convert request values, then persist only fields explicitly named by the mask.
+		// Do not re-save a reconstructed full configuration: that can copy stale
+		// Plan/Act values over independent settings.
 		const newConfigValues = convertProtoToApiConfiguration(request.apiConfiguration)
-
-		// Apply only the fields specified in the mask
-		const updatedConfig = { ...currentConfig }
+		const partialUpdates: Partial<ApiConfiguration> = {}
 		for (const field of request.updateMask) {
-			;(updatedConfig as Record<string, any>)[field] = (newConfigValues as Record<string, any>)[field]
+			;(partialUpdates as Record<string, any>)[field] = (newConfigValues as Record<string, any>)[field]
 		}
 
-		// Update storage and task API handler
-		controller.stateManager.setApiConfiguration(updatedConfig)
+		controller.stateManager.setApiConfiguration(partialUpdates as ApiConfiguration)
+		const updatedConfig = controller.stateManager.getApiConfiguration()
 		await clearOrganizationForClinePassProviderSelection(controller, updatedConfig)
 		if (controller.task) {
 			const currentMode = controller.stateManager.getGlobalSettingsKey("mode")

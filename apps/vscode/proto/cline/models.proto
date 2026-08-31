@@ -335,6 +335,8 @@ message ModelsApiOptions {
   optional OpenRouterModelInfo plan_mode_vertex_custom_model_info = 240;
   optional bool act_mode_vertex_custom_model_selected = 241;
   optional OpenRouterModelInfo act_mode_vertex_custom_model_info = 242;
+  optional bool plan_mode_aws_bedrock_use_prompt_cache = 243;
+  optional bool act_mode_aws_bedrock_use_prompt_cache = 244;
 }
 
 // Request for updating API configuration (legacy - uses combined configuration)
