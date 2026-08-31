@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - work/v4.0.12-prompt-patch-clean
+concurrency:
+  group: cline-v4.0.12-prompt-patch-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   PATCH_VERSION: 4.0.12-prompt-patch.2
 jobs:
