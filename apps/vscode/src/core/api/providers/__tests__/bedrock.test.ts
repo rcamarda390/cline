@@ -352,7 +352,9 @@ describe("AwsBedrockHandler", () => {
 			input.inferenceConfig?.temperature?.should.equal(1)
 			input.inferenceConfig?.topP?.should.equal(0.95)
 			input.toolConfig?.tools?.should.have.length(1)
-			;(input.toolConfig?.tools?.[0]?.toolSpec as any).inputSchema.json.required.should.deepEqual([
+			const toolSpec = input.toolConfig?.tools?.[0]?.toolSpec
+			should.exist(toolSpec)
+			;(toolSpec as any).inputSchema.json.required.should.deepEqual([
 				"command",
 				"requires_approval",
 			])
