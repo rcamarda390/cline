@@ -238,6 +238,7 @@ describe("AwsBedrockHandler", () => {
 			model.supportsPromptCache.should.equal(false)
 			model.inputPrice.should.equal(0.18)
 			model.outputPrice.should.equal(0.78)
+			model.requiresNativeToolCalls.should.equal(true)
 		})
 
 		it("should include Vertex Opus 4.7 variants in the derived global model list", () => {
@@ -286,6 +287,85 @@ describe("AwsBedrockHandler", () => {
 		awsBedrockCustomModelBaseId: undefined,
 		thinkingBudgetTokens: 1600,
 	}
+
+	describe("Nemotron native tool calling", () => {
+		it("should preserve an inference-profile ARN and emit a complete native execute_command call", async () => {
+			const profileArn =
+				"arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:application-inference-profile/test-profile"
+			const handler = new AwsBedrockHandler({
+				...mockOptions,
+				apiModelId: profileArn,
+				awsRegion: "us-gov-west-1",
+				awsBedrockCustomSelected: true,
+				awsBedrockCustomModelBaseId: "nvidia.nemotron-super-3-120b",
+			})
+
+			const mockChunks = [
+				{ messageStart: { role: "assistant" } },
+				{
+					contentBlockStart: {
+						contentBlockIndex: 0,
+						start: { toolUse: { toolUseId: "tool-1", name: "execute_command" } },
+					},
+				},
+				{
+					contentBlockDelta: {
+						contentBlockIndex: 0,
+						delta: { toolUse: { input: '{"command":"pwd","requires_approval":false}' } },
+					},
+				},
+				{ contentBlockStop: { contentBlockIndex: 0 } },
+				{ messageStop: { stopReason: "tool_use" } },
+			]
+
+			let capturedCommand: ConverseStreamCommand | undefined
+			handler["getBedrockClient"] = async () =>
+				({
+					send: async (command: ConverseStreamCommand) => {
+						capturedCommand = command
+						return { stream: createMockStream([...mockChunks]) }
+					},
+				}) as any
+
+			const tools = [
+				{
+					name: "execute_command",
+					description: "Execute a command",
+					input_schema: {
+						type: "object" as const,
+						properties: {
+							command: { type: "string" },
+							requires_approval: { type: "boolean" },
+						},
+						required: ["command", "requires_approval"],
+					},
+				},
+			]
+
+			const results = await collectGeneratorResults(
+				handler.createMessage("You are Cline.", [{ role: "user", content: "Show the directory" }], tools),
+			)
+
+			should.exist(capturedCommand)
+			const input = capturedCommand!.input
+			input.modelId!.should.equal(profileArn)
+			input.inferenceConfig?.temperature?.should.equal(1)
+			input.inferenceConfig?.topP?.should.equal(0.95)
+			input.toolConfig?.tools?.should.have.length(1)
+			;(input.toolConfig?.tools?.[0]?.toolSpec as any).inputSchema.json.required.should.deepEqual([
+				"command",
+				"requires_approval",
+			])
+
+			results.should.have.length(1)
+			results[0].type.should.equal("tool_calls")
+			results[0].tool_call.function.name.should.equal("execute_command")
+			JSON.parse(results[0].tool_call.function.arguments).should.deepEqual({
+				command: "pwd",
+				requires_approval: false,
+			})
+		})
+	})
 
 	const mockModelInfo = {
 		maxTokens: 8192,

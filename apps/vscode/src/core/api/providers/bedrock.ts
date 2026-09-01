@@ -181,7 +181,12 @@ export class AwsBedrockHandler implements ApiHandler {
 			return
 		}
 
-		if (baseModelId.includes("openai") || baseModelId.includes("nvidia.nemotron")) {
+		if (baseModelId.includes("nvidia.nemotron")) {
+			yield* this.createNemotronMessage(systemPrompt, messages, modelId, model, tools)
+			return
+		}
+
+		if (baseModelId.includes("openai")) {
 			yield* this.createGenericConverseMessage(systemPrompt, messages, modelId, model, tools)
 			return
 		}
@@ -200,6 +205,36 @@ export class AwsBedrockHandler implements ApiHandler {
 
 		// Default: Use Anthropic Converse API for all Anthropic models
 		yield* this.createAnthropicMessage(systemPrompt, messages, modelId, model, enable1mContextWindow, tools)
+	}
+
+	/**
+	 * Creates a streaming Converse request for NVIDIA Nemotron models.
+	 * Nemotron uses Bedrock-native toolUse blocks; Cline's legacy XML tool
+	 * format is not reliable for required parameters such as requires_approval.
+	 */
+	private async *createNemotronMessage(
+		systemPrompt: string,
+		messages: ClineStorageMessage[],
+		modelId: string,
+		model: { id: string; info: ModelInfo },
+		tools?: ClineTool[],
+	): ApiStream {
+		const formattedMessages = this.formatMessagesForConverseAPI(messages)
+		const systemMessages = systemPrompt ? [{ text: systemPrompt }] : undefined
+		const toolConfig = this.mapClineToolsToBedrockToolConfig(tools)
+		const command = new ConverseStreamCommand({
+			modelId,
+			messages: formattedMessages,
+			system: systemMessages,
+			inferenceConfig: {
+				maxTokens: model.info.maxTokens || 8192,
+				temperature: 1,
+				topP: 0.95,
+			},
+			...(toolConfig ? { toolConfig } : {}),
+		})
+
+		yield* this.executeConverseStream(command, model.info)
 	}
 
 	getModel(): { id: string; info: ModelInfo } {

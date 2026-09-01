@@ -91,6 +91,7 @@ export interface ModelInfo {
 	}[]
 	temperature?: number
 	apiFormat?: ApiFormat // The API format used by this model
+	requiresNativeToolCalls?: boolean // Whether text/XML tool calls are unsupported and native tool calls must be used
 }
 
 export interface OpenAiCompatibleModelInfo extends ModelInfo {
@@ -997,6 +998,7 @@ export const bedrockModels = {
 		contextWindow: 256_000,
 		supportsImages: false,
 		supportsPromptCache: false,
+		requiresNativeToolCalls: true,
 		inputPrice: 0.18,
 		outputPrice: 0.78,
 		description:

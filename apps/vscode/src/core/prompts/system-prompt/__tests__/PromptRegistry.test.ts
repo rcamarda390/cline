@@ -104,6 +104,34 @@ describe("PromptRegistry", () => {
 	})
 
 	describe("native tools", () => {
+		it("should select native tools for a Bedrock inference-profile ARN backed by Nemotron", async () => {
+			const nativeContext: SystemPromptContext = {
+				...mockContext,
+				enableNativeToolCalls: true,
+				providerInfo: {
+					...mockProviderInfo,
+					providerId: "bedrock",
+					model: {
+						...mockProviderInfo.model,
+						id: "arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:application-inference-profile/test-profile",
+						info: {
+							...mockProviderInfo.model.info,
+							requiresNativeToolCalls: true,
+						},
+					},
+				},
+			}
+
+			expect(registry.getModelFamily(nativeContext)).to.equal(ModelFamily.NATIVE_NEXT_GEN)
+			const prompt = await registry.get(nativeContext)
+			expect(prompt).to.not.include("Tool use is formatted using XML-style tags")
+			expect(registry.nativeTools).to.be.an("array").that.is.not.empty
+
+			const executeCommand = (registry.nativeTools as any[]).find((tool) => tool.name === "execute_command")
+			expect(executeCommand).to.not.equal(undefined)
+			expect(executeCommand.input_schema.required).to.include("requires_approval")
+		})
+
 		it("should not include focus_chain in native tools output", async () => {
 			const nativeContext: SystemPromptContext = {
 				...mockContext,

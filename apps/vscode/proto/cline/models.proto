@@ -110,6 +110,7 @@ message OpenRouterModelInfo {
   optional double temperature = 14;
   optional bool supports_reasoning = 15;
   optional ApiFormat api_format = 16;
+  optional bool requires_native_tool_calls = 17;
 }
 
 // Shared response message for model information

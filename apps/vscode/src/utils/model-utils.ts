@@ -1,5 +1,6 @@
 import { ApiHandlerModel, ApiProviderInfo } from "@core/api"
-import { AnthropicModelId, anthropicModels } from "@/shared/api"
+import { AnthropicModelId, anthropicModels, ModelInfo } from "@/shared/api"
+import { ApiFormat } from "@/shared/proto/cline/models"
 
 export { supportsReasoningEffortForModel } from "@shared/utils/reasoning-support"
 
@@ -244,6 +245,9 @@ export function parsePrice(priceString: string | undefined): number {
  * @returns true if the model will use native tool calling, false otherwise
  */
 export function isNativeToolCallingConfig(providerInfo: ApiProviderInfo, enableNativeToolCalls: boolean): boolean {
+	if (modelRequiresNativeToolCalls(providerInfo.model.info)) {
+		return true
+	}
 	if (!enableNativeToolCalls) {
 		return false
 	}
@@ -252,6 +256,19 @@ export function isNativeToolCallingConfig(providerInfo: ApiProviderInfo, enableN
 	}
 	const modelId = providerInfo.model.id.toLowerCase()
 	return isNextGenModelFamily(modelId)
+}
+
+/**
+ * Returns true when a model cannot safely fall back to Cline's legacy XML tools.
+ * This also handles custom Bedrock inference-profile ARNs because capabilities
+ * come from the selected base inference model's ModelInfo rather than its ARN.
+ */
+export function modelRequiresNativeToolCalls(modelInfo: ModelInfo): boolean {
+	return (
+		modelInfo.requiresNativeToolCalls === true ||
+		modelInfo.apiFormat === ApiFormat.OPENAI_RESPONSES ||
+		modelInfo.apiFormat === ApiFormat.OPENAI_RESPONSES_WEBSOCKET_MODE
+	)
 }
 
 /**
