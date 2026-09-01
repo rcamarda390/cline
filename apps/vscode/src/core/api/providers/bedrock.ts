@@ -181,8 +181,8 @@ export class AwsBedrockHandler implements ApiHandler {
 			return
 		}
 
-		if (baseModelId.includes("openai")) {
-			yield* this.createOpenAIMessage(systemPrompt, messages, modelId, model, tools)
+		if (baseModelId.includes("openai") || baseModelId.includes("nvidia.nemotron")) {
+			yield* this.createGenericConverseMessage(systemPrompt, messages, modelId, model, tools)
 			return
 		}
 
@@ -332,7 +332,12 @@ export class AwsBedrockHandler implements ApiHandler {
 			if (this.getModel().info.supportsGlobalEndpoint && this.options.awsUseGlobalInference) {
 				return `global.${this.getModel().id}`
 			}
-			const regionPrefix = this.getRegion().slice(0, 3)
+			const region = this.getRegion()
+			if (region.startsWith("us-gov-")) {
+				return `us-gov.${this.getModel().id}`
+			}
+
+			const regionPrefix = region.slice(0, 3)
 			switch (regionPrefix) {
 				case "us-":
 					return `us.${this.getModel().id}`
@@ -1197,10 +1202,11 @@ export class AwsBedrockHandler implements ApiHandler {
 	}
 
 	/**
-	 * Creates a message using OpenAI models through AWS Bedrock
-	 * Uses non-streaming Converse API and simulates streaming for models that don't support it
+	 * Creates a message using Bedrock Converse-compatible models that do not need
+	 * the Anthropic, Nova, Qwen, or DeepSeek-specific request paths.
+	 * Uses non-streaming Converse API and simulates streaming for compatibility.
 	 */
-	private async *createOpenAIMessage(
+	private async *createGenericConverseMessage(
 		systemPrompt: string,
 		messages: ClineStorageMessage[],
 		modelId: string,
@@ -1315,10 +1321,10 @@ export class AwsBedrockHandler implements ApiHandler {
 				}
 			}
 		} catch (error) {
-			Logger.error("Error with OpenAI model via Converse API:", error)
+			Logger.error("Error with generic Bedrock model via Converse API:", error)
 
 			// Try to extract more detailed error information
-			let errorMessage = "Failed to process OpenAI model request"
+			let errorMessage = "Failed to process Bedrock Converse model request"
 			if (error instanceof Error) {
 				errorMessage = error.message
 				// Check for specific AWS SDK errors

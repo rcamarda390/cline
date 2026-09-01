@@ -992,6 +992,16 @@ export const bedrockModels = {
 		// cacheWritesPrice: 0.14, // not written
 		cacheReadsPrice: 0.00875,
 	},
+	"nvidia.nemotron-super-3-120b": {
+		maxTokens: 32_000,
+		contextWindow: 256_000,
+		supportsImages: false,
+		supportsPromptCache: false,
+		inputPrice: 0.18,
+		outputPrice: 0.78,
+		description:
+			"NVIDIA Nemotron 3 Super 120B (A12B), optimized for agentic, reasoning, coding, and multi-agent workloads",
+	},
 	"anthropic.claude-3-7-sonnet-20250219-v1:0": {
 		maxTokens: 128_000,
 		contextWindow: 200_000,

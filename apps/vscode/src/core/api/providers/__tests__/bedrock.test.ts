@@ -230,6 +230,16 @@ describe("AwsBedrockHandler", () => {
 			bedrockModels["anthropic.claude-sonnet-5:1m"].supportsGlobalEndpoint.should.equal(true)
 		})
 
+		it("should include NVIDIA Nemotron 3 Super 120B with Bedrock limits and pricing", () => {
+			const model = bedrockModels["nvidia.nemotron-super-3-120b"]
+			model.maxTokens.should.equal(32_000)
+			model.contextWindow.should.equal(256_000)
+			model.supportsImages.should.equal(false)
+			model.supportsPromptCache.should.equal(false)
+			model.inputPrice.should.equal(0.18)
+			model.outputPrice.should.equal(0.78)
+		})
+
 		it("should include Vertex Opus 4.7 variants in the derived global model list", () => {
 			vertexModels["claude-opus-4-7"].supportsGlobalEndpoint.should.equal(true)
 			vertexModels["claude-opus-4-7:1m"].supportsGlobalEndpoint.should.equal(true)
@@ -1006,6 +1016,33 @@ describe("AwsBedrockHandler", () => {
 
 			const modelId = await crossRegionHandler.getModelId()
 			modelId.should.equal("us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+		})
+
+		it("should apply GovCloud geo inference prefix for Nemotron", async () => {
+			const govOptions: AwsBedrockHandlerOptions = {
+				...mockOptions,
+				awsUseCrossRegionInference: true,
+				apiModelId: "nvidia.nemotron-super-3-120b",
+				awsRegion: "us-gov-west-1",
+			}
+			const govHandler = new AwsBedrockHandler(govOptions)
+
+			const modelId = await govHandler.getModelId()
+			modelId.should.equal("us-gov.nvidia.nemotron-super-3-120b")
+		})
+
+		it("should keep Nemotron on GovCloud geo inference when global inference is requested", async () => {
+			const govOptions: AwsBedrockHandlerOptions = {
+				...mockOptions,
+				awsUseCrossRegionInference: true,
+				awsUseGlobalInference: true,
+				apiModelId: "nvidia.nemotron-super-3-120b",
+				awsRegion: "us-gov-west-1",
+			}
+			const govHandler = new AwsBedrockHandler(govOptions)
+
+			const modelId = await govHandler.getModelId()
+			modelId.should.equal("us-gov.nvidia.nemotron-super-3-120b")
 		})
 
 		it("should apply EU cross-region prefix", async () => {
