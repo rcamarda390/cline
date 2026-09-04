@@ -20,10 +20,6 @@ export async function getDocumentsPath(): Promise<string> {
 		}
 	} else if (process.platform === "linux") {
 		try {
-			// First check if xdg-user-dir exists
-			await execa("which", ["xdg-user-dir"])
-
-			// If it exists, try to get XDG documents path
 			const { stdout } = await execa("xdg-user-dir", ["DOCUMENTS"])
 			const trimmedPath = stdout.trim()
 			if (trimmedPath) {
