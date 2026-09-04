@@ -32,9 +32,12 @@ import { arePathsEqual } from "./utils/path"
  * @throws ClineConfigurationError if endpoints.json exists but is invalid
  */
 export async function initialize(storageContext: StorageContext): Promise<WebviewProvider> {
-	// Configure the shared Logging class to use HostProvider's output channels and debug logger
-	Logger.subscribe((msg: string) => HostProvider.get().logToChannel(msg)) // File system logging
-	Logger.subscribe((msg: string) => HostProvider.env.debugLog({ value: msg })) // Host debug logging
+	// Configure the shared Logging class to use HostProvider's output channels and debug logger.
+	// `logToChannel` wants the old single-string "timestamp LEVEL message" line (it's a plain-text
+	// log file); `debugLog` gets level and message separately so the VS Code host can route each
+	// line to the matching LogOutputChannel method instead of re-parsing it out of the text.
+	Logger.subscribe((level, msg) => HostProvider.get().logToChannel(`${new Date().toISOString()} ${level} ${msg}`)) // File system logging
+	Logger.subscribe((level, msg) => HostProvider.env.debugLog({ value: msg, level })) // Host debug logging
 
 	// Register the SDK early logger so diagnostic events from
 	// ProviderSettingsManager, RuntimeOAuthTokenManager, and Cline auth
