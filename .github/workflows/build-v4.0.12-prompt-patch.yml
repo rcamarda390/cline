@@ -3,13 +3,13 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - work/v4.0.12-prompt-patch-clean
+      - v4.0.12-airgapped
 concurrency:
   group: cline-v4.0.12-prompt-patch-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  PATCH_VERSION: 4.0.12-prompt-patch.6
+  PATCH_VERSION: 4.0.12-prompt-patch.8
 jobs:
   build-vsix:
     runs-on: ubuntu-latest

@@ -847,14 +847,17 @@ export async function resolveProviderConfig(
 	}
 
 	try {
-		const liveCatalog = modelCatalog?.loadLatestOnInit
-			? await getLiveModelsCatalog(modelCatalog)
-			: undefined;
+		const liveCatalog =
+			!modelCatalog?.offlineMode && modelCatalog?.loadLatestOnInit
+				? await getLiveModelsCatalog(modelCatalog)
+				: undefined;
 		const liveModels = liveCatalog
 			? resolveCatalogModels(providerId, liveCatalog)
 			: {};
 		const privateModels =
-			config && shouldLoadPrivateModels(providerId, modelCatalog, config)
+			!modelCatalog?.offlineMode &&
+			config &&
+			shouldLoadPrivateModels(providerId, modelCatalog, config)
 				? await getPrivateProviderModels(providerId, modelCatalog, config)
 				: {};
 		// Public (keyless) live model sources run whenever `modelsSourceUrl` is
@@ -874,13 +877,14 @@ export async function resolveProviderConfig(
 					baseUrl: defaults.baseUrl,
 				})
 			: config;
-		const publicModels = publicConfig
-			? await getPublicProviderModels(
-					providerId,
-					modelCatalog,
-					publicConfig,
-				).catch(() => ({}))
-			: {};
+		const publicModels =
+			!modelCatalog?.offlineMode && publicConfig
+				? await getPublicProviderModels(
+						providerId,
+						modelCatalog,
+						publicConfig,
+					).catch(() => ({}))
+				: {};
 		const knownModels = await mergeKnownModels(
 			providerId,
 			defaults.knownModels,

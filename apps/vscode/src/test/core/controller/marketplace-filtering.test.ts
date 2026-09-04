@@ -385,20 +385,30 @@ describe("Controller Marketplace Filtering", () => {
 	})
 
 	describe("Integration with other remote config settings", () => {
-		it("should filter correctly even when mcpMarketplaceEnabled is false", async () => {
-			// Note: mcpMarketplaceEnabled affects local servers in McpHub, not the API catalog
+		it("should not fetch when mcpMarketplaceEnabled is false", async () => {
 			const remoteConfig: Partial<RemoteConfig> = {
 				version: "v1",
 				mcpMarketplaceEnabled: false,
 				allowedMCPServers: [{ id: "github.com/test/filesystem" }],
 			}
 			mockStateManager.getRemoteConfigSettings.returns(remoteConfig)
+			axiosGetStub.resetHistory()
 
 			const catalog = await controller.refreshMcpMarketplace(false)
 
-			// Catalog should still be filtered by allowlist
-			catalog!.items.should.have.length(1)
-			catalog!.items[0].mcpId.should.equal("github.com/test/filesystem")
+			should(catalog).equal(undefined)
+			axiosGetStub.called.should.equal(false)
+		})
+
+		it("should not fetch when offline mode is enabled", async () => {
+			mockStateManager.getRemoteConfigSettings.returns({})
+			mockStateManager.getGlobalStateKey.withArgs("offlineModeEnabled").returns(true)
+			axiosGetStub.resetHistory()
+
+			const catalog = await controller.refreshMcpMarketplace(false)
+
+			should(catalog).equal(undefined)
+			axiosGetStub.called.should.equal(false)
 		})
 
 		it("should filter correctly with blockPersonalRemoteMCPServers set", async () => {

@@ -23,6 +23,9 @@ interface HicapRawModelInfo {
  * @returns Response containing the OpenRouter models
  */
 export async function refreshHicapModels(controller: Controller, _request: EmptyRequest): Promise<OpenRouterCompatibleModelInfo> {
+	if (controller.stateManager.getGlobalStateKey("offlineModeEnabled")) {
+		return OpenRouterCompatibleModelInfo.create({ models: {} })
+	}
 	const hicapModelsFilePath = path.join(await ensureCacheDirectoryExists(controller), GlobalFileNames.hicapModels)
 
 	const models: Record<string, OpenRouterModelInfo> = {}

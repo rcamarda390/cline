@@ -22,6 +22,9 @@ import { sendOpenRouterModelsEvent } from "../models/subscribeToOpenRouterModels
  */
 export async function initializeWebview(controller: Controller, _request: EmptyRequest): Promise<Empty> {
 	try {
+		const offlineModeEnabled = controller.stateManager.getGlobalStateKey("offlineModeEnabled")
+		const refreshIfOnline = <T>(refresh: () => Promise<T>): Promise<T | undefined> =>
+			offlineModeEnabled ? Promise.resolve(undefined) : refresh()
 		// Post last cached models as soon as possible for immediate availability in the UI
 		const lastCachedModels = await controller.readOpenRouterModels()
 		if (lastCachedModels) {
@@ -29,7 +32,7 @@ export async function initializeWebview(controller: Controller, _request: EmptyR
 		}
 
 		// Refresh OpenRouter models from API
-		refreshOpenRouterModels(controller).then(async (models) => {
+		refreshIfOnline(() => refreshOpenRouterModels(controller)).then(async (models) => {
 			if (models && Object.keys(models).length > 0) {
 				// Update model info in state (this needs to be done here since we don't want to update state while settings is open, and we may refresh models there)
 				const apiConfiguration = controller.stateManager.getApiConfiguration()
@@ -71,7 +74,7 @@ export async function initializeWebview(controller: Controller, _request: EmptyR
 			}
 		})
 
-		refreshClineModels(controller).then(async (models) => {
+		refreshIfOnline(() => refreshClineModels(controller)).then(async (models) => {
 			if (models && Object.keys(models).length > 0) {
 				// Update model info in state for Cline (this needs to be done here since we don't want to update state while settings is open, and we may refresh models there)
 				const apiConfiguration = controller.stateManager.getApiConfiguration()
@@ -113,7 +116,7 @@ export async function initializeWebview(controller: Controller, _request: EmptyR
 			}
 		})
 
-		refreshGroqModels(controller).then(async (models) => {
+		refreshIfOnline(() => refreshGroqModels(controller)).then(async (models) => {
 			if (models && Object.keys(models).length > 0) {
 				// Update model info in state for Groq (this needs to be done here since we don't want to update state while settings is open, and we may refresh models there)
 				const apiConfiguration = controller.stateManager.getApiConfiguration()
@@ -155,7 +158,7 @@ export async function initializeWebview(controller: Controller, _request: EmptyR
 			}
 		})
 
-		refreshBasetenModels(controller).then(async (models) => {
+		refreshIfOnline(() => refreshBasetenModels(controller)).then(async (models) => {
 			if (models && Object.keys(models).length > 0) {
 				// Update model info in state for Baseten (this needs to be done here since we don't want to update state while settings is open, and we may refresh models there)
 				const apiConfiguration = controller.stateManager.getApiConfiguration()
@@ -197,7 +200,7 @@ export async function initializeWebview(controller: Controller, _request: EmptyR
 		})
 
 		// Refresh Hicap models from API
-		refreshHicapModels(controller, EmptyRequest.create()).then(async (response) => {
+		refreshIfOnline(() => refreshHicapModels(controller, EmptyRequest.create())).then(async (response) => {
 			if (response && response.models) {
 				// Update model info in state (this needs to be done here since we don't want to update state while settings is open, and we may refresh models there)
 				const apiConfiguration = controller.stateManager.getApiConfiguration()
@@ -241,7 +244,7 @@ export async function initializeWebview(controller: Controller, _request: EmptyR
 
 		const liteLlmBaseUrl = controller.stateManager.getGlobalSettingsKey("liteLlmBaseUrl")
 		const liteLlmApiKey = controller.stateManager.getSecretKey("liteLlmApiKey")
-		if (liteLlmBaseUrl && liteLlmApiKey) {
+		if (!offlineModeEnabled && liteLlmBaseUrl && liteLlmApiKey) {
 			await refreshLiteLlmModels()
 		}
 
@@ -258,7 +261,9 @@ export async function initializeWebview(controller: Controller, _request: EmptyR
 		}
 
 		// Silently refresh MCP marketplace catalog
-		controller.refreshMcpMarketplace(true /* sendCatalogEvent */)
+		if (!offlineModeEnabled) {
+			controller.refreshMcpMarketplace(true /* sendCatalogEvent */)
+		}
 
 		// Initialize telemetry service with user's current setting
 		controller.getStateToPostToWebview().then((state) => {

@@ -9,6 +9,7 @@
 ### Fixed
 
 - Keep Claude Code responses that were already streamed when the CLI exits with a max-turns error, instead of discarding a valid response.
+- Add an offline mode for air-gapped deployments that skips automatic model, marketplace, remote configuration, telemetry, and startup authentication network activity.
 
 ## [4.0.11]
 

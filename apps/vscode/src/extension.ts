@@ -85,7 +85,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// 4. Register services and perform common initialization
 	// IMPORTANT: Must be done after host provider is setup and migrations are complete
-	const webview = (await initialize(storageContext)) as VscodeWebviewProvider
+	const offlineMode = vscode.workspace.getConfiguration("cline").get<boolean>("offlineMode", false)
+	const webview = (await initialize(storageContext, { offlineMode })) as VscodeWebviewProvider
 
 	// 5. Register services and commands specific to VS Code
 	// Initialize test mode and add disposables to context

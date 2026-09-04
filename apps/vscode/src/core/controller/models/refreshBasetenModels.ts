@@ -20,6 +20,9 @@ let pendingRefresh: Promise<Record<string, ModelInfo>> | null = null
  * @returns Record of model ID to ModelInfo (application types)
  */
 export async function refreshBasetenModels(controller: Controller): Promise<Record<string, ModelInfo>> {
+	if (controller.stateManager.getGlobalStateKey("offlineModeEnabled")) {
+		return StateManager.get().getModelsCache("baseten") ?? {}
+	}
 	// Check in-memory cache first
 	const cache = StateManager.get().getModelsCache("baseten")
 	if (cache) {

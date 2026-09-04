@@ -112,6 +112,9 @@ export class Controller {
 	 * Fetches immediately and then every hour
 	 */
 	private startRemoteConfigTimer() {
+		if (this.stateManager.getGlobalStateKey("offlineModeEnabled")) {
+			return
+		}
 		// Initial fetch
 		fetchRemoteConfig(this)
 		// Set up 1-hour interval
@@ -138,9 +141,13 @@ export class Controller {
 		this.accountService = ClineAccountService.getInstance()
 		BannerService.initialize(this)
 
-		this.authService.restoreRefreshTokenAndRetrieveAuthInfo().then(() => {
-			this.startRemoteConfigTimer()
-		})
+		if (this.stateManager.getGlobalStateKey("offlineModeEnabled")) {
+			Logger.info("[Controller] Offline mode enabled; skipping startup authentication and remote config")
+		} else {
+			this.authService.restoreRefreshTokenAndRetrieveAuthInfo().then(() => {
+				this.startRemoteConfigTimer()
+			})
+		}
 
 		this.mcpHub = new McpHub(
 			() => ensureMcpServersDirectoryExists(),
@@ -158,6 +165,17 @@ export class Controller {
 		checkCliInstallation(this)
 
 		Logger.log("[Controller] ClineProvider instantiated")
+	}
+
+	setOfflineMode(enabled: boolean): void {
+		this.stateManager.setGlobalState("offlineModeEnabled", enabled)
+		if (enabled && this.remoteConfigTimer) {
+			clearInterval(this.remoteConfigTimer)
+			this.remoteConfigTimer = undefined
+		}
+		if (!enabled && !this.remoteConfigTimer) {
+			this.startRemoteConfigTimer()
+		}
 	}
 
 	/*
@@ -242,7 +260,9 @@ export class Controller {
 		// getGlobalSettingsKey() reads from remoteConfigCache on each call, so any updates
 		// will apply as soon as this fetch completes. The function also calls postStateToWebview()
 		// when done and catches all errors internally.
-		fetchRemoteConfig(this)
+		if (!this.stateManager.getGlobalStateKey("offlineModeEnabled")) {
+			fetchRemoteConfig(this)
+		}
 
 		await this.clearTask() // ensures that an existing task doesn't exist before starting a new one, although this shouldn't be possible since user must clear task before starting a new one
 
@@ -687,6 +707,10 @@ export class Controller {
 	}
 
 	async refreshMcpMarketplace(sendCatalogEvent: boolean): Promise<McpMarketplaceCatalog | undefined> {
+		const remoteConfig = this.stateManager.getRemoteConfigSettings() ?? {}
+		if (this.stateManager.getGlobalStateKey("offlineModeEnabled") || remoteConfig.mcpMarketplaceEnabled === false) {
+			return undefined
+		}
 		try {
 			const catalog = await this.fetchMcpMarketplaceFromApi()
 			if (catalog && sendCatalogEvent) {
@@ -873,6 +897,7 @@ export class Controller {
 		const subagentsEnabled = this.stateManager.getGlobalSettingsKey("subagentsEnabled")
 		const userInfo = this.stateManager.getGlobalStateKey("userInfo")
 		const mcpMarketplaceEnabled = this.stateManager.getGlobalStateKey("mcpMarketplaceEnabled")
+		const offlineModeEnabled = this.stateManager.getGlobalStateKey("offlineModeEnabled")
 		const mcpDisplayMode = this.stateManager.getGlobalStateKey("mcpDisplayMode")
 		const telemetrySetting = this.stateManager.getGlobalSettingsKey("telemetrySetting")
 		const planActSeparateModelsSetting = this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting")
@@ -952,6 +977,7 @@ export class Controller {
 			subagentsEnabled,
 			userInfo,
 			mcpMarketplaceEnabled,
+			offlineModeEnabled,
 			mcpDisplayMode,
 			telemetrySetting,
 			planActSeparateModelsSetting,

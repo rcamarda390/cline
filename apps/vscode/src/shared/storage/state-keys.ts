@@ -71,6 +71,7 @@ const GLOBAL_STATE_FIELDS = {
 	taskHistory: { default: [] as HistoryItem[], isAsync: true },
 	userInfo: { default: undefined as UserInfo | undefined },
 	favoritedModelIds: { default: [] as string[] },
+	offlineModeEnabled: { default: false as boolean },
 	mcpMarketplaceEnabled: { default: true as boolean },
 	mcpResponsesCollapsed: { default: false as boolean },
 	terminalReuseEnabled: { default: true as boolean },

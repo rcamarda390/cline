@@ -124,6 +124,7 @@ export const OcaSettingsSchema = z.object({
 export type OcaSettings = z.infer<typeof OcaSettingsSchema>;
 
 export const ModelCatalogSettingsSchema = z.object({
+	offlineMode: z.boolean().optional(),
 	loadLatestOnInit: z.boolean().optional(),
 	loadPrivateOnAuth: z.boolean().optional(),
 	url: z.string().url().optional(),
@@ -290,6 +291,7 @@ export function toProviderConfig(
 			| undefined,
 		modelCatalog: settings.modelCatalog
 			? {
+					offlineMode: settings.modelCatalog.offlineMode,
 					loadLatestOnInit: settings.modelCatalog.loadLatestOnInit,
 					loadPrivateOnAuth: settings.modelCatalog.loadPrivateOnAuth,
 					url: settings.modelCatalog.url,

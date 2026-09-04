@@ -139,6 +139,9 @@ async function fetchRawClineModels(): Promise<ClineRawModelInfo[]> {
  * @returns Record of model ID to ModelInfo (application types)
  */
 export async function refreshClineModels(controller: Controller): Promise<Record<string, ModelInfo>> {
+	if (controller.stateManager.getGlobalStateKey("offlineModeEnabled")) {
+		return StateManager.get().getModelsCache("cline") ?? {}
+	}
 	const shouldUseClineEndpointSource = featureFlagsService.getBooleanFlagEnabled(FeatureFlag.EXTENSION_CLINE_MODELS_ENDPOINT)
 	if (!shouldUseClineEndpointSource) {
 		return preferClineCanonicalModelIds(await refreshOpenRouterModels(controller))

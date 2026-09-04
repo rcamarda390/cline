@@ -244,6 +244,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		planActSeparateModelsSetting: true,
 		enableCheckpointsSetting: true,
 		mcpDisplayMode: DEFAULT_MCP_DISPLAY_MODE,
+		offlineModeEnabled: false,
 		globalClineRulesToggles: {},
 		localClineRulesToggles: {},
 		localCursorRulesToggles: {},
@@ -744,16 +745,16 @@ export const ExtensionStateContextProvider: React.FC<{
 
 	// Auto-refresh model lists on API key availability
 	useEffect(() => {
-		if (!openRouterModels || Object.keys(openRouterModels).length <= 1) {
+		if (!state.offlineModeEnabled && (!openRouterModels || Object.keys(openRouterModels).length <= 1)) {
 			refreshOpenRouterModels()
 		}
-		if (!vercelAiGatewayModels || Object.keys(vercelAiGatewayModels).length === 0) {
+		if (!state.offlineModeEnabled && (!vercelAiGatewayModels || Object.keys(vercelAiGatewayModels).length === 0)) {
 			refreshVercelAiGatewayModels()
 		}
-		if (state.apiConfiguration?.basetenApiKey) {
+		if (!state.offlineModeEnabled && state.apiConfiguration?.basetenApiKey) {
 			refreshBasetenModels()
 		}
-		if (state.apiConfiguration?.liteLlmApiKey) {
+		if (!state.offlineModeEnabled && state.apiConfiguration?.liteLlmApiKey) {
 			refreshLiteLlmModels()
 		}
 	}, [
@@ -763,6 +764,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		refreshBasetenModels,
 		state?.apiConfiguration?.liteLlmApiKey,
 		refreshLiteLlmModels,
+		state.offlineModeEnabled,
 	])
 
 	// Refresh Cline models function

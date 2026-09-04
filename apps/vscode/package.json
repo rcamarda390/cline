@@ -2,7 +2,7 @@
 	"name": "claude-dev",
 	"displayName": "Cline",
 	"description": "Autonomous coding agent right in your IDE, capable of creating/editing files, running commands, using the browser, and more with your permission every step of the way.",
-	"version": "4.0.12-prompt-patch.6",
+	"version": "4.0.12-prompt-patch.8",
 	"icon": "assets/icons/icon.png",
 	"engines": {
 		"vscode": "^1.84.0"
@@ -373,7 +373,13 @@
 		},
 		"configuration": {
 			"title": "Cline",
-			"properties": {}
+			"properties": {
+				"cline.offlineMode": {
+					"type": "boolean",
+					"default": false,
+					"description": "Disable Cline's automatic network refreshes, marketplace requests, remote configuration, and startup authentication checks. Use this for air-gapped environments."
+				}
+			}
 		}
 	},
 	"scripts": {

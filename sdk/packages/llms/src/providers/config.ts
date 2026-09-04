@@ -257,6 +257,8 @@ export interface ProviderOptions {
  * Runtime model catalog refresh options
  */
 export interface ModelCatalogConfig {
+	/** Do not schedule live catalog or provider model refreshes. */
+	offlineMode?: boolean;
 	/** Fetch latest catalog at handler initialization */
 	loadLatestOnInit?: boolean;
 	/** Fetch provider-private models when auth is available */

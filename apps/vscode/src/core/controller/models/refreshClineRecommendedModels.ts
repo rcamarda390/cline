@@ -6,6 +6,7 @@ import axios from "axios";
 import fs from "fs/promises";
 import path from "path";
 import { ClineEnv } from "@/config";
+import { StateManager } from "@/core/storage/StateManager"
 import { getAxiosSettings } from "@/shared/net";
 import { Logger } from "@/shared/services/Logger";
 
@@ -142,6 +143,9 @@ function normalizeRecommendedModelsResponse(
 }
 
 export async function refreshClineRecommendedModels(): Promise<ClineRecommendedModelsData> {
+	if (StateManager.get().getGlobalStateKey("offlineModeEnabled")) {
+		return inMemoryCache?.data ?? { recommended: [], free: [], clinePass: [] }
+	}
 	if (
 		inMemoryCache &&
 		Date.now() - inMemoryCache.timestamp <= RECOMMENDED_MODELS_CACHE_TTL_MS

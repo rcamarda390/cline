@@ -58,6 +58,20 @@ describe("resolveProviderConfig", () => {
 		);
 	});
 
+	it("does not schedule live catalog refreshes in offline mode", async () => {
+		const fetcher = vi.fn();
+		vi.stubGlobal("fetch", fetcher);
+
+		const resolved = await resolveProviderConfig("cline", {
+			loadLatestOnInit: true,
+			offlineMode: true,
+			failOnError: true,
+		});
+
+		expect(resolved?.knownModels?.["zai/glm-5.2"]).toBeDefined();
+		expect(fetcher).not.toHaveBeenCalled();
+	});
+
 	it("prefers Vercel-style Z.ai ids in Cline known models", async () => {
 		const resolved = await resolveProviderConfig("cline");
 

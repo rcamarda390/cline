@@ -31,10 +31,17 @@ import { arePathsEqual } from "./utils/path"
  * @returns The webview provider
  * @throws ClineConfigurationError if endpoints.json exists but is invalid
  */
-export async function initialize(storageContext: StorageContext): Promise<WebviewProvider> {
-	// Configure the shared Logging class to use HostProvider's output channels and debug logger
-	Logger.subscribe((msg: string) => HostProvider.get().logToChannel(msg)) // File system logging
-	Logger.subscribe((msg: string) => HostProvider.env.debugLog({ value: msg })) // Host debug logging
+export interface InitializeOptions {
+	offlineMode?: boolean
+}
+
+export async function initialize(storageContext: StorageContext, options: InitializeOptions = {}): Promise<WebviewProvider> {
+	// Configure the shared Logging class to use HostProvider's output channels and debug logger.
+	// `logToChannel` wants the old single-string "timestamp LEVEL message" line (it's a plain-text
+	// log file); `debugLog` gets level and message separately so the VS Code host can route each
+	// line to the matching LogOutputChannel method instead of re-parsing it out of the text.
+	Logger.subscribe((level, msg) => HostProvider.get().logToChannel(`${new Date().toISOString()} ${level} ${msg}`)) // File system logging
+	Logger.subscribe((level, msg) => HostProvider.env.debugLog({ value: msg, level })) // Host debug logging
 
 	// Initialize ClineEndpoint configuration (reads bundled and ~/.cline/endpoints.json if present)
 	// This must be done before any other code that calls ClineEnv.config()
@@ -51,11 +58,14 @@ export async function initialize(storageContext: StorageContext): Promise<Webvie
 			message: "Failed to initialize storage. Please check logs for details or try restarting the client.",
 		})
 	}
+	if (options.offlineMode !== undefined) {
+		StateManager.get().setGlobalState("offlineModeEnabled", options.offlineMode)
+	}
 
 	// =============== External services ===============
 	await ErrorService.initialize()
 	// Initialize PostHog client provider (skip in self-hosted mode)
-	if (!ClineEndpoint.isSelfHosted()) {
+	if (!ClineEndpoint.isSelfHosted() && !StateManager.get().getGlobalStateKey("offlineModeEnabled")) {
 		PostHogClientProvider.getInstance()
 	}
 

@@ -15,6 +15,9 @@ export async function refreshLiteLlmModels(): Promise<Record<string, ModelInfo>>
 	const models: Record<string, ModelInfo> = {}
 
 	const stateManager = StateManager.get()
+	if (stateManager.getGlobalStateKey("offlineModeEnabled")) {
+		return stateManager.getModelsCache("liteLlm") ?? {}
+	}
 
 	try {
 		// Get the LiteLLM configuration

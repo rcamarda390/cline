@@ -502,7 +502,14 @@ class StdioHookRunner<Name extends HookName> extends HookRunner<Name> {
 			// No valid JSON found
 			if (exitCode === 0) {
 				// Hook succeeded but didn't provide JSON - allow execution (no cancellation)
-				Logger.warn(`[Hook ${this.hookName}] Completed successfully but no JSON response found`)
+				const noJsonMessage = `[Hook ${this.hookName}] Completed successfully but no JSON response found`
+				// A successful hook with no stdout is a normal no-op. Preserve a warning for
+				// non-empty output that failed JSON parsing because that indicates a broken hook.
+				if (stdout.trim()) {
+					Logger.warn(noJsonMessage)
+				} else {
+					Logger.debug(noJsonMessage)
+				}
 				const durationMs = performance.now() - startTime
 
 				// Capture success telemetry even without JSON

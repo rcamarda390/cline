@@ -51,6 +51,7 @@ export interface ExtensionState {
 	currentTaskItem?: HistoryItem
 	currentFocusChainChecklist?: string | null
 	mcpMarketplaceEnabled?: boolean
+	offlineModeEnabled?: boolean
 	mcpDisplayMode: McpDisplayMode
 	planActSeparateModelsSetting: boolean
 	enableCheckpointsSetting?: boolean

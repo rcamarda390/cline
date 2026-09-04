@@ -13,6 +13,7 @@ import {
 	isNativeToolCallingConfig,
 	isNextGenModelFamily,
 	isPoolsideModelFamily,
+	modelRequiresNativeToolCalls,
 	modelDoesntSupportWebp,
 	shouldSkipReasoningForModel,
 	supportsReasoningEffortForModel,
@@ -198,6 +199,24 @@ describe("isPoolsideModelFamily", () => {
 			isNativeToolCallingConfig(providerInfo("openrouter", modelId), true).should.equal(true)
 			isNativeToolCallingConfig(providerInfo("cline", modelId), true).should.equal(true)
 		}
+	})
+})
+
+describe("modelRequiresNativeToolCalls", () => {
+	it("should force native tools for a Bedrock profile whose base model requires them", () => {
+		const info = { supportsPromptCache: false, requiresNativeToolCalls: true }
+		modelRequiresNativeToolCalls(info).should.equal(true)
+		isNativeToolCallingConfig(
+			{
+				providerId: "bedrock",
+				model: {
+					id: "arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:application-inference-profile/test-profile",
+					info,
+				},
+				mode: "act",
+			},
+			false,
+		).should.equal(true)
 	})
 })
 
