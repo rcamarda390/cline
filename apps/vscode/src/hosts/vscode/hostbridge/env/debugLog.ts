@@ -17,7 +17,9 @@ const LOG_METHOD_BY_LEVEL: Record<string, (message: string) => void> = {
 
 // Appends a log message to all Cline output channels.
 export async function debugLog(request: DebugLogRequest): Promise<Empty> {
-	const logMethod = (request.level && LOG_METHOD_BY_LEVEL[request.level]) ?? LOG_METHOD_BY_LEVEL.LOG
+	// ts-proto generates `level` as `string` (proto3 optional-string default is "", not
+	// undefined), so an empty level is falsy but not nullish — `??` alone wouldn't catch it.
+	const logMethod = LOG_METHOD_BY_LEVEL[request.level] || LOG_METHOD_BY_LEVEL.LOG
 	// `request.value` is the raw message only (no timestamp/level prefix — Logger.ts stopped
 	// adding one). LogOutputChannel prepends its own timestamp + level per line, so passing the
 	// already-decorated string here would double it up.
