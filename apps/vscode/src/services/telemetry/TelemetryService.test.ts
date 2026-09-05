@@ -385,6 +385,9 @@ describe("Telemetry system is abstracted and can easily switch between providers
 	})
 
 	describe("Factory Configuration", () => {
+		it("should return only no-op configuration in offline mode", () => {
+			assert.deepStrictEqual(TelemetryProviderFactory.getDefaultConfigs(true), [{ type: "no-op" }])
+		})
 		it("should return default configurations", () => {
 			// Mock PostHog config validation to return true for this test
 			const isPostHogConfigValidStub = sinon.stub(posthogConfigModule, "isPostHogConfigValid").returns(true)

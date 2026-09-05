@@ -33,7 +33,7 @@ let _initializationPromise: Promise<TelemetryService> | null = null
  * @param distinctId Optional distinct ID for the telemetry provider
  * @returns TelemetryService instance
  */
-export async function getTelemetryService(): Promise<TelemetryService> {
+export async function getTelemetryService(offlineMode = false): Promise<TelemetryService> {
 	if (_telemetryServiceInstance) {
 		return _telemetryServiceInstance
 	}
@@ -45,7 +45,7 @@ export async function getTelemetryService(): Promise<TelemetryService> {
 
 	// Start initialization and store the promise to prevent concurrent initialization.
 	// Ensure that on failure we reset the initialization promise so future calls can retry.
-	_initializationPromise = TelemetryService.create()
+	_initializationPromise = TelemetryService.create(offlineMode)
 		.then((service) => {
 			_telemetryServiceInstance = service
 			_initializationPromise = null

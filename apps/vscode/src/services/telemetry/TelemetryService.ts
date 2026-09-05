@@ -369,8 +369,8 @@ export class TelemetryService {
 		},
 	}
 
-	public static async create(): Promise<TelemetryService> {
-		const providers = await TelemetryProviderFactory.createProviders()
+	public static async create(offlineMode = false): Promise<TelemetryService> {
+		const providers = await TelemetryProviderFactory.createProviders(offlineMode)
 		const hostVersion = await HostProvider.env.getHostVersion({})
 		const metadata: TelemetryMetadata = {
 			extension_version: extensionVersion,

@@ -16,6 +16,7 @@ jobs:
     # Auto-run only for trusted PR authors. Anyone else needs a maintainer
     # to opt their PR in by commenting /test-jetbrains.
     if: |
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request_target' &&
        contains(fromJSON('["MEMBER","OWNER","COLLABORATOR"]'), github.event.pull_request.author_association)) ||
       (github.event_name == 'issue_comment' &&

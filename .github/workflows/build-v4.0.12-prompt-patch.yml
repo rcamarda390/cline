@@ -39,6 +39,13 @@ jobs:
       - name: Run hook, prompt, Bedrock and marketplace regressions
         working-directory: apps/vscode
         run: npx cross-env TS_NODE_PROJECT=./tsconfig.unit-test.json mocha --no-config --require ts-node/register --require tsconfig-paths/register --require ./src/test/requires.ts --timeout 20000 --exit src/test/hook-executor.test.ts 'src/core/hooks/__tests__/*.test.ts' 'src/core/prompts/system-prompt/__tests__/*.test.ts' src/core/api/providers/__tests__/bedrock.test.ts src/utils/__tests__/model-utils.test.ts src/test/core/controller/marketplace-filtering.test.ts
+      - name: Build and test on VS Code 1.98.2
+        working-directory: apps/vscode
+        env:
+          VSCODE_TEST_VERSION: 1.98.2
+        run: |
+          npm run ci:build
+          xvfb-run -a npm run test:integration
       - name: Build VSIX
         working-directory: apps/vscode
         run: npx vsce package --allow-package-secrets sendgrid --out "cline-${PATCH_VERSION}.vsix"

@@ -16,12 +16,12 @@ export class ErrorService {
 	/**
 	 * Sets up the ErrorService singleton.
 	 */
-	public static async initialize(): Promise<ErrorService> {
+	public static async initialize(offlineMode = false): Promise<ErrorService> {
 		if (ErrorService.instance) {
 			throw new Error("ErrorService has already been initialized.")
 		}
 
-		const provider = await ErrorProviderFactory.createProvider(ErrorProviderFactory.getDefaultConfig())
+		const provider = await ErrorProviderFactory.createProvider(ErrorProviderFactory.getDefaultConfig(offlineMode))
 		ErrorService.instance = new ErrorService(provider)
 		return ErrorService.instance
 	}

@@ -47,9 +47,9 @@ export class FeatureFlagsProviderFactory {
 	 * Gets the default feature flags provider configuration
 	 * @returns Default configuration using PostHog, or no-op for self-hosted mode
 	 */
-	public static getDefaultConfig(): FeatureFlagsProviderConfig {
+	public static getDefaultConfig(offlineMode = false): FeatureFlagsProviderConfig {
 		// Use no-op provider in self-hosted mode to avoid external network calls
-		if (ClineEndpoint.isSelfHosted()) {
+		if (offlineMode || ClineEndpoint.isSelfHosted()) {
 			return { type: "no-op" }
 		}
 		const hasValidConfig = isPostHogConfigValid(posthogConfig)

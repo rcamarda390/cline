@@ -162,6 +162,10 @@ export function transformRemoteConfigToStateShape(remoteConfig: RemoteConfig): P
 		}
 		if (awsBedrockSettings.awsBedrockUsePromptCache !== undefined) {
 			transformed.awsBedrockUsePromptCache = awsBedrockSettings.awsBedrockUsePromptCache
+			// The remote provider policy must override local generic and split-mode preferences.
+			transformed.usePromptCache = awsBedrockSettings.awsBedrockUsePromptCache
+			transformed.planModeUsePromptCache = awsBedrockSettings.awsBedrockUsePromptCache
+			transformed.actModeUsePromptCache = awsBedrockSettings.awsBedrockUsePromptCache
 		}
 		if (awsBedrockSettings.awsBedrockEndpoint !== undefined) {
 			transformed.awsBedrockEndpoint = awsBedrockSettings.awsBedrockEndpoint

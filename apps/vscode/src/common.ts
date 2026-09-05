@@ -12,9 +12,9 @@ import { StateManager } from "./core/storage/StateManager"
 import { AgentConfigLoader } from "./core/task/tools/subagent/AgentConfigLoader"
 import { ExtensionRegistryInfo } from "./registry"
 import { ErrorService } from "./services/error"
-import { featureFlagsService } from "./services/feature-flags"
+import { featureFlagsService, getFeatureFlagsService } from "./services/feature-flags"
 import { getDistinctId } from "./services/logging/distinctId"
-import { telemetryService } from "./services/telemetry"
+import { getTelemetryService, telemetryService } from "./services/telemetry"
 import { PostHogClientProvider } from "./services/telemetry/providers/posthog/PostHogClientProvider"
 import { ClineTempManager } from "./services/temp"
 import { cleanupTestMode } from "./services/test/TestMode"
@@ -61,13 +61,16 @@ export async function initialize(storageContext: StorageContext, options: Initia
 	if (options.offlineMode !== undefined) {
 		StateManager.get().setGlobalState("offlineModeEnabled", options.offlineMode)
 	}
+	const offlineModeEnabled = StateManager.get().getGlobalStateKey("offlineModeEnabled")
 
 	// =============== External services ===============
-	await ErrorService.initialize()
+	await ErrorService.initialize(offlineModeEnabled)
 	// Initialize PostHog client provider (skip in self-hosted mode)
-	if (!ClineEndpoint.isSelfHosted() && !StateManager.get().getGlobalStateKey("offlineModeEnabled")) {
+	if (!ClineEndpoint.isSelfHosted() && !offlineModeEnabled) {
 		PostHogClientProvider.getInstance()
 	}
+	await getTelemetryService(offlineModeEnabled)
+	getFeatureFlagsService(offlineModeEnabled)
 
 	// =============== Webview services ===============
 	const webview = HostProvider.get().createWebviewProvider()
@@ -81,7 +84,9 @@ export async function initialize(storageContext: StorageContext, options: Initia
 	// =============== Background sync and cleanup tasks ===============
 	// Use remote config blobStoreConfig if available, otherwise fall back to env vars
 	const blobStoreSettings = stateManager.getRemoteConfigSettings()?.blobStoreConfig ?? getBlobStoreSettingsFromEnv()
-	syncWorker().init({ ...blobStoreSettings, userDistinctId: getDistinctId() })
+	if (!offlineModeEnabled) {
+		syncWorker().init({ ...blobStoreSettings, userDistinctId: getDistinctId() })
+	}
 	// Clean up old temp files in background (non-blocking) and start periodic cleanup every 24 hours
 	ClineTempManager.startPeriodicCleanup()
 	// Clean up orphaned file context warnings (startup cleanup)
@@ -162,7 +167,7 @@ async function checkWorktreeAutoOpen(stateManager: StateManager): Promise<void> 
  */
 export async function tearDown(): Promise<void> {
 	AgentConfigLoader.getInstance()?.dispose()
-	PostHogClientProvider.getInstance().dispose()
+	PostHogClientProvider.disposeInstance()
 	telemetryService.dispose()
 	ErrorService.get().dispose()
 	featureFlagsService.dispose()

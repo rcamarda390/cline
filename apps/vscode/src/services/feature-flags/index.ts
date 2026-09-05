@@ -17,9 +17,9 @@ let _featureFlagsServiceInstance: FeatureFlagsService | null = null
  * @param distinctId Optional distinct ID for the feature flags provider
  * @returns FeatureFlagsService instance
  */
-export function getFeatureFlagsService(): FeatureFlagsService {
+export function getFeatureFlagsService(offlineMode = false): FeatureFlagsService {
 	if (!_featureFlagsServiceInstance) {
-		const provider = FeatureFlagsProviderFactory.createProvider(FeatureFlagsProviderFactory.getDefaultConfig())
+		const provider = FeatureFlagsProviderFactory.createProvider(FeatureFlagsProviderFactory.getDefaultConfig(offlineMode))
 		_featureFlagsServiceInstance = new FeatureFlagsService(provider)
 	}
 	return _featureFlagsServiceInstance

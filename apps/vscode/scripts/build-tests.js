@@ -1,8 +1,27 @@
 #!/usr/bin/env node
 const { execSync } = require("child_process")
+const { pathToFileURL } = require("url")
 const esbuild = require("esbuild")
 
 const watch = process.argv.includes("--watch")
+
+// VS Code 1.98.2's extension host cannot require these ESM-only packages from
+// the CommonJS integration-test output. Production already bundles them.
+const esmTestPackages = [
+	"execa",
+	"default-shell",
+	"get-folder-size",
+	"globby",
+	"nanoid",
+	"open",
+	"os-name",
+	"p-mutex",
+	"p-timeout",
+	"p-wait-for",
+	"serialize-error",
+	"strip-ansi",
+	"chrome-launcher",
+]
 
 /**
  * @type {import('esbuild').Plugin}
@@ -42,6 +61,21 @@ const srcConfig = {
 }
 
 async function main() {
+	await Promise.all(
+		esmTestPackages.map((name) =>
+			esbuild.build({
+				...srcConfig,
+				entryPoints: [require.resolve(name)],
+				outdir: undefined,
+				outfile: `out/packages/${name}.js`,
+				define: {
+					...srcConfig.define,
+					// Preserve package-relative asset lookup, such as open's xdg-open script.
+					"import.meta.url": JSON.stringify(pathToFileURL(require.resolve(name)).href),
+				},
+			}),
+		),
+	)
 	const srcCtx = await esbuild.context(srcConfig)
 
 	if (watch) {

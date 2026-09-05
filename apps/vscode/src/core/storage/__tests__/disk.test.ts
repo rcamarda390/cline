@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it } from "mocha"
 import "should"
 import { HistoryItem } from "@shared/HistoryItem"
+import * as execaPackage from "@packages/execa"
 import * as fsUtils from "@utils/fs"
 import fs from "fs/promises"
 import os from "os"
@@ -209,6 +210,7 @@ describe("disk - hooks functionality", () => {
 			await fs.mkdir(runtimeHooksDir, { recursive: true })
 
 			sandbox.stub(os, "homedir").returns(tempDir)
+			sandbox.stub(execaPackage, "execa").resolves({ stdout: path.join(tempDir, "Documents") } as any)
 			sandbox.stub(StateManager, "get").returns({
 				getGlobalStateKey: () => [],
 			} as any)
@@ -225,6 +227,7 @@ describe("disk - hooks functionality", () => {
 			const runtimeHooksDir = path.join(tempDir, "missing-runtime-hooks")
 
 			sandbox.stub(os, "homedir").returns(tempDir)
+			sandbox.stub(execaPackage, "execa").resolves({ stdout: path.join(tempDir, "Documents") } as any)
 			sandbox.stub(StateManager, "get").returns({
 				getGlobalStateKey: () => [],
 			} as any)

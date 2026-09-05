@@ -29,6 +29,14 @@ tsConfigPaths.register({
 // The module is ES6 only, but the integration tests are compiled to commonJS.
 const originalRequire = Module.prototype.require
 Module.prototype.require = function (id) {
+	// Route bare ESM package imports to the CommonJS bundles produced by
+	// build-tests.js for the VS Code 1.98.2 integration-test runtime.
+	if (/^[a-z][a-z0-9-]*$/.test(id)) {
+		const bundledPath = path.join(baseUrl, "out/packages", `${id}.js`)
+		if (fs.existsSync(bundledPath)) {
+			return originalRequire.call(this, bundledPath)
+		}
+	}
 	// Intercept requires for @google/genai
 	if (id === "@google/genai") {
 		// Return the mock instead

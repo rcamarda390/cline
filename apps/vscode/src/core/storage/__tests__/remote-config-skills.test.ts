@@ -46,6 +46,20 @@ describe("transformRemoteConfigToStateShape - globalSkills", () => {
 	})
 })
 
+describe("transformRemoteConfigToStateShape - Bedrock prompt cache", () => {
+	it("maps an enforced remote value onto shared and split-mode preferences", () => {
+		const result = transformRemoteConfigToStateShape({
+			version: "v1",
+			providerSettings: { AwsBedrock: { awsBedrockUsePromptCache: false } },
+		})
+
+		expect(result.awsBedrockUsePromptCache).to.equal(false)
+		expect(result.usePromptCache).to.equal(false)
+		expect(result.planModeUsePromptCache).to.equal(false)
+		expect(result.actModeUsePromptCache).to.equal(false)
+	})
+})
+
 describe("synchronizeRemoteRuleToggles - remote skill toggle sync", () => {
 	it("adds new toggle entries defaulting to true", () => {
 		const result = synchronizeRemoteRuleToggles([{ name: "Deploy", alwaysEnabled: false, contents: "" }], {})
