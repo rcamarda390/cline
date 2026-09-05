@@ -15,6 +15,9 @@ import { refreshClineModels } from "../refreshClineModels"
 
 describe("refreshClineModels", () => {
 	let sandbox: sinon.SinonSandbox
+	const controller = {
+		stateManager: { getGlobalStateKey: () => false },
+	} as unknown as Controller
 
 	beforeEach(() => {
 		sandbox = sinon.createSandbox()
@@ -69,7 +72,7 @@ describe("refreshClineModels", () => {
 			},
 		})
 
-		const models = await refreshClineModels({} as Controller)
+		const models = await refreshClineModels(controller)
 		const qwen37 = models["qwen/qwen3.7-max"]
 
 		expect(qwen37.supportsPromptCache).to.equal(true)
@@ -121,7 +124,7 @@ describe("refreshClineModels", () => {
 			},
 		})
 
-		const models = await refreshClineModels({} as Controller)
+		const models = await refreshClineModels(controller)
 		const fable = models["anthropic/claude-fable-5"]
 		const fable1m = models[openRouterClaudeFable51mModelId]
 
@@ -180,7 +183,7 @@ describe("refreshClineModels", () => {
 			},
 		})
 
-		const models = await refreshClineModels({} as Controller)
+		const models = await refreshClineModels(controller)
 		const opus5 = models["anthropic/claude-opus-5"]
 		const opus51m = models[openRouterClaudeOpus51mModelId]
 
@@ -256,7 +259,7 @@ describe("refreshClineModels", () => {
 			},
 		})
 
-		const models = await refreshClineModels({} as Controller)
+		const models = await refreshClineModels(controller)
 
 		expect(models["zai/glm-5.2"]).to.not.equal(undefined)
 		expect(models["zai/glm-5.2"].contextWindow).to.equal(1_000_000)

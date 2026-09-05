@@ -16,7 +16,7 @@ interface E2ETestDirectories {
 
 export interface E2ETestConfigs {
 	workspaceType: "single" | "multi"
-	channel: "stable" | "insiders"
+	channel: string
 }
 
 export class E2ETestHelper {
@@ -369,7 +369,7 @@ export const e2e = test
 	})
 	.extend<E2ETestConfigs>({
 		workspaceType: "single",
-		channel: "stable",
+		channel: process.env.VSCODE_TEST_VERSION ?? "1.98.2",
 	})
 	.extend<{ openVSCode: (workspacePath: string) => Promise<ElectronApplication> }>({
 		openVSCode: async ({ userDataDir, channel }, use, testInfo) => {

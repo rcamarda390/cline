@@ -74,6 +74,8 @@ export class AnthropicHandler implements ApiHandler {
 			? baseModelId.slice(0, -CLAUDE_SONNET_1M_SUFFIX.length)
 			: baseModelId
 		const enable1mContextWindow = baseModelId.endsWith(CLAUDE_SONNET_1M_SUFFIX)
+		// Context selection is independent of prompt caching.
+		const requestOptions = enable1mContextWindow ? { headers: { "anthropic-beta": "context-1m-2025-08-07" } } : undefined
 		const fastModeBetas = enable1mContextWindow
 			? [ANTHROPIC_FAST_MODE_BETA, "context-1m-2025-08-07"]
 			: [ANTHROPIC_FAST_MODE_BETA]
@@ -146,20 +148,7 @@ export class AnthropicHandler implements ApiHandler {
 
 			stream = useFastMode
 				? await createFastModeMessage(requestBody)
-				: await client.messages.create(
-						requestBody,
-						(() => {
-							// 1m context window beta header
-							if (enable1mContextWindow) {
-								return {
-									headers: {
-										"anthropic-beta": "context-1m-2025-08-07",
-									},
-								}
-							}
-							return undefined
-						})(),
-					)
+				: await client.messages.create(requestBody, requestOptions)
 		} else {
 			const requestBody: AnthropicMessageCreateParamsStreaming & Record<string, unknown> = {
 				model: modelId,
@@ -176,7 +165,9 @@ export class AnthropicHandler implements ApiHandler {
 				requestBody.output_config = outputConfig
 			}
 
-			stream = useFastMode ? await createFastModeMessage(requestBody) : await client.messages.create(requestBody)
+			stream = useFastMode
+				? await createFastModeMessage(requestBody)
+				: await client.messages.create(requestBody, requestOptions)
 		}
 
 		const lastStartedToolCall = { id: "", name: "", arguments: "" }

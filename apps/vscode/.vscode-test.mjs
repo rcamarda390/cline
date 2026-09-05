@@ -1,6 +1,6 @@
 import { defineConfig } from "@vscode/test-cli"
 import path from "path"
-const vscodeTestVersion = process.env.VSCODE_TEST_VERSION ?? "stable"
+const vscodeTestVersion = process.env.VSCODE_TEST_VERSION ?? "1.98.2"
 
 export default defineConfig({
 	files: "{out/**/*.test.js,src/**/*.test.js,!src/test/e2e/**/*.test.js,!out/src/test/e2e/**/*.test.js}",

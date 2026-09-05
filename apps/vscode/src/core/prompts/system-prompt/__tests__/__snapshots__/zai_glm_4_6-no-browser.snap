@@ -282,6 +282,14 @@ You have access to two tools for working with files: **write_to_file** and **rep
 5. Once the file has been edited with either write_to_file or replace_in_file, the system will provide you with the final state of the modified file. Use this updated content as the reference point for any subsequent SEARCH/REPLACE operations, since it reflects any auto-formatting or user-applied changes.
 By thoughtfully selecting between write_to_file and replace_in_file, you can make your file editing process smoother, safer, and more efficient.
 
+## FOCUS CHAIN
+
+For tasks that involve multiple steps, maintain a todo list so you and the user can track progress and stay focused on the objective. This matters most on longer or complex tasks, where it's easy to lose track of what's done and what remains.
+
+- Use the task_progress parameter (see 'Updating Task Progress') to create and update this list - it is not a separate tool call.
+- Simple, single-step tasks do not need a todo list.
+- The system will periodically remind you to create or update the list; treat these reminders as important.
+
 ## MCP SERVERS
 
 The Model Context Protocol (MCP) enables communication between the system and locally running MCP servers that provide additional tools and resources to extend your capabilities.

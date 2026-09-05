@@ -1,8 +1,9 @@
-import type { HookOutputStreamMeta } from "@shared/ExtensionMessage"
-import { ClineMessage } from "@shared/ExtensionMessage"
+import { sendPartialMessageEvent } from "@core/controller/ui/subscribeToPartialMessage"
+import type { ClineMessage, HookOutputStreamMeta } from "@shared/ExtensionMessage"
 import type { HookOutput } from "@shared/proto/cline/hooks"
+import { convertClineMessageToProto } from "@shared/proto-conversions/cline-message"
 import { Logger } from "@/shared/services/Logger"
-import { MessageStateHandler } from "../task/message-state"
+import type { MessageStateHandler } from "../task/message-state"
 import { HookExecutionError } from "./HookError"
 import type { HookModelInputContext } from "./hook-factory"
 import { HookFactory } from "./hook-factory"
@@ -100,7 +101,9 @@ export async function executeHook<Name extends keyof Hooks>(options: HookExecuti
 			...(options.toolName && { toolName: options.toolName }),
 			status: "running",
 			scriptPaths: hookInfo.scriptPaths,
-			...(options.pendingToolInfo && { pendingToolInfo: options.pendingToolInfo }),
+			...(options.pendingToolInfo && {
+				pendingToolInfo: options.pendingToolInfo,
+			}),
 		}
 		hookMessageTs = await say("hook_status", JSON.stringify(hookMetadata))
 
@@ -157,11 +160,6 @@ export async function executeHook<Name extends keyof Hooks>(options: HookExecuti
 
 		Logger.log(`[${hookName} Hook]`, result)
 
-		// NoOp hooks return proto defaults; preserve the minimal legacy return shape.
-		if (result.cancel === false && result.contextModification === "" && result.errorMessage === "") {
-			return { wasCancelled: false }
-		}
-
 		// Check if hook wants to cancel
 		if (result.cancel === true) {
 			// Update hook status to cancelled
@@ -184,7 +182,10 @@ export async function executeHook<Name extends keyof Hooks>(options: HookExecuti
 			await clearActiveHookExecution()
 		}
 
-		// Update hook status to completed (only if not cancelled)
+		// Update hook status to completed (only if not cancelled).
+		// This must run for NoOp results too (a hook that ran and returned nothing
+		// noteworthy) - otherwise the hook_status message and any tracked active
+		// execution are left exactly as they were while the hook was still running.
 		if (hookMessageTs !== undefined) {
 			await updateHookMessage(messageStateHandler, hookMessageTs, {
 				hookName,
@@ -194,6 +195,11 @@ export async function executeHook<Name extends keyof Hooks>(options: HookExecuti
 				hasJsonResponse: true,
 				scriptPaths: hookInfo.scriptPaths,
 			})
+		}
+
+		// NoOp hooks return proto defaults; preserve the minimal legacy return shape.
+		if (result.cancel === false && result.contextModification === "" && result.errorMessage === "") {
+			return { wasCancelled: false }
 		}
 
 		return fromHookOutput(result)
@@ -270,6 +276,11 @@ async function updateHookMessage(
 		await messageStateHandler.updateClineMessage(hookMessageIndex, {
 			text: JSON.stringify(metadata),
 		})
+		// updateClineMessage only mutates in-memory/disk state; it does not notify the
+		// webview (unlike every path through Task.say()). Without this, the hook's UI
+		// stays frozen on whatever status was last pushed (typically "running") until
+		// some unrelated later say()/ask() call happens to trigger a full state repost.
+		await sendPartialMessageEvent(convertClineMessageToProto(clineMessages[hookMessageIndex]))
 	}
 }
 

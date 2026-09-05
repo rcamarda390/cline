@@ -1,5 +1,8 @@
 name: ext-vscode-test-e2e
 
+env:
+    VSCODE_TEST_VERSION: 1.98.2
+
 on:
     push:
         branches:
@@ -111,9 +114,7 @@ jobs:
               id: vscode-cache
               with:
                   path: apps/vscode/.vscode-test
-                  key: vscode-${{ runner.os }}-stable-${{ hashFiles('apps/vscode/.vscode-test.mjs', 'apps/vscode/package.json') }}
-                  restore-keys: |
-                      vscode-${{ runner.os }}-stable-
+                  key: vscode-${{ runner.os }}-${{ runner.arch }}-${{ env.VSCODE_TEST_VERSION }}-v2
 
             # Cache Playwright browsers
             - name: Cache Playwright browsers

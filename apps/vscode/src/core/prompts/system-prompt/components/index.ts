@@ -10,6 +10,7 @@ import { getRulesSection } from "./rules"
 import { getSkillsSection } from "./skills"
 import { getSystemInfo } from "./system_info"
 import { getUpdatingTaskProgress } from "./task_progress"
+import { getTodoSection } from "./todo"
 import { getToolUseSection } from "./tool_use"
 import { getUserInstructions } from "./user_instructions"
 
@@ -48,5 +49,6 @@ export function getSystemPromptComponents() {
 			fn: getFeedbackSection,
 		},
 		{ id: SystemPromptSection.TASK_PROGRESS, fn: getUpdatingTaskProgress },
+		{ id: SystemPromptSection.TODO, fn: getTodoSection },
 	]
 }

@@ -4,13 +4,14 @@ import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
 import * as sinon from "sinon"
+import { registerPartialMessageCallback } from "../core/controller/ui/subscribeToPartialMessage"
 import { hookFileName } from "../core/hooks/__tests__/test-utils"
 import { HookDiscoveryCache } from "../core/hooks/HookDiscoveryCache"
 import { executeHook } from "../core/hooks/hook-executor"
 import { StateManager } from "../core/storage/StateManager"
 import { MessageStateHandler } from "../core/task/message-state"
 import { TaskState } from "../core/task/TaskState"
-import { ClineMessage } from "../shared/ExtensionMessage"
+import type { ClineMessage } from "../shared/ExtensionMessage"
 
 /**
  * Unit tests for the hook-executor module
@@ -43,7 +44,11 @@ describe("Hook Executor", () => {
 	 */
 	async function createHookScript(
 		hookName: string,
-		output: { cancel?: boolean; contextModification?: string; errorMessage?: string },
+		output: {
+			cancel?: boolean
+			contextModification?: string
+			errorMessage?: string
+		},
 		exitCode = 0,
 		delayMs = 0,
 	): Promise<string> {
@@ -494,6 +499,69 @@ setTimeout(() => {
 
 			// Verify hook message exists
 			messages.length.should.be.greaterThan(0)
+		})
+
+		it("should notify the webview when the hook message status updates", async function () {
+			this.timeout(5000)
+
+			await createHookScript("TaskStart", {
+				cancel: false,
+			})
+
+			const messages: ClineMessage[] = []
+			const mockHandler = {
+				...testHandler,
+				getClineMessages: () => messages,
+				updateClineMessage: async (index: number, updates: Partial<ClineMessage>) => {
+					if (messages[index]) {
+						Object.assign(messages[index], updates)
+					}
+				},
+			} as any
+
+			// updateClineMessage() alone only mutates in-memory/disk state - it does not
+			// reach the webview. Regression guard for that gap: capture every message
+			// broadcast via the partial-message channel and confirm the hook's completed
+			// status is among them, not just the initial "running" one from say().
+			const broadcastMessages: Array<{ text?: string }> = []
+			const unsubscribe = registerPartialMessageCallback((message) => {
+				broadcastMessages.push(message)
+			})
+
+			try {
+				await executeHook({
+					hookName: "TaskStart",
+					hookInput: {
+						taskStart: {
+							taskMetadata: {
+								taskId: "test-task",
+								ulid: "test-ulid",
+								initialTask: "test task",
+							},
+						},
+					},
+					isCancellable: true,
+					say: async (type: any, text?: string) => {
+						const msg: ClineMessage = {
+							ts: Date.now(),
+							type: "say",
+							say: type,
+							text,
+						}
+						messages.push(msg)
+						return msg.ts
+					},
+					messageStateHandler: mockHandler,
+					taskId: "test-task",
+					hooksEnabled: true,
+				})
+			} finally {
+				unsubscribe()
+			}
+
+			broadcastMessages.length.should.be.greaterThan(0)
+			const completedBroadcast = broadcastMessages.some((m) => JSON.parse(m.text || "{}").status === "completed")
+			completedBroadcast.should.equal(true)
 		})
 	})
 
