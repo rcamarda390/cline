@@ -8,6 +8,7 @@ const watch = process.argv.includes("--watch")
 // VS Code 1.98.2's extension host cannot require these ESM-only packages from
 // the CommonJS integration-test output. Production already bundles them.
 const esmTestPackages = [
+	"@sap-ai-sdk/orchestration",
 	"execa",
 	"default-shell",
 	"get-folder-size",
@@ -21,6 +22,7 @@ const esmTestPackages = [
 	"serialize-error",
 	"strip-ansi",
 	"chrome-launcher",
+	"fzf",
 ]
 
 /**
