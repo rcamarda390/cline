@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
-import {
-	type AutomationEventEnvelope,
-	type CronSpec,
-	type CronSpecExtensionKind,
-	type CronTriggerKind,
-	type HubScheduleCreateInput,
-	type HubScheduleUpdateInput,
-	ONE_TIME_SCHEDULE_CRON_PATTERN,
-	ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY,
+import type {
+	AutomationEventEnvelope,
+	CronSpec,
+	CronSpecExtensionKind,
+	CronTriggerKind,
+	HubScheduleCreateInput,
+	HubScheduleUpdateInput,
 } from "@cline/shared";
 import {
 	asOptionalString,
@@ -294,7 +292,6 @@ function jsonOrNull(value: Record<string, unknown> | undefined): string | null {
 }
 
 const MEANINGFUL_FIELD_KEYS = [
-	"triggerKind",
 	"prompt",
 	"workspaceRoot",
 	"mode",
@@ -338,20 +335,6 @@ function hasMeaningfulChange(
 			return true;
 		}
 	}
-	const oneOffTimingApplies =
-		prev.triggerKind === "one_off" || nextValues.triggerKind === "one_off";
-	const nextMetadata = nextValues.metadata as
-		| Record<string, unknown>
-		| undefined;
-	if (
-		oneOffTimingApplies &&
-		normalizeForCompare(
-			prev.metadata?.[ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY],
-		) !==
-			normalizeForCompare(nextMetadata?.[ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY])
-	) {
-		return true;
-	}
 	if (prevEnabled === false && nextEnabled === true) return true;
 	return false;
 }
@@ -371,7 +354,7 @@ function hubScheduleSourcePath(scheduleId: string): string {
 function hubScheduleMetadata(
 	input: HubScheduleCreateInput,
 ): Record<string, unknown> | undefined {
-	const metadata: Record<string, unknown> = {
+	const metadata = {
 		...(input.metadata ?? {}),
 		...(input.createdBy ? { __hubScheduleCreatedBy: input.createdBy } : {}),
 		...(input.cwd ? { __hubScheduleCwd: input.cwd } : {}),
@@ -379,19 +362,17 @@ function hubScheduleMetadata(
 			? { __hubRuntimeOptions: input.runtimeOptions }
 			: {}),
 	};
-	if (input.cronPattern.trim() !== ONE_TIME_SCHEDULE_CRON_PATTERN) {
-		delete metadata[ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY];
-	}
 	return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 function hubScheduleInputToCronSpec(input: HubScheduleCreateInput): CronSpec {
-	const oneTime = input.cronPattern.trim() === ONE_TIME_SCHEDULE_CRON_PATTERN;
-	const common = {
+	return {
+		triggerKind: "schedule",
 		title: input.name.trim(),
 		prompt: input.prompt,
 		workspaceRoot: input.workspaceRoot.trim(),
-		mode: input.mode ?? "yolo",
+		schedule: input.cronPattern.trim(),
+		mode: input.mode ?? "act",
 		systemPrompt: input.systemPrompt,
 		modelSelection: input.modelSelection
 			? JSON.parse(JSON.stringify(input.modelSelection))
@@ -412,18 +393,7 @@ function hubScheduleInputToCronSpec(input: HubScheduleCreateInput): CronSpec {
 		tags: input.tags?.filter((tag) => tag.trim().length > 0),
 		enabled: input.enabled !== false,
 		metadata: hubScheduleMetadata(input),
-	};
-	return oneTime
-		? {
-				...common,
-				triggerKind: "one_off",
-			}
-		: {
-				...common,
-				triggerKind: "schedule",
-				schedule: input.cronPattern.trim(),
-				timezone: input.timezone?.trim() || undefined,
-			};
+	} as CronSpec;
 }
 
 function hubScheduleHash(input: HubScheduleCreateInput): string {
@@ -460,27 +430,9 @@ function cronSpecRecordToHubScheduleInput(
 	delete metadata.__hubScheduleCreatedBy;
 	delete metadata.__hubScheduleCwd;
 	delete metadata.__hubRuntimeOptions;
-	const cronPattern =
-		updates.cronPattern ??
-		(current.triggerKind === "one_off"
-			? ONE_TIME_SCHEDULE_CRON_PATTERN
-			: (current.scheduleExpr ?? ""));
-	const nextMetadata = {
-		...metadata,
-		...(updates.metadata ?? {}),
-	};
-	if (cronPattern.trim() !== ONE_TIME_SCHEDULE_CRON_PATTERN) {
-		delete nextMetadata[ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY];
-	}
 	return {
 		name: updates.name ?? current.title,
-		cronPattern,
-		timezone:
-			updates.timezone === null
-				? undefined
-				: updates.timezone !== undefined
-					? updates.timezone
-					: current.timezone,
+		cronPattern: updates.cronPattern ?? current.scheduleExpr ?? "",
 		prompt: updates.prompt ?? current.prompt ?? "",
 		workspaceRoot: updates.workspaceRoot ?? current.workspaceRoot ?? "",
 		cwd,
@@ -498,9 +450,9 @@ function cronSpecRecordToHubScheduleInput(
 			updates.mode ??
 			(current.mode === "plan"
 				? "plan"
-				: current.mode === "act"
-					? "act"
-					: "yolo"),
+				: current.mode === "yolo"
+					? "yolo"
+					: "act"),
 		systemPrompt:
 			updates.systemPrompt === null
 				? undefined
@@ -524,9 +476,11 @@ function cronSpecRecordToHubScheduleInput(
 		tags: updates.tags ?? current.tags,
 		runtimeOptions,
 		metadata:
-			Object.keys(nextMetadata).length > 0
-				? (nextMetadata as HubScheduleCreateInput["metadata"])
-				: undefined,
+			updates.metadata !== undefined
+				? updates.metadata
+				: Object.keys(metadata).length > 0
+					? (metadata as HubScheduleCreateInput["metadata"])
+					: undefined,
 	};
 }
 
@@ -653,16 +607,15 @@ export class SqliteCronStore {
 
 	public createHubSchedule(input: HubScheduleCreateInput): CronSpecRecord {
 		const scheduleId = `sched_${randomUUID()}`;
-		const spec = hubScheduleInputToCronSpec(input);
 		const result = this.upsertSpec({
 			externalId: scheduleId,
 			sourcePath: hubScheduleSourcePath(scheduleId),
-			triggerKind: spec.triggerKind,
+			triggerKind: "schedule",
 			sourceHash: hubScheduleHash(input),
 			parseStatus: "valid",
-			spec,
+			spec: hubScheduleInputToCronSpec(input),
 		});
-		this.initializeHubScheduleNextRun(result.record.specId, input);
+		this.initializeScheduleNextRun(result.record.specId);
 		const record = this.getSpec(result.record.specId);
 		if (!record) throw new Error("failed to create hub schedule");
 		return record;
@@ -680,26 +633,17 @@ export class SqliteCronStore {
 	}
 
 	public listHubSchedules(
-		options: {
-			enabled?: boolean;
-			limit?: number;
-			tags?: string[];
-			workspaceRoot?: string;
-		} = {},
+		options: { enabled?: boolean; limit?: number; tags?: string[] } = {},
 	): CronSpecRecord[] {
 		const where = [
 			"source = 'hub-schedule'",
-			"trigger_kind IN ('schedule', 'one_off')",
+			"trigger_kind = 'schedule'",
 			"removed = 0",
 		];
 		const params: unknown[] = [];
 		if (typeof options.enabled === "boolean") {
 			where.push("enabled = ?");
 			params.push(options.enabled ? 1 : 0);
-		}
-		if (options.workspaceRoot?.trim()) {
-			where.push("workspace_root = ?");
-			params.push(options.workspaceRoot.trim());
 		}
 		if (options.tags && options.tags.length > 0) {
 			for (const tag of options.tags) {
@@ -722,65 +666,21 @@ export class SqliteCronStore {
 		scheduleId: string,
 		updates: HubScheduleUpdateInput,
 	): CronSpecRecord | undefined {
-		this.db.exec("BEGIN IMMEDIATE;");
-		try {
-			const current = this.getHubSchedule(scheduleId);
-			if (!current) {
-				this.db.exec("COMMIT;");
-				return undefined;
-			}
-			const input = cronSpecRecordToHubScheduleInput(current, updates);
-			const spec = hubScheduleInputToCronSpec(input);
-			const result = this.upsertSpec({
-				externalId: scheduleId,
-				sourcePath: current.sourcePath,
-				triggerKind: spec.triggerKind,
-				sourceHash: hubScheduleHash(input),
-				parseStatus: "valid",
-				spec,
-			});
-			const enabledChanged = current.enabled !== result.record.enabled;
-			const involvesOneOff =
-				current.triggerKind === "one_off" ||
-				result.record.triggerKind === "one_off";
-			if (involvesOneOff && (result.revisionChanged || enabledChanged)) {
-				this.cancelQueuedOneOffRunsForSpec(result.record.specId);
-			}
-			if (
-				updates.cronPattern !== undefined ||
-				updates.timezone !== undefined ||
-				updates.metadata?.[ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY] !==
-					undefined ||
-				updates.enabled !== undefined
-			) {
-				this.initializeHubScheduleNextRun(result.record.specId, input);
-			}
-			const updated = this.getSpec(result.record.specId);
-			this.db.exec("COMMIT;");
-			return updated;
-		} catch (error) {
-			this.db.exec("ROLLBACK;");
-			throw error;
+		const current = this.getHubSchedule(scheduleId);
+		if (!current) return undefined;
+		const input = cronSpecRecordToHubScheduleInput(current, updates);
+		const result = this.upsertSpec({
+			externalId: scheduleId,
+			sourcePath: current.sourcePath,
+			triggerKind: "schedule",
+			sourceHash: hubScheduleHash(input),
+			parseStatus: "valid",
+			spec: hubScheduleInputToCronSpec(input),
+		});
+		if (updates.cronPattern !== undefined || updates.enabled !== undefined) {
+			this.initializeScheduleNextRun(result.record.specId);
 		}
-	}
-
-	private initializeHubScheduleNextRun(
-		specId: string,
-		input: HubScheduleCreateInput,
-	): void {
-		if (input.enabled === false) {
-			this.updateSpecNextRunAt(specId, undefined);
-			return;
-		}
-		if (input.cronPattern.trim() === ONE_TIME_SCHEDULE_CRON_PATTERN) {
-			const runAt = input.metadata?.[ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY];
-			if (typeof runAt !== "number" || !Number.isFinite(runAt)) {
-				throw new Error("runAt metadata is required for one-time schedules");
-			}
-			this.updateSpecNextRunAt(specId, new Date(runAt).toISOString());
-			return;
-		}
-		this.initializeScheduleNextRun(specId);
+		return this.getSpec(result.record.specId);
 	}
 
 	public deleteHubSchedule(scheduleId: string): boolean {
@@ -804,82 +704,12 @@ export class SqliteCronStore {
 		) {
 			return undefined;
 		}
-		if (spec.triggerKind === "one_off" && triggerKind === "manual") {
-			return this.consumeOneOffWithManualRun(spec);
-		}
 		return this.enqueueRun({
 			specId: spec.specId,
 			specRevision: spec.revision,
 			triggerKind,
 			scheduledFor: nowIso(),
 		});
-	}
-
-	private consumeOneOffWithManualRun(
-		spec: CronSpecRecord,
-	): CronRunRecord | undefined {
-		this.db.exec("BEGIN IMMEDIATE;");
-		try {
-			const current = this.getSpec(spec.specId);
-			if (
-				!current ||
-				current.revision !== spec.revision ||
-				current.triggerKind !== "one_off" ||
-				!current.enabled ||
-				current.removed ||
-				current.parseStatus !== "valid"
-			) {
-				this.db.exec("COMMIT;");
-				return undefined;
-			}
-			const now = nowIso();
-			this.db
-				.prepare(
-					`UPDATE cron_specs SET next_run_at = NULL, updated_at = ?
-						WHERE spec_id = ? AND revision = ?`,
-				)
-				.run(now, current.specId, current.revision);
-
-			const existingRow = this.db
-				.prepare(
-					`SELECT * FROM cron_runs
-						WHERE spec_id = ? AND spec_revision = ?
-							AND trigger_kind IN ('one_off', 'manual')
-							AND status != 'cancelled'
-						ORDER BY CASE trigger_kind WHEN 'manual' THEN 0 ELSE 1 END,
-							created_at ASC
-						LIMIT 1`,
-				)
-				.get(current.specId, current.revision);
-			const existing = existingRow ? runToRecord(existingRow) : undefined;
-			if (existing && existing.status !== "queued") {
-				this.db.exec("COMMIT;");
-				return existing;
-			}
-			if (existing?.triggerKind === "manual") {
-				this.db.exec("COMMIT;");
-				return existing;
-			}
-
-			this.db
-				.prepare(
-					`UPDATE cron_runs SET status = 'cancelled', updated_at = ?
-						WHERE spec_id = ? AND spec_revision = ?
-							AND trigger_kind = 'one_off' AND status = 'queued'`,
-				)
-				.run(now, current.specId, current.revision);
-			const run = this.enqueueRun({
-				specId: current.specId,
-				specRevision: current.revision,
-				triggerKind: "manual",
-				scheduledFor: now,
-			});
-			this.db.exec("COMMIT;");
-			return run;
-		} catch (error) {
-			this.db.exec("ROLLBACK;");
-			throw error;
-		}
 	}
 
 	public listEventSpecsForType(eventType: string): CronSpecRecord[] {
@@ -903,7 +733,6 @@ export class SqliteCronStore {
 
 		const spec = input.spec;
 		const nextValues: Record<string, unknown> = {
-			triggerKind: spec?.triggerKind ?? input.triggerKind,
 			title:
 				spec?.title ??
 				existing?.title ??
@@ -935,7 +764,6 @@ export class SqliteCronStore {
 			notesDirectory: spec?.notesDirectory,
 			extensions: spec?.extensions,
 			source: spec?.source,
-			metadata: spec?.metadata,
 		};
 
 		const enabled = input.parseStatus === "valid" && (spec?.enabled ?? true);
@@ -1483,12 +1311,12 @@ export class SqliteCronStore {
 		return this.getRun(options.runId);
 	}
 
-	public hasConsumedOneOffRevision(specId: string, revision: number): boolean {
+	public hasOneOffRunForRevision(specId: string, revision: number): boolean {
 		const row = this.db
 			.prepare(
 				`SELECT run_id FROM cron_runs
 					WHERE spec_id = ? AND spec_revision = ?
-						AND trigger_kind IN ('one_off', 'manual')
+						AND trigger_kind = 'one_off'
 					LIMIT 1`,
 			)
 			.get(specId, revision);
@@ -1530,18 +1358,6 @@ export class SqliteCronStore {
 				.prepare(
 					`UPDATE cron_runs SET status = 'cancelled', updated_at = ?
 						WHERE spec_id = ? AND status = 'queued'`,
-				)
-				.run(nowIso(), specId).changes ?? 0;
-		return changes;
-	}
-
-	private cancelQueuedOneOffRunsForSpec(specId: string): number {
-		const changes =
-			this.db
-				.prepare(
-					`UPDATE cron_runs SET status = 'cancelled', updated_at = ?
-						WHERE spec_id = ? AND trigger_kind = 'one_off'
-							AND status = 'queued'`,
 				)
 				.run(nowIso(), specId).changes ?? 0;
 		return changes;

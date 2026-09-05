@@ -1,19 +1,31 @@
-import { describe, it } from "bun:test"
+import { describe, it } from "mocha"
 import "should"
-import type { ApiHandlerModel } from "@core/api"
+import type { ApiHandlerModel, ApiProviderInfo } from "@core/api"
+import { isClaudeAdaptiveThinkingModel } from "@shared/utils/reasoning-support"
 import {
 	GEMINI_FLASH_MAX_OUTPUT_TOKENS,
 	isClaude4PlusModelFamily,
 	isGeminiFlashModel,
 	isGLMModelFamily,
+	isGPT51PlusModel,
 	isGPT5ModelFamily,
 	isGptOssModelFamily,
+	isNativeToolCallingConfig,
+	isNextGenModelFamily,
+	isPoolsideModelFamily,
+	modelRequiresNativeToolCalls,
 	modelDoesntSupportWebp,
 	shouldSkipReasoningForModel,
+	supportsReasoningEffortForModel,
 } from "../model-utils"
 
 // Minimal helper — modelDoesntSupportWebp only reads apiHandlerModel.id
 const m = (id: string): ApiHandlerModel => ({ id, info: { supportsPromptCache: false } })
+const providerInfo = (providerId: string, modelId: string): ApiProviderInfo => ({
+	providerId,
+	model: m(modelId),
+	mode: "act",
+})
 
 describe("shouldSkipReasoningForModel", () => {
 	it("should return true for grok-4 models", () => {
@@ -29,6 +41,7 @@ describe("shouldSkipReasoningForModel", () => {
 		shouldSkipReasoningForModel("claude-3-sonnet").should.equal(false)
 		shouldSkipReasoningForModel("gpt-4").should.equal(false)
 		shouldSkipReasoningForModel("gemini-pro").should.equal(false)
+		shouldSkipReasoningForModel("zai/glm-5.2").should.equal(false)
 	})
 
 	it("should return false for undefined or empty model IDs", () => {
@@ -39,6 +52,31 @@ describe("shouldSkipReasoningForModel", () => {
 	it("should be case sensitive", () => {
 		shouldSkipReasoningForModel("GROK-4").should.equal(false)
 		shouldSkipReasoningForModel("Grok-4").should.equal(false)
+	})
+})
+
+describe("supportsReasoningEffortForModel", () => {
+	it("should return true for OpenRouter/Cline model families that use reasoning effort", () => {
+		for (const modelId of [
+			"zai/glm-5.2",
+			"z-ai/glm-5.2",
+			"cline-pass/glm-5.2",
+			"moonshotai/kimi-k2-thinking",
+			"kimi-k2-thinking",
+			"accounts/fireworks/models/kimi-k2p6",
+			"accounts/fireworks/models/minimax-m3",
+			"minimax/MiniMax-M2.7",
+			"provider/mimo-vl",
+			"qwen/qwen3.7-max",
+			"deepseek/deepseek-r1",
+		]) {
+			supportsReasoningEffortForModel(modelId).should.equal(true)
+		}
+	})
+
+	it("should return false for undefined and unrelated model IDs", () => {
+		supportsReasoningEffortForModel(undefined).should.equal(false)
+		supportsReasoningEffortForModel("anthropic/claude-sonnet-4.5").should.equal(false)
 	})
 })
 
@@ -66,6 +104,18 @@ describe("isClaude4PlusModelFamily", () => {
 		isClaude4PlusModelFamily("gpt-4").should.equal(false)
 		isClaude4PlusModelFamily("gemini-pro").should.equal(false)
 		isClaude4PlusModelFamily("llama-3").should.equal(false)
+	})
+})
+
+describe("isClaudeAdaptiveThinkingModel", () => {
+	it("should return true for Claude Sonnet 5 IDs across provider naming variants", () => {
+		for (const modelId of [
+			"claude-sonnet-5",
+			"anthropic/claude-sonnet-5:1m",
+			"anthropic/claude-5-sonnet",
+		]) {
+			isClaudeAdaptiveThinkingModel(modelId).should.equal(true)
+		}
 	})
 })
 
@@ -97,6 +147,14 @@ describe("isGPT5ModelFamily", () => {
 	})
 })
 
+describe("isGPT51PlusModel", () => {
+	it("should recognize GPT-5.6 model ID variants", () => {
+		isGPT51PlusModel("gpt-5.6-sol").should.equal(true)
+		isGPT51PlusModel("gpt-5-6-terra").should.equal(true)
+		isGPT51PlusModel("openai/gpt-5.6-luna").should.equal(true)
+	})
+})
+
 describe("isGptOssModelFamily", () => {
 	it("should return true for gpt-oss model IDs", () => {
 		isGptOssModelFamily("gpt-oss-120b").should.equal(true)
@@ -113,6 +171,52 @@ describe("isGptOssModelFamily", () => {
 		isGptOssModelFamily("gpt-5").should.equal(false)
 		isGptOssModelFamily("gpt-4o").should.equal(false)
 		isGptOssModelFamily("claude-sonnet-4").should.equal(false)
+	})
+})
+
+describe("isPoolsideModelFamily", () => {
+	it("should return true for Laguna model IDs", () => {
+		isPoolsideModelFamily("poolside/laguna-m.1").should.equal(true)
+		isPoolsideModelFamily("laguna-enterprise").should.equal(true)
+		isPoolsideModelFamily("LAGUNA").should.equal(true)
+	})
+
+	it("should return false for non-Poolside model IDs", () => {
+		isPoolsideModelFamily("gpt-5").should.equal(false)
+		isPoolsideModelFamily("deepseek-chat").should.equal(false)
+		isPoolsideModelFamily("claude-sonnet-4").should.equal(false)
+	})
+
+	it("should qualify Laguna models for next-gen and native tool calling paths", () => {
+		isNextGenModelFamily("poolside/laguna-m.1").should.equal(true)
+		isNativeToolCallingConfig(providerInfo("openai-compatible", "poolside/laguna-m.1"), true).should.equal(true)
+		isNativeToolCallingConfig(providerInfo("openai-compatible", "poolside/laguna-m.1"), false).should.equal(false)
+	})
+
+	it("should qualify Kimi K2 and K3 models for next-gen and native tool calling paths", () => {
+		for (const modelId of ["moonshotai/kimi-k2", "kimi-k2-thinking", "moonshotai/kimi-k3", "kimi-k3"]) {
+			isNextGenModelFamily(modelId).should.equal(true)
+			isNativeToolCallingConfig(providerInfo("openrouter", modelId), true).should.equal(true)
+			isNativeToolCallingConfig(providerInfo("cline", modelId), true).should.equal(true)
+		}
+	})
+})
+
+describe("modelRequiresNativeToolCalls", () => {
+	it("should force native tools for a Bedrock profile whose base model requires them", () => {
+		const info = { supportsPromptCache: false, requiresNativeToolCalls: true }
+		modelRequiresNativeToolCalls(info).should.equal(true)
+		isNativeToolCallingConfig(
+			{
+				providerId: "bedrock",
+				model: {
+					id: "arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:application-inference-profile/test-profile",
+					info,
+				},
+				mode: "act",
+			},
+			false,
+		).should.equal(true)
 	})
 })
 

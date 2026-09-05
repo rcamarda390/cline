@@ -1,7 +1,7 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTheme } from "../hooks/use-theme";
+import { palette } from "../palette";
 import type { RuntimeToolInteraction } from "../types";
 import { formatApprovalParams } from "./dialogs/tool-approval";
 
@@ -152,7 +152,7 @@ function Shell(
 			gap={1}
 		>
 			<box flexDirection="row" gap={1}>
-				<text fg={props.accent}>{props.title}</text>
+				<text fg={palette.act}>{props.title}</text>
 			</box>
 			{props.children}
 		</box>
@@ -165,18 +165,17 @@ function ChoiceButton(props: {
 	selectedFg?: string;
 	onPress: () => void;
 }) {
-	const theme = useTheme();
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: OpenTUI boxes handle terminal mouse input.
 		<box
 			paddingX={1}
-			backgroundColor={props.selected ? theme.selection : undefined}
+			backgroundColor={props.selected ? palette.selection : undefined}
 			onMouseDown={props.onPress}
 		>
 			<text
 				fg={
 					props.selected
-						? (props.selectedFg ?? theme.textOnSelection)
+						? (props.selectedFg ?? palette.textOnSelection)
 						: undefined
 				}
 			>
@@ -191,7 +190,6 @@ function ToolApprovalResponse(
 		interaction: Extract<RuntimeToolInteraction, { kind: "tool_approval" }>;
 	},
 ) {
-	const theme = useTheme();
 	const [selected, setSelected] = useState<"approve" | "deny">("approve");
 	const selectedRef = useRef(selected);
 	selectedRef.current = selected;
@@ -233,7 +231,7 @@ function ToolApprovalResponse(
 			inputForeground={props.inputForeground}
 		>
 			<box flexDirection="column" gap={1}>
-				<text fg={theme.accents.plan}>Approve tool call?</text>
+				<text fg="yellow">Approve tool call?</text>
 				<text fg={props.accent} selectable>
 					{request.toolName}
 				</text>
@@ -265,7 +263,6 @@ function AskQuestionResponse(
 	},
 ) {
 	const { interaction } = props;
-	const theme = useTheme();
 	const { height, width } = useTerminalDimensions();
 	const [selected, setSelected] = useState(0);
 	const [customValue, setCustomValue] = useState("");
@@ -442,11 +439,13 @@ function AskQuestionResponse(
 									gap={1}
 									flexShrink={0}
 									width="100%"
-									backgroundColor={optionSelected ? theme.selection : undefined}
+									backgroundColor={
+										optionSelected ? palette.selection : undefined
+									}
 									onMouseDown={() => resolveAnswer(option)}
 								>
 									<text
-										fg={optionSelected ? theme.textOnSelection : "gray"}
+										fg={optionSelected ? palette.textOnSelection : "gray"}
 										flexShrink={0}
 									>
 										{optionSelected ? ">" : " "}
@@ -454,7 +453,7 @@ function AskQuestionResponse(
 									<text
 										fg={
 											optionSelected
-												? theme.textOnSelection
+												? palette.textOnSelection
 												: props.inputForeground
 										}
 										flexGrow={1}
@@ -473,17 +472,17 @@ function AskQuestionResponse(
 							gap={1}
 							flexShrink={0}
 							width="100%"
-							backgroundColor={isTyping ? theme.selection : undefined}
+							backgroundColor={isTyping ? palette.selection : undefined}
 							onMouseDown={() => selectIndex(customIndex)}
 						>
 							<text
-								fg={isTyping ? theme.textOnSelection : "gray"}
+								fg={isTyping ? palette.textOnSelection : "gray"}
 								flexShrink={0}
 							>
 								{isTyping ? ">" : " "}
 							</text>
 							{isTyping ? (
-								<text fg={theme.textOnSelection} flexGrow={1} flexShrink={1}>
+								<text fg={palette.textOnSelection} flexGrow={1} flexShrink={1}>
 									{customText}
 								</text>
 							) : (

@@ -18,7 +18,6 @@ import styled from "styled-components"
 import PopupModalContainer from "@/components/common/PopupModalContainer"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import useRemoteConfigSettings from "@/hooks/useRemoteConfigSettings"
 import { FileServiceClient } from "@/services/grpc-client"
 import { isMacOSOrLinux } from "@/utils/platformUtils"
 import HookRow from "./HookRow"
@@ -35,6 +34,11 @@ const ClineRulesToggleModal: React.FC = () => {
 		localAgentsRulesToggles = {},
 		localWorkflowToggles = {},
 		globalWorkflowToggles = {},
+		globalSkillsToggles = {},
+		localSkillsToggles = {},
+		remoteRulesToggles = {},
+		remoteWorkflowToggles = {},
+		remoteConfigSettings = {},
 		hooksEnabled,
 		setGlobalClineRulesToggles,
 		setLocalClineRulesToggles,
@@ -46,6 +50,7 @@ const ClineRulesToggleModal: React.FC = () => {
 		setGlobalSkillsToggles,
 		setLocalSkillsToggles,
 		setRemoteRulesToggles,
+		setRemoteWorkflowToggles,
 	} = useExtensionState()
 	const [globalHooks, setGlobalHooks] = useState<Array<{ name: string; enabled: boolean; absolutePath: string }>>([])
 	const [workspaceHooks, setWorkspaceHooks] = useState<
@@ -216,17 +221,13 @@ const ClineRulesToggleModal: React.FC = () => {
 		.map(([path, enabled]): [string, boolean] => [path, enabled as boolean])
 		.sort(([a], [b]) => a.localeCompare(b))
 
-	const {
-		settings: remoteConfigSettings,
-		isLoading: isRemoteConfigLoading,
-		error: remoteConfigError,
-	} = useRemoteConfigSettings(isVisible)
-	const remoteRules = remoteConfigSettings.filter((s) => s.type === "rule")
-	const remoteWorkflows = remoteConfigSettings.filter((s) => s.type === "workflow")
-	const remoteSkills = remoteConfigSettings.filter((s) => s.type === "skill")
-	const hasRemoteRules = remoteRules.length > 0
-	const hasRemoteWorkflows = remoteWorkflows.length > 0
-	const hasRemoteSkills = remoteSkills.length > 0
+	// Get remote rules and workflows from remote config
+	const remoteGlobalRules = remoteConfigSettings.remoteGlobalRules || []
+	const remoteGlobalWorkflows = remoteConfigSettings.remoteGlobalWorkflows || []
+
+	// Check if we have any remote rules or workflows
+	const hasRemoteRules = remoteGlobalRules.length > 0
+	const hasRemoteWorkflows = remoteGlobalWorkflows.length > 0
 
 	// Handle toggle rule using gRPC
 	const toggleRule = (isGlobal: boolean, rulePath: string, enabled: boolean) => {
@@ -306,7 +307,24 @@ const ClineRulesToggleModal: React.FC = () => {
 			})
 	}
 
-	// Handle toggle workflow using gRPC
+	// Toggle hook handler
+	const toggleHook = (isGlobal: boolean, hookName: string, enabled: boolean, workspaceName?: string) => {
+		FileServiceClient.toggleHook({
+			metadata: {} as any,
+			hookName,
+			isGlobal,
+			enabled,
+			workspaceName,
+		})
+			.then((response) => {
+				setGlobalHooks(response.hooksToggles?.globalHooks || [])
+				setWorkspaceHooks(response.hooksToggles?.workspaceHooks || [])
+			})
+			.catch((error) => {
+				console.error("Error toggling hook:", error)
+			})
+	}
+
 	const toggleWorkflow = (isGlobal: boolean, workflowPath: string, enabled: boolean) => {
 		FileServiceClient.toggleWorkflow(
 			ToggleWorkflowRequest.create({
@@ -329,21 +347,42 @@ const ClineRulesToggleModal: React.FC = () => {
 			})
 	}
 
-	// Toggle hook handler
-	const toggleHook = (isGlobal: boolean, hookName: string, enabled: boolean, workspaceName?: string) => {
-		FileServiceClient.toggleHook({
-			metadata: {} as any,
-			hookName,
-			isGlobal,
-			enabled,
-			workspaceName,
-		})
+	// Handle toggle for remote rules
+	const toggleRemoteRule = (ruleName: string, enabled: boolean) => {
+		FileServiceClient.toggleClineRule(
+			ToggleClineRuleRequest.create({
+				scope: RuleScope.REMOTE,
+				rulePath: ruleName,
+				enabled,
+			}),
+		)
 			.then((response) => {
-				setGlobalHooks(response.hooksToggles?.globalHooks || [])
-				setWorkspaceHooks(response.hooksToggles?.workspaceHooks || [])
+				// Update the local state with the response
+				if (response.remoteRulesToggles?.toggles) {
+					setRemoteRulesToggles(response.remoteRulesToggles.toggles)
+				}
 			})
 			.catch((error) => {
-				console.error("Error toggling hook:", error)
+				console.error("Error toggling remote rule:", error)
+			})
+	}
+
+	// Handle toggle for remote workflows
+	const toggleRemoteWorkflow = (workflowName: string, enabled: boolean) => {
+		FileServiceClient.toggleWorkflow(
+			ToggleWorkflowRequest.create({
+				workflowPath: workflowName,
+				enabled,
+				scope: RuleScope.REMOTE,
+			}),
+		)
+			.then((response) => {
+				if (response.toggles) {
+					setRemoteWorkflowToggles(response.toggles)
+				}
+			})
+			.catch((error) => {
+				console.error("Error toggling remote workflow:", error)
 			})
 	}
 
@@ -398,11 +437,11 @@ const ClineRulesToggleModal: React.FC = () => {
 		<div className="inline-flex min-w-0 max-w-full items-center" ref={modalRef}>
 			<div className="inline-flex w-full items-center" ref={buttonRef}>
 				<Tooltip>
-					{!isVisible && <TooltipContent>Customize</TooltipContent>}
+					{!isVisible && <TooltipContent>Manage Cline Rules & Workflows</TooltipContent>}
 					<TooltipTrigger>
 						<VSCodeButton
 							appearance="icon"
-							aria-label={isVisible ? "Hide Customize" : "Show Customize"}
+							aria-label={isVisible ? "Hide Cline Rules & Workflows" : "Show Cline Rules & Workflows"}
 							className="p-0 m-0 flex items-center"
 							onClick={() => setIsVisible(!isVisible)}>
 							<i className="codicon codicon-law" style={{ fontSize: "12.5px" }} />
@@ -433,6 +472,9 @@ const ClineRulesToggleModal: React.FC = () => {
 								<TabButton isActive={currentView === "rules"} onClick={() => setCurrentView("rules")}>
 									Rules
 								</TabButton>
+								<TabButton isActive={currentView === "workflows"} onClick={() => setCurrentView("workflows")}>
+									Workflows
+								</TabButton>
 								{hooksEnabled && (
 									<TabButton isActive={currentView === "hooks"} onClick={() => setCurrentView("hooks")}>
 										Hooks
@@ -441,24 +483,17 @@ const ClineRulesToggleModal: React.FC = () => {
 								<TabButton isActive={currentView === "skills"} onClick={() => setCurrentView("skills")}>
 									Skills
 								</TabButton>
-								<TabButton isActive={currentView === "workflows"} onClick={() => setCurrentView("workflows")}>
-									Workflows
-								</TabButton>
 							</div>
 						</div>
 
 						{/* Remote config banner */}
-						{(currentView === "rules" && hasRemoteRules) ||
-						(currentView === "workflows" && hasRemoteWorkflows) ||
-						(currentView === "skills" && hasRemoteSkills) ? (
+						{(currentView === "rules" && hasRemoteRules) || (currentView === "workflows" && hasRemoteWorkflows) ? (
 							<div className="flex items-center gap-2 px-3 py-3 mb-4 bg-vscode-textBlockQuote-background border-l-[3px] border-vscode-textLink-foreground">
 								<i className="codicon codicon-lock text-sm" />
 								<span className="text-base">
 									{currentView === "rules"
 										? "Your organization manages some rules"
-										: currentView === "workflows"
-											? "Your organization manages some workflows"
-											: "Your organization manages some skills"}
+										: "Your organization manages some workflows"}
 								</span>
 							</div>
 						) : null}
@@ -504,17 +539,6 @@ const ClineRulesToggleModal: React.FC = () => {
 
 					{/* Scrollable content area */}
 					<div className="flex-1 overflow-y-auto px-3 pb-3" style={{ minHeight: 0 }}>
-						{isRemoteConfigLoading && remoteConfigSettings.length === 0 && (
-							<div className="text-xs text-description mb-3" role="status">
-								Loading managed configuration…
-							</div>
-						)}
-						{remoteConfigError && (
-							<div className="text-xs text-vscode-errorForeground mb-3" role="alert">
-								Could not refresh managed configuration: {remoteConfigError}
-								{remoteConfigSettings.length > 0 ? " Showing the last loaded configuration." : ""}
-							</div>
-						)}
 						{currentView === "rules" ? (
 							<>
 								{/* Remote Rules Section */}
@@ -522,18 +546,18 @@ const ClineRulesToggleModal: React.FC = () => {
 									<div className="mb-3">
 										<div className="text-sm font-normal mb-2">Enterprise Rules</div>
 										<div className="flex flex-col gap-0">
-											{remoteRules.map((rule) => {
-												const enabled = rule.locked || rule.enabled
+											{remoteGlobalRules.map((rule) => {
+												const enabled = rule.alwaysEnabled || remoteRulesToggles[rule.name] === true
 												return (
 													<RuleRow
-														alwaysEnabled={rule.locked}
+														alwaysEnabled={rule.alwaysEnabled}
 														enabled={enabled}
 														isGlobal={false}
 														isRemote={true}
 														key={rule.name}
 														rulePath={rule.name}
 														ruleType="cline"
-														toggleRule={(_path, enabled) => rule.toggle(enabled)}
+														toggleRule={toggleRemoteRule}
 													/>
 												)
 											})}
@@ -601,41 +625,27 @@ const ClineRulesToggleModal: React.FC = () => {
 							</>
 						) : currentView === "workflows" ? (
 							<>
-								{/* Deprecation warning banner */}
-								<div className="flex items-center gap-2 px-3 py-3 mb-4 bg-vscode-inputValidation-warningBackground border-l-[3px] border-vscode-inputValidation-warningBorder">
-									<i className="codicon codicon-warning text-sm" />
-									<span className="text-base">
-										Workflows are being deprecated. Use skills instead.{" "}
-										<VSCodeLink
-											href="https://docs.cline.bot/customization/skills"
-											style={{ display: "inline", fontSize: "inherit" }}>
-											Learn more
-										</VSCodeLink>
-									</span>
-								</div>
-
-								{/* Enterprise Workflows Section (remote) */}
+								{/* Remote Workflows Section */}
 								{hasRemoteWorkflows && (
 									<div className="mb-3">
 										<div className="text-sm font-normal mb-2">Enterprise Workflows</div>
 										<div className="flex flex-col gap-0">
-											{remoteWorkflows
-												.sort((a, b) => a.name.localeCompare(b.name))
-												.map((workflow) => {
-													const enabled = workflow.locked || workflow.enabled
-													return (
-														<RuleRow
-															alwaysEnabled={workflow.locked}
-															enabled={enabled}
-															isGlobal={true}
-															isRemote={true}
-															key={workflow.name}
-															rulePath={workflow.name}
-															ruleType="workflow"
-															toggleRule={(_path, enabled) => workflow.toggle(enabled)}
-														/>
-													)
-												})}
+											{remoteGlobalWorkflows.map((workflow) => {
+												const enabled =
+													workflow.alwaysEnabled || remoteWorkflowToggles[workflow.name] === true
+												return (
+													<RuleRow
+														alwaysEnabled={workflow.alwaysEnabled}
+														enabled={enabled}
+														isGlobal={false}
+														isRemote={true}
+														key={workflow.name}
+														rulePath={workflow.name}
+														ruleType="workflow"
+														toggleRule={toggleRemoteWorkflow}
+													/>
+												)
+											})}
 										</div>
 									</div>
 								)}
@@ -643,6 +653,8 @@ const ClineRulesToggleModal: React.FC = () => {
 								{/* Global Workflows Section */}
 								<div className="mb-3">
 									<div className="text-sm font-normal mb-2">Global Workflows</div>
+
+									{/* File-based Global Workflows */}
 									<RulesToggleList
 										isGlobal={true}
 										listGap="small"
@@ -771,27 +783,25 @@ const ClineRulesToggleModal: React.FC = () => {
 						) : currentView === "skills" ? (
 							<>
 								{/* Enterprise Skills Section (remote) */}
-								{hasRemoteSkills && (
+								{globalSkills.some((s) => s.path.startsWith("remote:")) && (
 									<div className="mb-3">
 										<div className="text-sm font-normal mb-2">Enterprise Skills</div>
 										<div className="flex flex-col gap-0">
-											{remoteSkills
+											{globalSkills
+												.filter((s) => s.path.startsWith("remote:"))
 												.sort((a, b) => a.name.localeCompare(b.name))
-												.map((skill) => {
-													const enabled = skill.locked || skill.enabled
-													return (
-														<RuleRow
-															alwaysEnabled={skill.locked}
-															enabled={enabled}
-															isGlobal={true}
-															isRemote={true}
-															key={skill.name}
-															rulePath={skill.name}
-															ruleType="skill"
-															toggleRule={(_path, enabled) => skill.toggle(enabled)}
-														/>
-													)
-												})}
+												.map((skill) => (
+													<RuleRow
+														alwaysEnabled={skill.alwaysEnabled}
+														enabled={skill.enabled}
+														isGlobal={true}
+														isRemote={true}
+														key={skill.path}
+														rulePath={skill.name}
+														ruleType="skill"
+														toggleRule={(_path, enabled) => toggleSkill(true, skill.path, enabled)}
+													/>
+												))}
 										</div>
 									</div>
 								)}
@@ -845,11 +855,11 @@ const ClineRulesToggleModal: React.FC = () => {
 	)
 }
 
-const StyledTabButton = styled.button<{ $isActive: boolean }>`
+const StyledTabButton = styled.button<{ isActive: boolean }>`
 	background: none;
 	border: none;
-	border-bottom: 2px solid ${(props) => (props.$isActive ? "var(--vscode-foreground)" : "transparent")};
-	color: ${(props) => (props.$isActive ? "var(--vscode-foreground)" : "var(--vscode-descriptionForeground)")};
+	border-bottom: 2px solid ${(props) => (props.isActive ? "var(--vscode-foreground)" : "transparent")};
+	color: ${(props) => (props.isActive ? "var(--vscode-foreground)" : "var(--vscode-descriptionForeground)")};
 	padding: 8px 12px;
 	cursor: pointer;
 	font-size: 13px;
@@ -862,8 +872,16 @@ const StyledTabButton = styled.button<{ $isActive: boolean }>`
 	}
 `
 
-const TabButton = ({ children, isActive, onClick }: { children: React.ReactNode; isActive: boolean; onClick: () => void }) => (
-	<StyledTabButton $isActive={isActive} aria-pressed={isActive} onClick={onClick}>
+export const TabButton = ({
+	children,
+	isActive,
+	onClick,
+}: {
+	children: React.ReactNode
+	isActive: boolean
+	onClick: () => void
+}) => (
+	<StyledTabButton aria-pressed={isActive} isActive={isActive} onClick={onClick}>
 		{children}
 	</StyledTabButton>
 )

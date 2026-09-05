@@ -62,10 +62,7 @@ vi.mock("../commands/auth", async () => {
 	};
 });
 
-import {
-	buildConnectorStartRequest,
-	isReusableConnectorSession,
-} from "./session-runtime";
+import { buildConnectorStartRequest } from "./session-runtime";
 
 describe("buildConnectorStartRequest", () => {
 	beforeEach(() => {
@@ -104,7 +101,7 @@ describe("buildConnectorStartRequest", () => {
 		expect(request.apiKey).toBe("env-openrouter-key");
 		expect(request.model).toBe("anthropic/claude-sonnet-4.6");
 		expect(mockGetLastUsedProviderSettings).toHaveBeenCalledWith({
-			isClinePassEnabled: true,
+			isClinePassEnabled: false,
 		});
 	});
 
@@ -162,34 +159,5 @@ describe("buildConnectorStartRequest", () => {
 		expect(request.provider).toBe("cline-pass");
 		expect(request.apiKey).toBe("workos:resolved-token");
 		expect(request.model).toBe("cline-pass/glm-5.2");
-	});
-});
-
-describe("isReusableConnectorSession", () => {
-	it("rejects missing and terminal sessions", () => {
-		expect(isReusableConnectorSession(undefined)).toBe(false);
-		expect(isReusableConnectorSession({ sessionId: "" })).toBe(false);
-		expect(
-			isReusableConnectorSession({ sessionId: "s1", status: "completed" }),
-		).toBe(false);
-		expect(
-			isReusableConnectorSession({ sessionId: "s1", status: "failed" }),
-		).toBe(false);
-		expect(
-			isReusableConnectorSession({ sessionId: "s1", status: "aborted" }),
-		).toBe(false);
-		expect(
-			isReusableConnectorSession({ sessionId: "s1", status: "cancelled" }),
-		).toBe(false);
-	});
-
-	it("accepts live and status-omitted sessions", () => {
-		expect(
-			isReusableConnectorSession({ sessionId: "s1", status: "running" }),
-		).toBe(true);
-		expect(
-			isReusableConnectorSession({ sessionId: "s1", status: "idle" }),
-		).toBe(true);
-		expect(isReusableConnectorSession({ sessionId: "s1" })).toBe(true);
 	});
 });

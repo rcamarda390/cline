@@ -6,7 +6,7 @@ import ChatRow from "@/components/chat/ChatRow"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
 import type { MessageHandlers } from "../../types/chatTypes"
-import { findReasoningForApiReq, isToolGroup } from "../../utils/messageUtils"
+import { findReasoningForApiReq, isTextMessagePendingToolCall, isToolGroup } from "../../utils/messageUtils"
 import { ToolGroupRenderer } from "./ToolGroupRenderer"
 
 interface MessageRendererProps {
@@ -15,9 +15,8 @@ interface MessageRendererProps {
 	groupedMessages: (ClineMessage | ClineMessage[])[]
 	modifiedMessages: ClineMessage[]
 	expandedRows: Record<number, boolean>
-	onToggleExpand: (ts: number, options?: { preserveAutoScroll?: boolean }) => void
+	onToggleExpand: (ts: number) => void
 	onHeightChange: (isTaller: boolean) => void
-	onLastRowContentChange: () => void
 	onSetQuote: (quote: string | null) => void
 	inputValue: string
 	messageHandlers: MessageHandlers
@@ -28,7 +27,7 @@ interface MessageRendererProps {
  * Specialized component for rendering different message types
  * Handles browser sessions, regular messages, and checkpoint logic
  */
-const MessageRenderer: React.FC<MessageRendererProps> = ({
+export const MessageRenderer: React.FC<MessageRendererProps> = ({
 	index,
 	messageOrGroup,
 	groupedMessages,
@@ -36,7 +35,6 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 	expandedRows,
 	onToggleExpand,
 	onHeightChange,
-	onLastRowContentChange,
 	onSetQuote,
 	inputValue,
 	messageHandlers,
@@ -53,6 +51,15 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 			return findReasoningForApiReq(messageOrGroup.ts, modifiedMessages)
 		}
 		return { reasoning: undefined, responseStarted: false }
+	}, [messageOrGroup, modifiedMessages])
+
+	// Check if a text message is waiting for tool call completion
+	const isRequestInProgress = useMemo(() => {
+		if (!Array.isArray(messageOrGroup) && messageOrGroup.say === "text") {
+			// Use modifiedMessages so this stays consistent with the rendered list.
+			return isTextMessagePendingToolCall(messageOrGroup.ts, modifiedMessages)
+		}
+		return false
 	}, [messageOrGroup, modifiedMessages])
 
 	// Tool group (low-stakes tools grouped together)
@@ -101,13 +108,13 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
 				inputValue={inputValue}
 				isExpanded={expandedRows[messageOrGroup.ts] || false}
 				isLast={isLastMessage}
+				isRequestInProgress={isRequestInProgress}
 				key={messageOrGroup.ts}
 				lastModifiedMessage={modifiedMessages.at(-1)}
 				message={messageOrGroup}
 				mode={mode}
 				onCancelCommand={() => messageHandlers.executeButtonAction("cancel")}
 				onHeightChange={onHeightChange}
-				onLastRowContentChange={onLastRowContentChange}
 				onSetQuote={onSetQuote}
 				onToggleExpand={onToggleExpand}
 				reasoningContent={reasoningData.reasoning}
@@ -126,9 +133,8 @@ export const createMessageRenderer = (
 	groupedMessages: (ClineMessage | ClineMessage[])[],
 	modifiedMessages: ClineMessage[],
 	expandedRows: Record<number, boolean>,
-	onToggleExpand: (ts: number, options?: { preserveAutoScroll?: boolean }) => void,
+	onToggleExpand: (ts: number) => void,
 	onHeightChange: (isTaller: boolean) => void,
-	onLastRowContentChange: () => void,
 	onSetQuote: (quote: string | null) => void,
 	inputValue: string,
 	messageHandlers: MessageHandlers,
@@ -145,7 +151,6 @@ export const createMessageRenderer = (
 			messageOrGroup={messageOrGroup}
 			modifiedMessages={modifiedMessages}
 			onHeightChange={onHeightChange}
-			onLastRowContentChange={onLastRowContentChange}
 			onSetQuote={onSetQuote}
 			onToggleExpand={onToggleExpand}
 		/>

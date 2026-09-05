@@ -1,3 +1,4 @@
+import { getClineFreeModelSlug, isClineFreeModelId } from "@shared/cline/free-models"
 import { mentionRegex, mentionRegexGlobal } from "@shared/context-mentions"
 import { StringRequest } from "@shared/proto/cline/common"
 import { FileSearchRequest, FileSearchType, RelativePathsRequest } from "@shared/proto/cline/file"
@@ -14,11 +15,10 @@ import ContextMenu from "@/components/chat/ContextMenu"
 import { CHAT_CONSTANTS } from "@/components/chat/chat-view/constants"
 import SlashCommandMenu from "@/components/chat/SlashCommandMenu"
 import Thumbnails from "@/components/common/Thumbnails"
-import { getModeSpecificFields } from "@/components/settings/utils/providerUtils"
+import { getModeSpecificFields, normalizeApiConfiguration } from "@/components/settings/utils/providerUtils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { usePlatform } from "@/context/PlatformContext"
-import { useNormalizedApiConfiguration } from "@/hooks/useNormalizedApiConfiguration"
 import { cn } from "@/lib/utils"
 import { FileServiceClient, StateServiceClient } from "@/services/grpc-client"
 import {
@@ -43,7 +43,6 @@ import {
 	validateSlashCommand,
 } from "@/utils/slash-commands"
 import ClineRulesToggleModal from "../cline-rules/ClineRulesToggleModal"
-import { getModeToggleDraftAction } from "./chat-textarea-mode-toggle"
 import ServersToggleModal from "./ServersToggleModal"
 
 const { MAX_IMAGES_AND_FILES_PER_MESSAGE } = CHAT_CONSTANTS
@@ -260,7 +259,6 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 		const [fileSearchResults, setFileSearchResults] = useState<SearchResult[]>([])
 		const [searchLoading, setSearchLoading] = useState(false)
 		const [, metaKeyChar] = useMetaKeyDetection(platform)
-		const { selectedProvider, selectedModelId } = useNormalizedApiConfiguration(mode)
 
 		// Fetch git commits when Git is selected or when typing a hash
 		useEffect(() => {
@@ -587,11 +585,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 					event.preventDefault()
 
 					if (!sendingDisabled) {
-						// Note: don't set isTextAreaFocused to false here. The textarea keeps
-						// DOM focus after sending, and clearing the flag without an actual
-						// blur desyncs it permanently (programmatic .focus() on an
-						// already-focused element never re-fires onFocus), which hides the
-						// plan/act mode outline until a real blur/refocus cycle.
+						setIsTextAreaFocused(false)
 						onSend()
 					}
 				}
@@ -1026,57 +1020,25 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 		const onModeToggle = useCallback(() => {
 			void (async () => {
 				const convertedProtoMode = mode === "plan" ? PlanActMode.ACT : PlanActMode.PLAN
-				const submittedText = inputValue
-				const submittedImages = selectedImages
-				const submittedFiles = selectedFiles
 				const response = await StateServiceClient.togglePlanActModeProto(
 					TogglePlanActModeRequest.create({
 						mode: convertedProtoMode,
 						chatContent: {
-							message: submittedText.trim() ? submittedText : undefined,
-							images: submittedImages,
-							files: submittedFiles,
+							message: inputValue.trim() ? inputValue : undefined,
+							images: selectedImages,
+							files: selectedFiles,
 						},
 					}),
 				)
 				// Focus the textarea after mode toggle with slight delay
 				setTimeout(() => {
-					const consumedComposerContent = response.value === true
-					const currentText = textAreaRef.current?.value ?? ""
-					// Reconcile only the submitted draft: the rebuild can take a moment
-					// and the user may have typed new content in the meantime.
-					const draftAction = getModeToggleDraftAction({
-						consumed: consumedComposerContent,
-						currentText,
-						submittedText,
-					})
-
-					switch (draftAction) {
-						case "clear":
-							setInputValue("")
-							break
-						case "restore":
-							setInputValue(submittedText)
-							break
-						case "keep":
-							break
-					}
-
-					if (consumedComposerContent) {
-						setSelectedImages((current) => (current === submittedImages ? [] : current))
-						setSelectedFiles((current) => (current === submittedFiles ? [] : current))
-					} else {
-						if (submittedImages.length > 0) {
-							setSelectedImages((current) => (current.length === 0 ? submittedImages : current))
-						}
-						if (submittedFiles.length > 0) {
-							setSelectedFiles((current) => (current.length === 0 ? submittedFiles : current))
-						}
+					if (response.value) {
+						setInputValue("")
 					}
 					textAreaRef.current?.focus()
 				}, 100)
 			})()
-		}, [mode, inputValue, selectedImages, selectedFiles, setInputValue, setSelectedImages, setSelectedFiles])
+		}, [mode, inputValue, selectedImages, selectedFiles, setInputValue])
 
 		useShortcut(usePlatform().togglePlanActKeys, onModeToggle, { disableTextInputs: false }) // important that we don't disable the text input here
 
@@ -1127,6 +1089,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 
 		// Get model display name
 		const modelDisplayName = useMemo(() => {
+			const { selectedProvider, selectedModelId } = normalizeApiConfiguration(apiConfiguration, mode)
 			const {
 				vsCodeLmModelSelector,
 				togetherModelId,
@@ -1143,12 +1106,19 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			}
 			switch (selectedProvider) {
 				case "cline":
-					return `${selectedProvider}:${selectedModelId}`
+					// cline-free/ ids already carry their own namespace, so don't double
+					// up the provider prefix in the badge
+					return isClineFreeModelId(selectedModelId)
+						? `cline:${getClineFreeModelSlug(selectedModelId)} (free)`
+						: `${selectedProvider}:${selectedModelId}`
 				case "cline-pass":
 					// Free models selected on ClinePass go through Cline usage billing,
 					// so label them the same way as the cline provider
-					return selectedModelId.startsWith("cline-pass/")
-						? `${selectedProvider}:${selectedModelId.replace(/^cline-pass\//, "")}`
+					if (selectedModelId.startsWith("cline-pass/")) {
+						return `${selectedProvider}:${selectedModelId.replace(/^cline-pass\//, "")}`
+					}
+					return isClineFreeModelId(selectedModelId)
+						? `cline:${getClineFreeModelSlug(selectedModelId)} (free)`
 						: `cline:${selectedModelId}`
 				case "openai":
 					return `openai-compat:${selectedModelId}`
@@ -1171,7 +1141,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				default:
 					return `${selectedProvider}:${selectedModelId}`
 			}
-		}, [apiConfiguration, mode, selectedProvider, selectedModelId])
+		}, [apiConfiguration, mode])
 
 		// Function to show error message for unsupported files for drag and drop
 		const showUnsupportedFileErrorMessage = () => {
@@ -1585,6 +1555,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 								data-testid="send-button"
 								onClick={() => {
 									if (!sendingDisabled) {
+										setIsTextAreaFocused(false)
 										onSend()
 									}
 								}}
@@ -1673,7 +1644,6 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 											"pt-0.5 pb-px px-2 z-10 text-xs w-1/2 text-center bg-transparent",
 											mode === m.toLowerCase() ? "text-white" : "text-input-foreground",
 										)}
-										key={m}
 										onMouseLeave={() => setShownTooltipMode(null)}
 										onMouseOver={() => setShownTooltipMode(m.toLowerCase() === "plan" ? "plan" : "act")}
 										role="switch">

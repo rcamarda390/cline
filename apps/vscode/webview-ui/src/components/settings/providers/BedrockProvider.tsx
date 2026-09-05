@@ -1,4 +1,4 @@
-import { openAiModelInfoSafeDefaults } from "@shared/api"
+import { bedrockDefaultModelId, bedrockModels, CLAUDE_SONNET_1M_SUFFIX } from "@shared/api"
 import BedrockData from "@shared/providers/bedrock.json"
 import type { Mode } from "@shared/storage/types"
 import { isClaudeOpusAdaptiveThinkingModel, resolveClaudeOpusAdaptiveThinking } from "@shared/utils/reasoning-support"
@@ -15,16 +15,28 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import styled from "styled-components"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import { useProviderConfig } from "@/hooks/useProviderConfig"
-import { useProviderModelSelection } from "@/hooks/useProviderModelSelection"
-import { useProviderModels } from "@/hooks/useProviderModels"
-import { ApiKeyField } from "../common/ApiKeyField"
 import { DebouncedTextField } from "../common/DebouncedTextField"
 import { ModelInfoView } from "../common/ModelInfoView"
 import { DropdownContainer } from "../common/ModelSelector"
 import ReasoningEffortSelector from "../ReasoningEffortSelector"
-import { getSavedApiKeyMask, sanitizeMaskedApiKeyInput } from "../utils/apiKeyMasking"
-import { useProviderApiKeyField } from "../utils/useProviderApiKeyField"
+import ThinkingBudgetSlider from "../ThinkingBudgetSlider"
+import { getModeSpecificFields, normalizeApiConfiguration } from "../utils/providerUtils"
+import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
+
+export const SUPPORTED_BEDROCK_THINKING_MODELS = [
+	"anthropic.claude-sonnet-5",
+	`anthropic.claude-sonnet-5${CLAUDE_SONNET_1M_SUFFIX}`,
+	"anthropic.claude-sonnet-4-6",
+	`anthropic.claude-sonnet-4-6${CLAUDE_SONNET_1M_SUFFIX}`,
+	"anthropic.claude-3-7-sonnet-20250219-v1:0",
+	"anthropic.claude-sonnet-4-20250514-v1:0",
+	"anthropic.claude-sonnet-4-5-20250929-v1:0",
+	`anthropic.claude-sonnet-4-20250514-v1:0${CLAUDE_SONNET_1M_SUFFIX}`,
+	`anthropic.claude-sonnet-4-5-20250929-v1:0${CLAUDE_SONNET_1M_SUFFIX}`,
+	"anthropic.claude-opus-4-1-20250805-v1:0",
+	"anthropic.claude-opus-4-20250514-v1:0",
+	"anthropic.claude-haiku-4-5-20251001-v1:0",
+]
 
 const AWS_REGIONS = BedrockData.regions
 
@@ -39,80 +51,19 @@ interface BedrockProviderProps {
 
 export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: BedrockProviderProps) => {
 	const { apiConfiguration, remoteConfigSettings } = useExtensionState()
-	const { models: bedrockModels, defaultModelId: bedrockDefaultModelId } = useProviderModels("bedrock")
-	const { config, write, commitSelection } = useProviderConfig("bedrock")
-	const { selectedModelId, selectedModelInfo, commitModelSelection } = useProviderModelSelection("bedrock", currentMode, {
-		models: bedrockModels,
-		defaultModelId: bedrockDefaultModelId,
-		config,
-		commitSelection,
-		customModelInfo: (modelId) => ({
-			...(bedrockModels[config?.aws?.customModelBaseId ?? ""] ??
-				bedrockModels[bedrockDefaultModelId] ??
-				openAiModelInfoSafeDefaults),
-			name: modelId,
-		}),
-	})
-	const bedrockModelIds = useMemo(() => Object.keys(bedrockModels), [bedrockModels])
-	const bedrockFallbackModelId = bedrockDefaultModelId || bedrockModelIds[0] || ""
-	const customBaseModelId = config?.aws?.customModelBaseId || bedrockFallbackModelId
-	const isCustomModelSelected = Boolean(config?.aws?.customModelBaseId)
-	const customModelInputInitialValue = isCustomModelSelected && !bedrockModels[selectedModelId] ? selectedModelId : ""
+	const { handleFieldChange, handleModeFieldChange, handleModeFieldsChange } = useApiConfigurationHandlers()
+
+	const { selectedModelId, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode)
+	const modeFields = getModeSpecificFields(apiConfiguration, currentMode)
 	const isAdaptiveThinkingModel =
-		isClaudeOpusAdaptiveThinkingModel(selectedModelId) || isClaudeOpusAdaptiveThinkingModel(customBaseModelId)
-	const supportsGlobalInferenceProfile =
-		selectedModelInfo.supportsGlobalEndpoint ||
-		selectedModelId.startsWith("global.") ||
-		Boolean(bedrockModels[`global.${selectedModelId}`])
-	const modeFields =
-		currentMode === "plan"
-			? {
-					reasoningEffort: apiConfiguration?.planModeReasoningEffort,
-					thinkingBudgetTokens: apiConfiguration?.planModeThinkingBudgetTokens,
-				}
-			: {
-					reasoningEffort: apiConfiguration?.actModeReasoningEffort,
-					thinkingBudgetTokens: apiConfiguration?.actModeThinkingBudgetTokens,
-				}
+		isClaudeOpusAdaptiveThinkingModel(selectedModelId) ||
+		isClaudeOpusAdaptiveThinkingModel(modeFields.awsBedrockCustomModelBaseId)
 	const adaptiveThinkingDefaultEffort =
 		resolveClaudeOpusAdaptiveThinking(modeFields.reasoningEffort, modeFields.thinkingBudgetTokens).effort ?? "none"
-	const handleReasoningEffortChange = (effort: string) => {
-		void write({
-			reasoning: { enabled: effort !== "none", effort: effort !== "none" ? effort : undefined },
-		}).catch((err) => console.error("Failed to update Bedrock reasoning effort:", err))
-	}
-	const awsAuthentication =
-		config?.aws?.authentication === "iam"
-			? "credentials"
-			: config?.aws?.authentication === "api-key"
-				? "apikey"
-				: config?.aws?.authentication
-	const selectedAuthentication =
-		awsAuthentication ?? (config?.apiKeyLength ? "apikey" : config?.aws?.profile ? "profile" : "credentials")
-	const { savedApiKeyMask, handleApiKeyChange } = useProviderApiKeyField({
-		apiKeyLength: config?.apiKeyLength,
-		providerName: "Bedrock",
-		write,
-	})
-	const accessKeyMask = getSavedApiKeyMask(config?.aws?.accessKeyLength)
-	const secretKeyMask = getSavedApiKeyMask(config?.aws?.secretKeyLength)
-	const sessionTokenMask = getSavedApiKeyMask(config?.aws?.sessionTokenLength)
-	const handleAwsSecretChange = (
-		field: "accessKey" | "secretKey" | "sessionToken",
-		value: string,
-		savedMask: string,
-		label: string,
-	) => {
-		const sanitizedValue = sanitizeMaskedApiKeyInput(value, savedMask)
-		if (sanitizedValue === undefined) {
-			return
-		}
-		writeAws({ [field]: sanitizedValue }, label)
-	}
-	const [awsEndpointSelected, setAwsEndpointSelected] = useState(!!config?.aws?.endpoint)
+	const [awsEndpointSelected, setAwsEndpointSelected] = useState(!!apiConfiguration?.awsBedrockEndpoint)
 
 	// Region combobox state
-	const currentRegion = config?.region || ""
+	const currentRegion = apiConfiguration?.awsRegion || ""
 	const [searchTerm, setSearchTerm] = useState("")
 	const [isDropdownVisible, setIsDropdownVisible] = useState(false)
 	const [selectedIndex, setSelectedIndex] = useState(-1)
@@ -120,22 +71,10 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 	const itemRefs = useRef<(HTMLDivElement | null)[]>([])
 	const dropdownListRef = useRef<HTMLDivElement>(null)
 	const isSelectingRef = useRef(false)
-	const authInteractionRef = useRef(false)
 
 	useEffect(() => {
 		setSearchTerm(currentRegion)
 	}, [currentRegion])
-
-	useEffect(() => {
-		setAwsEndpointSelected(!!config?.aws?.endpoint)
-	}, [config?.aws?.endpoint])
-
-	const writeProviderConfig = (patch: Parameters<typeof write>[0], label: string) => {
-		void write(patch).catch((err) => console.error(`Failed to update Bedrock ${label}:`, err))
-	}
-	const writeAws = (aws: NonNullable<Parameters<typeof write>[0]["aws"]>, label: string) => {
-		writeProviderConfig({ aws }, label)
-	}
 
 	const fuse = useMemo(() => {
 		return new Fuse(AWS_REGIONS, {
@@ -157,7 +96,7 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 
 	const handleRegionChange = (newRegion: string) => {
 		setSearchTerm(newRegion)
-		writeProviderConfig({ region: newRegion }, "region")
+		handleFieldChange("awsRegion", newRegion)
 	}
 
 	const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -227,81 +166,62 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 		<div className="flex flex-col gap-1">
 			<VSCodeRadioGroup
 				onChange={(e) => {
-					if (!authInteractionRef.current) {
-						return
-					}
-					authInteractionRef.current = false
 					const value = (e.target as HTMLInputElement)?.value
-					if (value === selectedAuthentication) {
-						return
-					}
-					const authentication = value === "credentials" ? "iam" : value
-					writeProviderConfig({ aws: { authentication } }, "authentication")
+					handleFieldChange("awsAuthentication", value)
 				}}
-				onKeyDown={() => {
-					authInteractionRef.current = true
-				}}
-				onMouseDown={() => {
-					authInteractionRef.current = true
-				}}
-				value={selectedAuthentication}>
-				<VSCodeRadio checked={selectedAuthentication === "apikey"} value="apikey">
-					API Key
-				</VSCodeRadio>
-				<VSCodeRadio checked={selectedAuthentication === "profile"} value="profile">
-					AWS Profile
-				</VSCodeRadio>
-				<VSCodeRadio checked={selectedAuthentication === "credentials"} value="credentials">
-					AWS Credentials
-				</VSCodeRadio>
+				value={apiConfiguration?.awsAuthentication ?? (apiConfiguration?.awsProfile ? "profile" : "credentials")}>
+				<VSCodeRadio value="apikey">API Key</VSCodeRadio>
+				<VSCodeRadio value="profile">AWS Profile</VSCodeRadio>
+				<VSCodeRadio value="credentials">AWS Credentials</VSCodeRadio>
 			</VSCodeRadioGroup>
 
-			{selectedAuthentication === "profile" ? (
+			{(apiConfiguration?.awsAuthentication === undefined && apiConfiguration?.awsUseProfile) ||
+			apiConfiguration?.awsAuthentication === "profile" ? (
 				<DebouncedTextField
 					className="w-full"
-					initialValue={config?.aws?.profile ?? ""}
+					initialValue={apiConfiguration?.awsProfile ?? ""}
 					key="profile"
-					onChange={(value) => writeAws({ profile: value }, "profile")}
+					onChange={(value) => handleFieldChange("awsProfile", value)}
 					placeholder="Enter profile name (default if empty)">
 					<span className="font-medium">AWS Profile Name</span>
 				</DebouncedTextField>
-			) : selectedAuthentication === "apikey" ? (
-				<ApiKeyField
-					helpText="This key is stored locally and only used to make API requests from this extension."
-					initialValue={savedApiKeyMask}
+			) : apiConfiguration?.awsAuthentication === "apikey" ? (
+				<DebouncedTextField
+					className="w-full"
+					initialValue={apiConfiguration?.awsBedrockApiKey ?? ""}
 					key="apikey"
-					label="AWS Bedrock Api Key"
-					onChange={handleApiKeyChange}
+					onChange={(value) => handleFieldChange("awsBedrockApiKey", value)}
 					placeholder="Enter Bedrock Api Key"
-					providerName="Bedrock"
-				/>
+					type="password">
+					<span className="font-medium">AWS Bedrock Api Key</span>
+				</DebouncedTextField>
 			) : (
 				<>
-					<ApiKeyField
-						helpText="This key is stored locally and only used to make API requests from this extension."
-						initialValue={accessKeyMask}
+					<DebouncedTextField
+						className="w-full"
+						initialValue={apiConfiguration?.awsAccessKey || ""}
 						key="accessKey"
-						label="AWS Access Key"
-						onChange={(value) => handleAwsSecretChange("accessKey", value, accessKeyMask, "access key")}
+						onChange={(value) => handleFieldChange("awsAccessKey", value)}
 						placeholder="Enter Access Key..."
-						providerName="AWS"
-					/>
-					<ApiKeyField
-						helpText="This key is stored locally and only used to make API requests from this extension."
-						initialValue={secretKeyMask}
-						label="AWS Secret Key"
-						onChange={(value) => handleAwsSecretChange("secretKey", value, secretKeyMask, "secret key")}
+						type="password">
+						<span className="font-medium">AWS Access Key</span>
+					</DebouncedTextField>
+					<DebouncedTextField
+						className="w-full"
+						initialValue={apiConfiguration?.awsSecretKey || ""}
+						onChange={(value) => handleFieldChange("awsSecretKey", value)}
 						placeholder="Enter Secret Key..."
-						providerName="AWS"
-					/>
-					<ApiKeyField
-						helpText="This key is stored locally and only used to make API requests from this extension."
-						initialValue={sessionTokenMask}
-						label="AWS Session Token"
-						onChange={(value) => handleAwsSecretChange("sessionToken", value, sessionTokenMask, "session token")}
+						type="password">
+						<span className="font-medium">AWS Secret Key</span>
+					</DebouncedTextField>
+					<DebouncedTextField
+						className="w-full"
+						initialValue={apiConfiguration?.awsSessionToken || ""}
+						onChange={(value) => handleFieldChange("awsSessionToken", value)}
 						placeholder="Enter Session Token..."
-						providerName="AWS"
-					/>
+						type="password">
+						<span className="font-medium">AWS Session Token</span>
+					</DebouncedTextField>
 				</>
 			)}
 
@@ -411,7 +331,7 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 									const isChecked = e.target.checked === true
 									setAwsEndpointSelected(isChecked)
 									if (!isChecked) {
-										writeAws({ endpoint: "" }, "endpoint")
+										handleFieldChange("awsBedrockEndpoint", "")
 									}
 								}}>
 								Use custom VPC endpoint
@@ -425,8 +345,8 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 							<DebouncedTextField
 								className="mt-0.5 mb-1 text-sm text-description"
 								disabled={remoteConfigSettings?.awsBedrockEndpoint !== undefined}
-								initialValue={config?.aws?.endpoint || ""}
-								onChange={(value) => writeAws({ endpoint: value }, "endpoint")}
+								initialValue={apiConfiguration?.awsBedrockEndpoint || ""}
+								onChange={(value) => handleFieldChange("awsBedrockEndpoint", value)}
 								placeholder="Enter VPC Endpoint URL (optional)"
 								type="text"
 							/>
@@ -441,12 +361,12 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 					<TooltipTrigger>
 						<div className="flex items-center gap-2">
 							<VSCodeCheckbox
-								checked={config?.aws?.useCrossRegionInference || false}
+								checked={apiConfiguration?.awsUseCrossRegionInference || false}
 								disabled={remoteConfigSettings?.awsUseCrossRegionInference !== undefined}
 								onChange={(e: any) => {
 									const isChecked = e.target.checked === true
 
-									writeAws({ useCrossRegionInference: isChecked }, "cross-region inference")
+									handleFieldChange("awsUseCrossRegionInference", isChecked)
 								}}>
 								Use cross-region inference
 							</VSCodeCheckbox>
@@ -457,7 +377,7 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 					</TooltipTrigger>
 				</Tooltip>
 
-				{config?.aws?.useCrossRegionInference && supportsGlobalInferenceProfile && (
+				{apiConfiguration?.awsUseCrossRegionInference && selectedModelInfo.supportsGlobalEndpoint && (
 					<Tooltip>
 						<TooltipContent hidden={remoteConfigSettings?.awsUseGlobalInference === undefined}>
 							This setting is managed by your organization's remote configuration
@@ -465,11 +385,11 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 						<TooltipTrigger>
 							<div className="flex items-center gap-2">
 								<VSCodeCheckbox
-									checked={config?.aws?.useGlobalInference || false}
+									checked={apiConfiguration?.awsUseGlobalInference || false}
 									disabled={remoteConfigSettings?.awsUseGlobalInference !== undefined}
 									onChange={(e: any) => {
 										const isChecked = e.target.checked === true
-										writeAws({ useGlobalInference: isChecked }, "global inference")
+										handleFieldChange("awsUseGlobalInference", isChecked)
 									}}>
 									Use global inference profile
 								</VSCodeCheckbox>
@@ -481,33 +401,10 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 					</Tooltip>
 				)}
 
-				{selectedModelInfo.supportsPromptCache && (
-					<Tooltip>
-						<TooltipContent hidden={remoteConfigSettings?.awsBedrockUsePromptCache === undefined}>
-							This setting is managed by your organization's remote configuration
-						</TooltipContent>
-						<TooltipTrigger>
-							<div className="flex items-center gap-2">
-								<VSCodeCheckbox
-									checked={config?.aws?.usePromptCache || false}
-									disabled={remoteConfigSettings?.awsBedrockUsePromptCache !== undefined}
-									onChange={(e: any) => {
-										const isChecked = e.target.checked === true
-										writeAws({ usePromptCache: isChecked }, "prompt caching")
-									}}>
-									Use prompt caching
-								</VSCodeCheckbox>
-								{remoteConfigSettings?.awsBedrockUsePromptCache !== undefined && (
-									<i className="codicon codicon-lock text-description text-sm" />
-								)}
-							</div>
-						</TooltipTrigger>
-					</Tooltip>
-				)}
 			</div>
 
 			<p className="mt-1 text-sm text-description">
-				{selectedAuthentication === "profile"
+				{apiConfiguration?.awsUseProfile
 					? "Using AWS Profile credentials from ~/.aws/credentials. Leave profile name empty to use the default profile. These credentials are only used locally to make API requests from this extension."
 					: "Authenticate by either providing the keys above or use the default AWS credential providers, i.e. ~/.aws/credentials or environment variables. These credentials are only used locally to make API requests from this extension."}
 			</p>
@@ -521,25 +418,32 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 						<VSCodeDropdown
 							className="w-full"
 							id="bedrock-model-dropdown"
-							key={`bedrock-model-${isCustomModelSelected ? "custom" : selectedModelId}-${bedrockModelIds.length}`}
 							onChange={(e: any) => {
-								const value = e.target.value
-								if (value === "custom") {
-									writeAws(
-										{ customModelBaseId: customBaseModelId || bedrockFallbackModelId },
-										"custom base model",
-									)
-									return
-								}
-								writeAws({ customModelBaseId: "" }, "custom base model")
-								void commitModelSelection({
-									modelId: value,
-									modelInfo: bedrockModels[value] ?? selectedModelInfo,
-								}).catch((err) => console.error("Failed to commit Bedrock model selection:", err))
+								const isCustom = e.target.value === "custom"
+
+								handleModeFieldsChange(
+									{
+										apiModelId: { plan: "planModeApiModelId", act: "actModeApiModelId" },
+										awsBedrockCustomSelected: {
+											plan: "planModeAwsBedrockCustomSelected",
+											act: "actModeAwsBedrockCustomSelected",
+										},
+										awsBedrockCustomModelBaseId: {
+											plan: "planModeAwsBedrockCustomModelBaseId",
+											act: "actModeAwsBedrockCustomModelBaseId",
+										},
+									},
+									{
+										apiModelId: isCustom ? "" : e.target.value,
+										awsBedrockCustomSelected: isCustom,
+										awsBedrockCustomModelBaseId: bedrockDefaultModelId,
+									},
+									currentMode,
+								)
 							}}
-							value={isCustomModelSelected ? "custom" : selectedModelId}>
+							value={modeFields.awsBedrockCustomSelected ? "custom" : selectedModelId}>
 							<VSCodeOption value="">Select a model...</VSCodeOption>
-							{bedrockModelIds.map((modelId) => (
+							{Object.keys(bedrockModels).map((modelId) => (
 								<VSCodeOption
 									className="whitespace-normal wrap-break-word max-w-full"
 									key={modelId}
@@ -551,7 +455,7 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 						</VSCodeDropdown>
 					</DropdownContainer>
 
-					{isCustomModelSelected && (
+					{modeFields.awsBedrockCustomSelected && (
 						<div>
 							<p className="mt-1 text-sm text-description">
 								Select "Custom" when using the Application Inference Profile in Bedrock. Enter the Application
@@ -560,17 +464,14 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 							<DebouncedTextField
 								className="w-full mt-0.5"
 								id="bedrock-model-input"
-								initialValue={customModelInputInitialValue}
-								key={`custom-${customModelInputInitialValue}`}
-								onChange={(value) => {
-									if (!value.trim()) {
-										return
-									}
-									void commitModelSelection({
-										modelId: value,
-										modelInfo: bedrockModels[customBaseModelId] ?? selectedModelInfo,
-									}).catch((err) => console.error("Failed to commit Bedrock custom model selection:", err))
-								}}
+								initialValue={modeFields.apiModelId || ""}
+								onChange={(value) =>
+									handleModeFieldChange(
+										{ plan: "planModeApiModelId", act: "actModeApiModelId" },
+										value,
+										currentMode,
+									)
+								}
 								placeholder="Enter custom model ID...">
 								<span className="font-medium">Model ID</span>
 							</DebouncedTextField>
@@ -581,11 +482,19 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 								<VSCodeDropdown
 									className="w-full"
 									id="bedrock-base-model-dropdown"
-									key={`bedrock-base-model-${customBaseModelId || bedrockFallbackModelId}-${bedrockModelIds.length}`}
-									onChange={(e: any) => writeAws({ customModelBaseId: e.target.value }, "custom base model")}
-									value={customBaseModelId || bedrockFallbackModelId}>
+									onChange={(e: any) =>
+										handleModeFieldChange(
+											{
+												plan: "planModeAwsBedrockCustomModelBaseId",
+												act: "actModeAwsBedrockCustomModelBaseId",
+											},
+											e.target.value,
+											currentMode,
+										)
+									}
+									value={modeFields.awsBedrockCustomModelBaseId || bedrockDefaultModelId}>
 									<VSCodeOption value="">Select a model...</VSCodeOption>
-									{bedrockModelIds.map((modelId) => (
+									{Object.keys(bedrockModels).map((modelId) => (
 										<VSCodeOption
 											className="whitespace-normal wrap-break-word max-w-full"
 											key={modelId}
@@ -605,18 +514,12 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 							defaultEffort={adaptiveThinkingDefaultEffort}
 							description="Use None to disable adaptive thinking. Higher effort increases response detail and token usage."
 							label="Adaptive Thinking"
-							onEffortChange={handleReasoningEffortChange}
 						/>
-					) : selectedModelInfo.supportsReasoning === true ||
-						(isCustomModelSelected &&
-							customBaseModelId &&
-							bedrockModels[customBaseModelId]?.supportsReasoning === true) ? (
-						<ReasoningEffortSelector
-							currentMode={currentMode}
-							defaultEffort="none"
-							description="Use None to disable extended thinking. Higher effort improves depth, but uses more tokens."
-							onEffortChange={handleReasoningEffortChange}
-						/>
+					) : SUPPORTED_BEDROCK_THINKING_MODELS.includes(selectedModelId) ||
+						(modeFields.awsBedrockCustomSelected &&
+							modeFields.awsBedrockCustomModelBaseId &&
+							SUPPORTED_BEDROCK_THINKING_MODELS.includes(modeFields.awsBedrockCustomModelBaseId)) ? (
+						<ThinkingBudgetSlider currentMode={currentMode} />
 					) : null}
 
 					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />
@@ -653,10 +556,8 @@ const RegionDropdownItem = styled.div<{ isSelected: boolean }>`
 	text-align: left;
 
 	background-color: ${({ isSelected }) => (isSelected ? "var(--vscode-list-activeSelectionBackground)" : "inherit")};
-	color: ${({ isSelected }) => (isSelected ? "var(--vscode-list-activeSelectionForeground, inherit)" : "inherit")};
 
 	&:hover {
 		background-color: var(--vscode-list-activeSelectionBackground);
-		color: var(--vscode-list-activeSelectionForeground, inherit);
 	}
 `

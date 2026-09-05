@@ -505,7 +505,7 @@ export async function listSessionHistoryFromBackend(
 		},
 		readSessionMessages: async (
 			sessionId: string,
-		): Promise<LlmsProviders.MessageWithMetadata[]> => {
+		): Promise<LlmsProviders.Message[]> => {
 			const messagesPath =
 				rowsById.get(sessionId)?.messagesPath ??
 				(await readManifestMessagesPath(sessionId));

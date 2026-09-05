@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import { useTheme } from "../hooks/use-theme";
+import { useTerminalBackground } from "../hooks/use-terminal-background";
+import { getDefaultForeground } from "../palette";
 import { RobotAnimation } from "./robot-animation";
 
 export function useMouseTracker() {
@@ -17,7 +18,8 @@ export function useMouseTracker() {
 }
 
 export function TrackedRobot(props: { cursorX?: number; cursorY?: number }) {
-	const defaultFg = useTheme().defaultForeground;
+	const terminalBg = useTerminalBackground();
+	const defaultFg = getDefaultForeground(terminalBg);
 	return (
 		<box width="100%" flexShrink={1} overflow="hidden">
 			<RobotAnimation

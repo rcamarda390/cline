@@ -14,7 +14,7 @@ import { isOpenTelemetryConfigValid, remoteConfigToOtelConfig } from "@/shared/s
 import { Logger } from "@/shared/services/Logger"
 import { syncWorker } from "@/shared/services/worker/sync"
 import { BlobStoreSettings } from "@/shared/storage"
-import { deleteRemoteConfigFromCache } from "../disk"
+import { ensureSettingsDirectoryExists } from "../disk"
 import { StateManager } from "../StateManager"
 import { syncRemoteMcpServersToSettings } from "./syncRemoteMcpServers"
 
@@ -60,6 +60,13 @@ export function transformRemoteConfigToStateShape(remoteConfig: RemoteConfig): P
 	if (remoteConfig.remoteMCPServers !== undefined) {
 		transformed.remoteMCPServers = remoteConfig.remoteMCPServers
 	}
+	if (remoteConfig.yoloModeAllowed !== undefined) {
+		// only set the yoloModeToggled field if yolo mode is not allowed. Otherwise, we let the user toggle it.
+		if (remoteConfig.yoloModeAllowed === false) {
+			transformed.yoloModeToggled = false
+		}
+	}
+
 	// Map OpenTelemetry settings
 	if (remoteConfig.openTelemetryEnabled !== undefined) {
 		transformed.openTelemetryEnabled = remoteConfig.openTelemetryEnabled
@@ -155,6 +162,10 @@ export function transformRemoteConfigToStateShape(remoteConfig: RemoteConfig): P
 		}
 		if (awsBedrockSettings.awsBedrockUsePromptCache !== undefined) {
 			transformed.awsBedrockUsePromptCache = awsBedrockSettings.awsBedrockUsePromptCache
+			// The remote provider policy must override local generic and split-mode preferences.
+			transformed.usePromptCache = awsBedrockSettings.awsBedrockUsePromptCache
+			transformed.planModeUsePromptCache = awsBedrockSettings.awsBedrockUsePromptCache
+			transformed.actModeUsePromptCache = awsBedrockSettings.awsBedrockUsePromptCache
 		}
 		if (awsBedrockSettings.awsBedrockEndpoint !== undefined) {
 			transformed.awsBedrockEndpoint = awsBedrockSettings.awsBedrockEndpoint
@@ -270,7 +281,7 @@ async function applyRemoteSyncQueueConfig(transformed: Partial<RemoteConfigField
 	}
 }
 
-export function clearRemoteConfig(organizationId?: string) {
+export function clearRemoteConfig() {
 	try {
 		const stateManager = StateManager.get()
 
@@ -280,22 +291,9 @@ export function clearRemoteConfig(organizationId?: string) {
 		stateManager.setGlobalState("remoteRulesToggles", {})
 		stateManager.setGlobalState("remoteWorkflowToggles", {})
 		stateManager.setGlobalState("remoteSkillsToggles", {})
-		stateManager.setGlobalState("lastManagedOrganizationId", undefined)
 
 		// clear secrets
 		stateManager.setSecret("remoteLiteLlmApiKey", undefined)
-
-		// The per-org disk cache holds the full config, including any
-		// enterprise blob-store secrets, and would otherwise resurrect the
-		// cleared policy via the offline fallback. Best-effort async removal.
-		// Sign-out deauths before clearing, so callers that know the org must
-		// pass it explicitly; otherwise fall back to the live lookup.
-		const cachedOrganizationId = organizationId ?? AuthService.getInstance().getActiveOrganizationId()
-		if (cachedOrganizationId) {
-			void deleteRemoteConfigFromCache(cachedOrganizationId).catch((err) =>
-				Logger.error("[REMOTE CONFIG] Failed to delete cached remote config", err),
-			)
-		}
 	} catch (err) {
 		Logger.error("[REMOTE CONFIG] Failed to clear remote config", err)
 	}
@@ -379,7 +377,7 @@ export async function applyRemoteConfig(
 	// - No dependency on in-memory state that would be lost across restarts
 	try {
 		const serversToSync = remoteConfig.remoteMCPServers ?? []
-		const settingsPath = await mcpHub.getMcpSettingsFilePath()
+		const settingsPath = await ensureSettingsDirectoryExists()
 		await syncRemoteMcpServersToSettings(serversToSync, settingsPath, mcpHub)
 		stateManager.setRemoteConfigField("previousRemoteMCPServers", serversToSync)
 	} catch (error) {

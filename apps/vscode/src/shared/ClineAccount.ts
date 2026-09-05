@@ -83,7 +83,7 @@ export interface OrganizationUsageTransaction {
 	userId: string
 }
 
-interface UserRemoteConfigOrganization {
+export interface UserRemoteConfigOrganization {
 	organizationId: string
 	name: string
 }

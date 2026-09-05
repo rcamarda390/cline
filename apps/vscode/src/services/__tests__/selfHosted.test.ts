@@ -1,4 +1,3 @@
-import { afterEach, describe, it } from "bun:test"
 /**
  * Tests for selfHosted mode behavior across PostHog-based services.
  * When ClineEndpoint.isSelfHosted() returns true, all PostHog functionality should be disabled.
@@ -20,6 +19,10 @@ describe("SelfHosted Mode - PostHog Disabling", () => {
 	})
 
 	describe("FeatureFlagsProviderFactory", () => {
+		it("should return no-op config in offline mode", () => {
+			isSelfHostedStub = sinon.stub(ClineEndpoint, "isSelfHosted").returns(false)
+			assert.strictEqual(FeatureFlagsProviderFactory.getDefaultConfig(true).type, "no-op")
+		})
 		it("should return no-op config when in selfHosted mode", () => {
 			isSelfHostedStub = sinon.stub(ClineEndpoint, "isSelfHosted").returns(true)
 
@@ -50,6 +53,10 @@ describe("SelfHosted Mode - PostHog Disabling", () => {
 	})
 
 	describe("ErrorProviderFactory", () => {
+		it("should return no-op config in offline mode", () => {
+			isSelfHostedStub = sinon.stub(ClineEndpoint, "isSelfHosted").returns(false)
+			assert.strictEqual(ErrorProviderFactory.getDefaultConfig(true).type, "no-op")
+		})
 		it("should return no-op config when in selfHosted mode", () => {
 			isSelfHostedStub = sinon.stub(ClineEndpoint, "isSelfHosted").returns(true)
 

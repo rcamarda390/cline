@@ -204,11 +204,7 @@ export async function runAgent(
 			(!event.recoverable || config.verbose) &&
 			event.error.message.trim()
 		) {
-			displayedErrorMessages.add(
-				formatCliErrorMessage(event.error.message, {
-					modelId: config.modelId,
-				}).trim(),
-			);
+			displayedErrorMessages.add(event.error.message.trim());
 		}
 		handleEvent(event, config);
 	};
@@ -277,9 +273,7 @@ export async function runAgent(
 			prompt: userInput,
 			userImages,
 			userFiles,
-		} = await buildUserInputMessage(prompt, userInstructionService, {
-			mode: config.mode,
-		});
+		} = await buildUserInputMessage(prompt, userInstructionService);
 		const started = await sessionManager.start({
 			source: SessionSource.CLI,
 			config: {
@@ -394,9 +388,7 @@ export async function runAgent(
 		}
 
 		if (result.finishReason !== "completed") {
-			const errorText = formatCliErrorMessage(result.text, {
-				modelId: config.modelId,
-			}).trim();
+			const errorText = formatCliErrorMessage(result.text).trim();
 			if (
 				errorText &&
 				(config.outputMode === "json" || !displayedErrorMessages.has(errorText))
@@ -417,7 +409,7 @@ export async function runAgent(
 		);
 		process.exitCode = 0;
 	} catch (err) {
-		const message = formatCliErrorMessage(err, { modelId: config.modelId });
+		const message = formatCliErrorMessage(err);
 		logCliError(config.logger, "CLI task run failed", { error: err });
 		writeErr(message);
 		process.exitCode = 1;

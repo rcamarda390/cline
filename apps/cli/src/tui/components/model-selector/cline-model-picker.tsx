@@ -1,34 +1,50 @@
 // @jsxImportSource @opentui/react
 
 import {
+	type ClineRecommendedModel,
 	type ClineRecommendedModelsData,
 	fetchClineRecommendedModels,
 } from "@cline/core";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import "opentui-spinner/react";
-import { useDialogPalette } from "../../hooks/use-theme";
-import type { DialogPalette } from "../../themes";
-import {
-	CLINE_MODEL_PICKER_TIER_LABELS,
-	type ClineModelPickerEntry,
-	freeTierDescriptionFor,
-} from "./cline-model-entries";
+import { palette } from "../../palette";
 
-export {
-	buildFeaturedModelEntries,
-	CLINE_MODEL_PICKER_TIER_LABELS,
-	type ClineModelPickerBrowse,
-	type ClineModelPickerEntry,
-	type ClineModelPickerItem,
-	type ClineModelPickerTier,
-	freeTierDescriptionFor,
-} from "./cline-model-entries";
+export interface ClineModelPickerItem {
+	kind: "model";
+	model: ClineRecommendedModel;
+	tier: "recommended" | "free";
+}
 
-function tagColor(tag: string, palette: DialogPalette): string {
+export interface ClineModelPickerBrowse {
+	kind: "browse";
+}
+
+export type ClineModelPickerEntry =
+	| ClineModelPickerItem
+	| ClineModelPickerBrowse;
+
+function tagColor(tag: string): string {
 	if (tag === "FREE") return palette.success;
 	if (tag === "BEST") return "magenta";
-	return palette.act;
+	return "cyan";
+}
+
+function resolveDisplayName(
+	modelId: string,
+	knownModels?: Record<string, unknown>,
+): string {
+	if (knownModels) {
+		const candidates = [modelId, modelId.split("/").pop()];
+		for (const key of candidates) {
+			if (!key) continue;
+			const hit = knownModels[key] as { name?: string } | undefined;
+			if (hit?.name) return hit.name;
+		}
+	}
+	return modelId.includes("/")
+		? (modelId.split("/").pop() ?? modelId)
+		: modelId;
 }
 
 export function useClineRecommendedModels() {
@@ -52,14 +68,28 @@ export function useClineRecommendedModels() {
 	return { data, loading };
 }
 
+export function buildClineModelEntries(
+	data: ClineRecommendedModelsData,
+): ClineModelPickerEntry[] {
+	const entries: ClineModelPickerEntry[] = [];
+	for (const m of data.recommended) {
+		entries.push({ kind: "model", model: m, tier: "recommended" });
+	}
+	for (const m of data.free) {
+		entries.push({ kind: "model", model: m, tier: "free" });
+	}
+	entries.push({ kind: "browse" });
+	return entries;
+}
+
 export function ClineModelPicker(props: {
 	entries: ClineModelPickerEntry[];
 	selected: number;
 	loading?: boolean;
+	knownModels?: Record<string, unknown>;
 	currentModelId?: string;
 }) {
-	const { entries, selected, loading, currentModelId } = props;
-	const palette = useDialogPalette();
+	const { entries, selected, loading, knownModels, currentModelId } = props;
 
 	if (loading) {
 		return (
@@ -73,7 +103,6 @@ export function ClineModelPicker(props: {
 	let lastTier: string | null = null;
 	let isFirstHeader = true;
 	const rows: ReactNode[] = [];
-	const freeTierDescription = freeTierDescriptionFor(entries);
 
 	for (let i = 0; i < entries.length; i++) {
 		const entry = entries[i];
@@ -83,28 +112,21 @@ export function ClineModelPicker(props: {
 		if (entry.kind === "model") {
 			if (entry.tier !== lastTier) {
 				lastTier = entry.tier;
-				const label = CLINE_MODEL_PICKER_TIER_LABELS[entry.tier];
+				const label = entry.tier === "recommended" ? "Recommended" : "Free";
 				rows.push(
 					<box
 						key={`tier-${entry.tier}`}
 						paddingX={1}
 						marginTop={isFirstHeader ? 0 : 1}
-						flexDirection="column"
 					>
 						<text fg="gray">{label}</text>
-						{entry.tier === "free" && freeTierDescription && (
-							<text fg="gray">
-								<em>{freeTierDescription}</em>
-							</text>
-						)}
 					</box>,
 				);
 				isFirstHeader = false;
 			}
 
 			const tags = entry.model.tags;
-			// Names arrive display-ready from fetchClineRecommendedModels
-			const name = entry.model.name || entry.model.id;
+			const name = resolveDisplayName(entry.model.id, knownModels);
 			const isCurrent = currentModelId === entry.model.id;
 			rows.push(
 				<box
@@ -121,7 +143,7 @@ export function ClineModelPicker(props: {
 					{tags.map((t) => (
 						<text
 							key={t}
-							fg={isSel ? palette.textOnSelection : tagColor(t, palette)}
+							fg={isSel ? palette.textOnSelection : tagColor(t)}
 							flexShrink={0}
 						>
 							{t}

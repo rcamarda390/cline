@@ -7,7 +7,7 @@ const CLINE_TRUSTED_TESTER_DOMAINS = ["fibilabs.tech"]
  * Checks if the given email belongs to a Cline bot user.
  * E.g. Emails ending with @cline.bot
  */
-function isClineBotUser(email: string): boolean {
+export function isClineBotUser(email: string): boolean {
 	return email.endsWith("@cline.bot")
 }
 

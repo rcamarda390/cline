@@ -1012,11 +1012,9 @@ Review with the bundled skill.`,
 		const linear = data.mcp.find((item) => item.name === "linear");
 		const docs = data.mcp.find((item) => item.name === "docs");
 
-		expect(linear?.description).toBe(
-			"streamableHttp, oauth error, timeout 60s",
-		);
+		expect(linear?.description).toBe("streamableHttp, oauth error");
 		expect(linear?.loadError).toBe("OAuth authorization failed");
-		expect(docs?.description).toBe("sse, oauth authorized, timeout 60s");
+		expect(docs?.description).toBe("sse, oauth authorized");
 		expect(docs?.loadError).toBeUndefined();
 	});
 

@@ -1,16 +1,15 @@
+import { basetenDefaultModelId, basetenModels } from "@shared/api"
 import { Mode } from "@shared/storage/types"
 import { VSCodeLink, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 import Fuse from "fuse.js"
 import React, { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
-import { useDynamicProviderSelection } from "@/hooks/useDynamicProviderSelection"
-import { useProviderModels } from "@/hooks/useProviderModels"
 import { useExtensionState } from "../../context/ExtensionStateContext"
 import { highlight } from "../history/HistoryView"
 import { ModelInfoView } from "./common/ModelInfoView"
-import { getModeSpecificFields } from "./utils/providerUtils"
+import { getModeSpecificFields, normalizeApiConfiguration } from "./utils/providerUtils"
 import { useApiConfigurationHandlers } from "./utils/useApiConfigurationHandlers"
 
-interface BasetenModelPickerProps {
+export interface BasetenModelPickerProps {
 	isPopup?: boolean
 	currentMode: Mode
 }
@@ -19,10 +18,6 @@ const BasetenModelPicker: React.FC<BasetenModelPickerProps> = ({ isPopup, curren
 	const { apiConfiguration, basetenModels: dynamicBasetenModels } = useExtensionState()
 	const { handleModeFieldsChange } = useApiConfigurationHandlers()
 	const modeFields = getModeSpecificFields(apiConfiguration, currentMode)
-	// Curated Baseten catalog from the SDK over gRPC. The local
-	// `dynamicBasetenModels` slice (populated by `refreshBasetenModels`)
-	// is merged on top so live API additions are visible.
-	const { models: basetenModels, defaultModelId: basetenDefaultModelId } = useProviderModels("baseten")
 	const [searchTerm, setSearchTerm] = useState(modeFields.basetenModelId || basetenDefaultModelId)
 	const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm)
 	const [isDropdownVisible, setIsDropdownVisible] = useState(false)
@@ -49,7 +44,9 @@ const BasetenModelPicker: React.FC<BasetenModelPickerProps> = ({ isPopup, curren
 		setSearchTerm(newModelId)
 	}
 
-	const { selectedModelId, selectedModelInfo } = useDynamicProviderSelection("baseten", apiConfiguration, currentMode)
+	const { selectedModelId, selectedModelInfo } = useMemo(() => {
+		return normalizeApiConfiguration(apiConfiguration, currentMode)
+	}, [apiConfiguration, currentMode])
 
 	// Sync external changes when the modelId changes
 	// NOTE: Model list is refreshed automatically on mount or when the API key is set,
@@ -240,10 +237,8 @@ const BasetenModelPicker: React.FC<BasetenModelPickerProps> = ({ isPopup, curren
 							}}>
 							{modelSearchResults.map((item, index) => (
 								<div
-									className={`px-2.5 py-1.5 cursor-pointer break-all whitespace-normal hover:bg-(--vscode-list-activeSelectionBackground) hover:text-(--vscode-list-activeSelectionForeground) ${
-										index === selectedIndex
-											? "bg-(--vscode-list-activeSelectionBackground) text-(--vscode-list-activeSelectionForeground)"
-											: ""
+									className={`px-2.5 py-1.5 cursor-pointer break-all whitespace-normal hover:bg-(--vscode-list-activeSelectionBackground) ${
+										index === selectedIndex ? "bg-(--vscode-list-activeSelectionBackground)" : ""
 									}`}
 									key={item.id}
 									onClick={() => {
@@ -271,13 +266,16 @@ const BasetenModelPicker: React.FC<BasetenModelPickerProps> = ({ isPopup, curren
 					<VSCodeLink className="inline text-inherit" href="https://www.baseten.co/products/model-apis/">
 						Baseten.
 					</VSCodeLink>
-					If you're unsure which model to choose, compare available models by context window, pricing, and capabilities.
+					If you're unsure which model to choose, Cline works best with{" "}
+					<VSCodeLink className="inline text-inherit" onClick={() => handleModelChange("moonshotai/Kimi-K2-Instruct")}>
+						moonshotai/Kimi-K2-Instruct.
+					</VSCodeLink>
 				</p>
 			)}
 		</div>
 	)
 }
 
-const BASETEN_MODEL_PICKER_Z_INDEX = 1_000
+export const BASETEN_MODEL_PICKER_Z_INDEX = 1_000
 
 export default BasetenModelPicker

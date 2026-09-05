@@ -9,6 +9,7 @@ import { HelpDialogContent } from "../components/dialogs/help-dialog";
 import { withLoadingDialog } from "../components/dialogs/loading-dialog";
 import { useSession } from "../contexts/session-context";
 import type { AppView, TuiProps } from "../types";
+import { formatCompactionStatus } from "../utils/compaction-status";
 import { hydrateSessionMessages } from "../utils/hydrate-messages";
 import type { LocalSlashCommandInvocation } from "../utils/skill-command-input";
 import { HistoryDialogContent } from "../views/history-view";
@@ -23,13 +24,10 @@ export function useLocalCommandActions(input: {
 	openMcpManager: () => Promise<boolean>;
 	openModelSelector: () => void;
 	openSkills: (invocation?: LocalSlashCommandInvocation) => void;
-	openThemePicker: () => void;
 	refocusTextarea: () => void;
 	setAppView: (view: AppView) => void;
 	onClearConversation: () => Promise<void>;
 	onResumeSession: TuiProps["onResumeSession"];
-	onExportHistorySession: TuiProps["onExportHistorySession"];
-	onDeleteHistorySession: TuiProps["onDeleteHistorySession"];
 	onCompact: TuiProps["onCompact"];
 	onFork: TuiProps["onFork"];
 	onUndo: () => Promise<void>;
@@ -46,13 +44,10 @@ export function useLocalCommandActions(input: {
 		openMcpManager,
 		openModelSelector,
 		openSkills,
-		openThemePicker,
 		refocusTextarea,
 		setAppView,
 		onClearConversation,
 		onResumeSession,
-		onExportHistorySession,
-		onDeleteHistorySession,
 		onCompact,
 		onFork,
 		onUndo,
@@ -64,11 +59,7 @@ export function useLocalCommandActions(input: {
 			size: "large",
 			style: { maxHeight: termHeight - 2 },
 			content: (ctx: ChoiceContext<string>) => (
-				<HistoryDialogContent
-					{...ctx}
-					onExport={onExportHistorySession}
-					onDelete={onDeleteHistorySession}
-				/>
+				<HistoryDialogContent {...ctx} />
 			),
 		});
 		if (sessionId) {
@@ -84,10 +75,9 @@ export function useLocalCommandActions(input: {
 						});
 					} else {
 						session.clearEntries();
-						// replaceEntries rather than appendEntry: appendEntry
-						// stamps unstamped entries with the CURRENT mode, which
-						// would lock hydrated history to the resume-time accent.
-						session.replaceEntries(entries);
+						for (const entry of entries) {
+							session.appendEntry(entry);
+						}
 						if (typeof result.currentContextSize === "number") {
 							session.setLastTotalTokens(result.currentContextSize);
 						}
@@ -108,8 +98,6 @@ export function useLocalCommandActions(input: {
 		refocusTextarea();
 	}, [
 		dialog,
-		onDeleteHistorySession,
-		onExportHistorySession,
 		onResumeSession,
 		refocusTextarea,
 		session,
@@ -127,42 +115,21 @@ export function useLocalCommandActions(input: {
 	}, [dialog, refocusTextarea, termHeight]);
 
 	const runCompact = useCallback(async () => {
-		session.setIsRunning(true);
 		session.appendEntry({
-			kind: "compaction",
-			compactionMode: "manual",
-			status: "started",
+			kind: "status",
+			text: "Compacting context...",
 		});
 		try {
 			const result = await onCompact();
-			session.updateLastEntry((entry) =>
-				entry.kind === "compaction" && entry.status === "started"
-					? {
-							...entry,
-							status: result.compacted ? "completed" : "skipped",
-							messagesBefore: result.messagesBefore,
-							messagesAfter:
-								result.workingContextMessagesAfter ?? result.messagesAfter,
-						}
-					: entry,
-			);
+			session.updateLastEntry(() => ({
+				kind: "status",
+				text: formatCompactionStatus(result),
+			}));
 		} catch (error) {
-			const cancelled =
-				error instanceof Error &&
-				(error.name === "AbortError" || /abort/i.test(error.message));
-			session.updateLastEntry((entry) =>
-				entry.kind === "compaction" && entry.status === "started"
-					? { ...entry, status: cancelled ? "cancelled" : "failed" }
-					: entry,
-			);
-			if (!cancelled) {
-				session.appendEntry({
-					kind: "error",
-					text: `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
-				});
-			}
-		} finally {
-			session.setIsRunning(false);
+			session.appendEntry({
+				kind: "error",
+				text: `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
+			});
 		}
 	}, [onCompact, session]);
 
@@ -191,15 +158,6 @@ export function useLocalCommandActions(input: {
 					kind: "status",
 					text: `Forked into new session ${result.newSessionId}. This is now the active session. Use /history to switch sessions.`,
 				}));
-				if (result.carriedWorkingContext) {
-					session.appendEntry({
-						kind: "compaction",
-						compactionMode: "inherited",
-						status: "completed",
-						messagesBefore: result.carriedWorkingContext.canonicalMessages,
-						messagesAfter: result.carriedWorkingContext.workingContextMessages,
-					});
-				}
 			} else {
 				session.updateLastEntry(() => ({
 					kind: "error",
@@ -222,14 +180,12 @@ export function useLocalCommandActions(input: {
 			}
 			return runLocalSlashCommandAction({
 				name: resolved.name,
-				isRunning: session.isRunning,
 				invocation,
 				openAccount,
 				openConfig,
 				openMcpManager,
 				openModelSelector,
 				openSkills,
-				openThemePicker,
 				runCompact,
 				runFork,
 				runUndo: onUndo,
@@ -250,13 +206,11 @@ export function useLocalCommandActions(input: {
 			openHistory,
 			openModelSelector,
 			openSkills,
-			openThemePicker,
 			runCompact,
 			runFork,
-			session.isRunning,
 			slashCommandRegistry,
 		],
 	);
 
-	return { handleSlashCommand, openHistory };
+	return { handleSlashCommand };
 }

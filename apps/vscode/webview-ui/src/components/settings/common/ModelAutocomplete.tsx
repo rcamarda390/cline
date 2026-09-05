@@ -214,13 +214,14 @@ export const ModelAutocomplete = ({
 							style={{ zIndex: zIndex - 1 }}>
 							{modelSearchResults.map((item, index) => (
 								<DropdownItem
-									$isSelected={index === selectedIndex}
 									aria-selected={index === selectedIndex}
 									id={`${listboxId}-option-${index}`}
+									isSelected={index === selectedIndex}
 									key={item.id}
 									onClick={() => {
 										handleModelChange(item.id)
 										setIsDropdownVisible(false)
+										isSelectingRef.current = false
 									}}
 									onMouseDown={() => {
 										isSelectingRef.current = true
@@ -257,17 +258,15 @@ const DropdownList = styled.div`
 	border-bottom-right-radius: 3px;
 `
 
-const DropdownItem = styled.div<{ $isSelected: boolean }>`
+const DropdownItem = styled.div<{ isSelected: boolean }>`
 	padding: 5px 10px;
 	cursor: pointer;
 	word-break: break-all;
 	white-space: normal;
 
-	background-color: ${({ $isSelected }) => ($isSelected ? "var(--vscode-list-activeSelectionBackground)" : "inherit")};
-	color: ${({ $isSelected }) => ($isSelected ? "var(--vscode-list-activeSelectionForeground, inherit)" : "inherit")};
+	background-color: ${({ isSelected }) => (isSelected ? "var(--vscode-list-activeSelectionBackground)" : "inherit")};
 
 	&:hover {
 		background-color: var(--vscode-list-activeSelectionBackground);
-		color: var(--vscode-list-activeSelectionForeground, inherit);
 	}
 `

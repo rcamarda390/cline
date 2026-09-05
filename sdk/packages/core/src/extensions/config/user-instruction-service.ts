@@ -3,7 +3,6 @@ import type { SkillsExecutorWithMetadata } from "../tools";
 import {
 	type AvailableRuntimeCommand,
 	listAvailableRuntimeCommandsFromWatcher,
-	type ResolveRuntimeSlashCommandOptions,
 	resolveRuntimeSlashCommandFromWatcher,
 } from "./runtime-commands";
 import {
@@ -40,10 +39,7 @@ export interface UserInstructionConfigService {
 		type: UserInstructionConfigType,
 	): UserInstructionConfigRecord<TConfig>[];
 	listRuntimeCommands(): AvailableRuntimeCommand[];
-	resolveRuntimeSlashCommand(
-		input: string,
-		options?: ResolveRuntimeSlashCommandOptions,
-	): string;
+	resolveRuntimeSlashCommand(input: string): string;
 	hasConfiguredSkills(allowedSkillNames?: ReadonlyArray<string>): boolean;
 	createSkillsExecutor?(
 		allowedSkillNames?: ReadonlyArray<string>,
@@ -106,11 +102,8 @@ class DefaultUserInstructionConfigService
 		return listAvailableRuntimeCommandsFromWatcher(this.watcher);
 	}
 
-	resolveRuntimeSlashCommand(
-		input: string,
-		options?: ResolveRuntimeSlashCommandOptions,
-	): string {
-		return resolveRuntimeSlashCommandFromWatcher(input, this.watcher, options);
+	resolveRuntimeSlashCommand(input: string): string {
+		return resolveRuntimeSlashCommandFromWatcher(input, this.watcher);
 	}
 
 	hasConfiguredSkills(allowedSkillNames?: ReadonlyArray<string>): boolean {

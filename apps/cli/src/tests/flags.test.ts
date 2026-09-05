@@ -3,11 +3,7 @@ import { CLINE_BIN } from "./helpers/constants.js";
 import { clineEnv } from "./helpers/env.js";
 import { expectVisible } from "./helpers/terminal.js";
 
-// Wide enough that long option descriptions (e.g. --thinking) render on a
-// single line. At narrower widths commander wraps them, splitting phrases
-// like "omitted leaves provider default" across lines so the contiguous
-// getByText assertions below fail.
-const HELP_TERMINAL = { columns: 200, rows: 50 };
+const HELP_TERMINAL = { columns: 120, rows: 50 };
 
 // ===========================================================================
 // Root-level flag descriptions
@@ -27,11 +23,10 @@ test.describe("root flag descriptions", () => {
 			"verbose output",
 			"Working directory",
 			"Configuration directory",
-			"Set reasoning effort:",
-			"Bare --thinking uses medium",
-			"omitted leaves provider default",
+			"Set reasoning effort level",
 			"consecutive mistakes",
 			"Output messages as JSON",
+			"ACP",
 			"Check for updates and install if available",
 			"Run the kanban app",
 		]);

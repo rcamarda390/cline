@@ -6,7 +6,8 @@
  * configuration changes.
  */
 
-import { GlobalFileNames, getSavedApiConversationHistory } from "@/core/storage/disk"
+import * as fs from "fs/promises"
+import { GlobalFileNames, getSavedApiConversationHistory, getTaskHistoryStateFilePath } from "@/core/storage/disk"
 import { Logger } from "@/shared/services/Logger"
 import { syncWorker } from "./sync"
 import { getTaskTimestamp } from "./utils"
@@ -14,7 +15,7 @@ import { getTaskTimestamp } from "./utils"
 /**
  * Result of a backfill operation for a single task.
  */
-interface BackfillTaskResult {
+export interface BackfillTaskResult {
 	taskId: string
 	success: boolean
 	filesQueued: string[]
@@ -47,8 +48,29 @@ export interface BackfillOptions {
 /**
  * List all task IDs in the tasks directory.
  */
-async function listTaskIds(_before?: string, _after?: string): Promise<string[]> {
-	return []
+async function listTaskIds(before?: string, after?: string): Promise<string[]> {
+	try {
+		const historyFile = await getTaskHistoryStateFilePath()
+		// Read the history file to get task json names
+		const data = await fs.readFile(historyFile, "utf-8")
+		const history = JSON.parse(data) as { id: string }[]
+		return (
+			history
+				?.map((item) => item.id)
+				?.filter((id) => typeof id === "string")
+				.filter((id) => {
+					if (before && id >= before) {
+						return false
+					}
+					if (after && id <= after) {
+						return false
+					}
+					return true
+				}) || []
+		)
+	} catch {
+		return []
+	}
 }
 
 /**
@@ -56,7 +78,7 @@ async function listTaskIds(_before?: string, _after?: string): Promise<string[]>
  *
  * @param taskId Task identifier
  */
-async function backfillTask(taskId: string): Promise<BackfillTaskResult> {
+export async function backfillTask(taskId: string): Promise<BackfillTaskResult> {
 	const result: BackfillTaskResult = {
 		taskId,
 		success: false,

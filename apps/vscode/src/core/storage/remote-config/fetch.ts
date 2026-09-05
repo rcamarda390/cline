@@ -292,6 +292,9 @@ async function ensureUserInOrgWithRemoteConfig(controller: Controller): Promise<
  * @param controller The controller instance
  */
 export async function fetchRemoteConfig(controller: Controller) {
+	if (controller.stateManager.getGlobalStateKey("offlineModeEnabled")) {
+		return
+	}
 	try {
 		await ensureUserInOrgWithRemoteConfig(controller)
 	} catch (error) {

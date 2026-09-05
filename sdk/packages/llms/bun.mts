@@ -10,8 +10,6 @@ const packageJson = (await Bun.file(
 	new URL("./package.json", import.meta.url),
 ).json()) as PackageManifest;
 const sourcemap = Bun.env.CLINE_SOURCEMAPS === "1" ? "linked" : "none";
-// minify: true keeps identifier mangling active even when sourcemaps are enabled.
-const minify = Bun.env.CLINE_SOURCEMAPS !== "1";
 
 // Keep published third-party runtime packages external, but bundle internal workspace code.
 const external = Object.keys({
@@ -26,7 +24,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		target: "node",
 		external,
 		packages: "bundle",
-		minify,
+		minify: true,
 		sourcemap,
 	},
 	{
@@ -35,7 +33,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		target: "browser",
 		external,
 		packages: "bundle",
-		minify,
+		minify: true,
 		sourcemap,
 	},
 ];

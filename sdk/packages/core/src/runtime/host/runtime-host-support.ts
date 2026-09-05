@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type * as LlmsProviders from "@cline/llms";
+import { formatDisplayUserInput } from "@cline/shared";
 import type { HookEventPayload } from "../../hooks";
 import type { CoreSessionEvent } from "../../types/events";
 import type {
@@ -43,16 +44,9 @@ export class RuntimeHostEventBus {
 	}
 }
 
-// Returns the persisted messages verbatim. User messages keep their
-// runtime-generated <user_input mode="..."> wrappers and <mode_notice>
-// elements: they are the durable record of which mode each message was sent
-// in, and session restarts re-seed new sessions through this read path, so
-// stripping here would launder that history off disk (and out of the model's
-// context) a little more on every restart. Display surfaces are responsible
-// for their own formatting via formatDisplayUserInput.
 export async function readPersistedMessagesFile(
 	messagesPath?: string | null,
-): Promise<LlmsProviders.MessageWithMetadata[]> {
+): Promise<LlmsProviders.Message[]> {
 	const path = messagesPath?.trim();
 	if (!path || !existsSync(path)) return [];
 	try {
@@ -60,18 +54,50 @@ export async function readPersistedMessagesFile(
 		if (!raw) return [];
 		const parsed = JSON.parse(raw) as unknown;
 		if (Array.isArray(parsed)) {
-			return parsed as LlmsProviders.MessageWithMetadata[];
+			return sanitizeDisplayMessages(parsed as LlmsProviders.Message[]);
 		}
 		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
 			const messages = (parsed as { messages?: unknown }).messages;
 			if (Array.isArray(messages)) {
-				return messages as LlmsProviders.MessageWithMetadata[];
+				return sanitizeDisplayMessages(messages as LlmsProviders.Message[]);
 			}
 		}
 		return [];
 	} catch {
 		return [];
 	}
+}
+
+function sanitizeDisplayMessage(
+	message: LlmsProviders.Message,
+): LlmsProviders.Message {
+	if (message.role !== "user") {
+		return message;
+	}
+	if (typeof message.content === "string") {
+		return {
+			...message,
+			content: formatDisplayUserInput(message.content),
+		};
+	}
+	return {
+		...message,
+		content: message.content.map((part) => {
+			if (part.type !== "text" || typeof part.text !== "string") {
+				return part;
+			}
+			return {
+				...part,
+				text: formatDisplayUserInput(part.text),
+			};
+		}),
+	};
+}
+
+function sanitizeDisplayMessages(
+	messages: LlmsProviders.Message[],
+): LlmsProviders.Message[] {
+	return messages.map(sanitizeDisplayMessage);
 }
 
 export function cloneAccumulatedUsage(

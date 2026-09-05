@@ -1,115 +1,241 @@
-import { describe, it } from "bun:test"
-import "should"
-import { ClineError, ClineErrorType } from "../ClineError"
+import { describe, it } from "mocha";
+import "should";
+import {
+	ClineError,
+	ClineErrorType,
+	extractClineFreeModelLimitResetTime,
+	extractClinePassLimitMessage,
+	isClineFreeModelLimitMessage,
+	isClinePassLimitMessage,
+} from "../ClineError";
 
 describe("ClineError", () => {
 	describe("getErrorType", () => {
 		it("should return QuotaExceeded when code is INFERENCE_CAP_ERROR", () => {
-			const err = new ClineError({ message: "Inference cap reached", code: "INFERENCE_CAP_ERROR" })
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.QuotaExceeded)
-		})
+			const err = new ClineError({
+				message: "Inference cap reached",
+				code: "INFERENCE_CAP_ERROR",
+			});
+			ClineError.getErrorType(err)!.should.equal(ClineErrorType.QuotaExceeded);
+		});
 
-		it("should return Entitlement for the SDK ClinePass subscription message", () => {
+		it("should return Entitlement when code is ENTITLEMENT_ERROR", () => {
+			const err = new ClineError({
+				message:
+					"403 Error 403: the user is not subscribed to required model plan",
+				code: "ENTITLEMENT_ERROR",
+				status: 403,
+			});
+			ClineError.getErrorType(err)!.should.equal(ClineErrorType.Entitlement);
+		});
+
+		it("should return Entitlement when details.code is ENTITLEMENT_ERROR", () => {
+			const err = new ClineError({
+				message:
+					"403 Error 403: the user is not subscribed to required model plan",
+				status: 403,
+				details: {
+					code: "ENTITLEMENT_ERROR",
+					message:
+						"Error 403: the user is not subscribed to required model plan",
+				},
+			});
+			ClineError.getErrorType(err)!.should.equal(ClineErrorType.Entitlement);
+		});
+
+		it("should prefer Entitlement over Auth for 403 ENTITLEMENT_ERROR", () => {
+			// status 403 would otherwise be classified as Auth; the entitlement code must win.
+			const err = new ClineError({
+				message:
+					"403 Error 403: the user is not subscribed to required model plan",
+				code: "ENTITLEMENT_ERROR",
+				status: 403,
+			});
+			ClineError.getErrorType(err)!.should.not.equal(ClineErrorType.Auth);
+			ClineError.getErrorType(err)!.should.equal(ClineErrorType.Entitlement);
+		});
+
+		it("should return Entitlement for the real Cline 403 provider error shape (nested error object)", () => {
+			// ClineError maps `error.error` into `details`, so `details.code` drives classification.
 			const err = new ClineError(
-				"No access to ClinePass subscription models yet. Subscribe to ClinePass, the low cost open weights model coding plan:",
-			)
+				{
+					status: 403,
+					error: {
+						code: "ENTITLEMENT_ERROR",
+						message:
+							"Error 403: the user is not subscribed to required model plan",
+					},
+				},
+				"cline-pass/glm-5.2",
+				"cline-pass",
+			);
+			ClineError.getErrorType(err)!.should.equal(ClineErrorType.Entitlement);
+		});
 
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.Entitlement)
-		})
+		it("should classify the organization ENTITLEMENT_ERROR variant separately from the ClinePass subscription card", () => {
+			// Org accounts can't use individual subs; this case should not show the personal ClinePass
+			// subscription card, but it should still get dedicated user-actionable copy.
+			const err = new ClineError({
+				message:
+					"403 Error 403: organization accounts cannot use individual model inference subscriptions",
+				code: "ENTITLEMENT_ERROR",
+				status: 403,
+			});
+			const result = ClineError.getErrorType(err);
+			result!.should.equal(ClineErrorType.OrgClinePassRestriction);
+			(result !== ClineErrorType.Entitlement).should.be.true();
+		});
 
-		it("should return Entitlement for the SDK ClinePass subscription message with a different app URL", () => {
-			const err = new ClineError(
-				"No access to ClinePass subscription models yet. Subscribe to ClinePass, the low cost open weights model coding plan:",
-			)
+		it("should not classify organization restriction text without ENTITLEMENT_ERROR as OrgClinePassRestriction", () => {
+			const err = new ClineError({
+				message:
+					"Network error: organization accounts cannot use individual model inference subscriptions",
+				code: "ERR_NETWORK",
+			});
 
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.Entitlement)
-		})
+			const result = ClineError.getErrorType(err);
+			(result !== ClineErrorType.OrgClinePassRestriction).should.be.true();
+		});
 
-		it("should return Entitlement for the raw required-plan message", () => {
-			const err = new ClineError("403 Error 403: the user is not subscribed to required model plan")
-
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.Entitlement)
-		})
-
-		it("should classify the SDK org individual subscription message separately", () => {
-			const err = new ClineError(
-				"Organization accounts cannot use ClinePass subscriptions. Go to /account -> change account to switch to your personal account for ClinePass",
-			)
-
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.OrgClinePassRestriction)
-		})
-
-		it("should classify the raw organization individual subscription message separately", () => {
-			const err = new ClineError("403 Error 403: organization accounts cannot use individual model inference subscriptions")
-
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.OrgClinePassRestriction)
-		})
-
-		it("should classify ClinePass period limit messages separately", () => {
+		it("should classify ClinePass period limit messages as ClinePassLimit", () => {
 			const err = new ClineError(
 				"You have reached your weekly Clinepass limit. The limit resets in 7d, please try again later.",
-			)
+			);
 
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.ClinePassLimit)
-		})
+			ClineError.getErrorType(err)!.should.equal(ClineErrorType.ClinePassLimit);
+		});
 
-		it("should classify nested ClinePass period limit messages separately", () => {
+		it("should classify nested ClinePass period limit messages as ClinePassLimit", () => {
+			// ClineError maps `error.error` into `details`, matching the real provider error shape.
 			const err = new ClineError({
 				message: "403 Error 403",
 				error: {
-					message: "You have reached your monthly ClinePass limit. The limit resets in 12h, please try again later.",
+					message:
+						"You have reached your monthly ClinePass limit. The limit resets in 12h, please try again later.",
 				},
-			})
+			});
 
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.ClinePassLimit)
-		})
+			ClineError.getErrorType(err)!.should.equal(ClineErrorType.ClinePassLimit);
+		});
+
+		it("should prefer ClinePassLimit over Auth for a 403 with the limit message", () => {
+			// status 403 falls inside the generic auth-status range; the limit message must win.
+			const err = new ClineError({
+				message:
+					"You have reached your 5-hour Clinepass limit. The limit resets in 5h, please try again later.",
+				status: 403,
+			});
+
+			ClineError.getErrorType(err)!.should.equal(ClineErrorType.ClinePassLimit);
+		});
 
 		it("should classify daily Cline free model limits separately", () => {
 			const err = new ClineError(
 				"Error: Error 429: Daily free limit reached on model deepseek/deepseek-v4-flash. Try again in 23h 59m",
-			)
+			);
 
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.ClineFreeModelLimit)
-		})
+			ClineError.getErrorType(err)!.should.equal(
+				ClineErrorType.ClineFreeModelLimit,
+			);
+		});
 
-		it("should classify the host-stamped promotion-ended code as ClineFreePromotionEnded", () => {
-			// reshapeErrorForWebview stamps this code when the active model is a
-			// retired cline-free/ id (see message-translator).
+		it("should classify nested daily Cline free model limits as ClineFreeModelLimit", () => {
+			// ClineError maps `error.error` into `details`, matching the real provider error shape.
 			const err = new ClineError({
-				message: "Model not found",
-				code: "cline_free_promotion_ended",
-			})
+				message: "429 Error 429",
+				error: {
+					message:
+						"Daily free limit reached on model deepseek/deepseek-v4-flash. Try again in 5h 12m",
+				},
+			});
 
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.ClineFreePromotionEnded)
-		})
+			ClineError.getErrorType(err)!.should.equal(
+				ClineErrorType.ClineFreeModelLimit,
+			);
+		});
 
-		it("should classify model-not-found for a cline-free model as ClineFreePromotionEnded", () => {
-			const err = new ClineError({ message: "Error 404: Model not found" }, "cline-free/glm-5")
+		it("should prefer ClineFreeModelLimit over the generic rate-limit patterns", () => {
+			// The message carries "429", which the RATE_LIMIT_PATTERNS would otherwise match.
+			const err = new ClineError({
+				message:
+					"Error 429: Daily free limit reached on model deepseek/deepseek-v4-flash. Try again in 23h 59m",
+				status: 429,
+			});
 
-			ClineError.getErrorType(err)!.should.equal(ClineErrorType.ClineFreePromotionEnded)
-		})
+			const result = ClineError.getErrorType(err);
+			result!.should.equal(ClineErrorType.ClineFreeModelLimit);
+			(result !== ClineErrorType.RateLimit).should.be.true();
+		});
+	});
 
-		it("should prefer ClineFreePromotionEnded over Auth for a 404 with a cline-free model", () => {
-			// A 404 falls inside the generic 401-428 auth-status range; the
-			// promotion-ended classification must win.
-			const err = new ClineError({ message: "Error 404: Model not found", status: 404 }, "cline-free/glm-5")
+	describe("isClineFreeModelLimitMessage", () => {
+		it("matches daily and generic free-limit messages", () => {
+			isClineFreeModelLimitMessage(
+				"Daily free limit reached on model deepseek/deepseek-v4-flash. Try again in 23h 59m",
+			).should.be.true();
+			isClineFreeModelLimitMessage(
+				"Free limit reached on model cline-free/glm-5",
+			).should.be.true();
+		});
 
-			const result = ClineError.getErrorType(err)
-			result!.should.equal(ClineErrorType.ClineFreePromotionEnded)
-		})
+		it("does not match unrelated messages", () => {
+			isClineFreeModelLimitMessage(
+				"You have reached your weekly Clinepass limit. The limit resets in 7d, please try again later.",
+			).should.be.false();
+			isClineFreeModelLimitMessage("some other error").should.be.false();
+		});
+	});
 
-		it("should keep model-not-found for a non-free model on the generic path", () => {
-			const err = new ClineError({ message: "Error 404: Model not found", status: 404 }, "deepseek/deepseek-v4-flash")
+	describe("extractClineFreeModelLimitResetTime", () => {
+		it("extracts the reset window out of the limit message", () => {
+			extractClineFreeModelLimitResetTime(
+				"Daily free limit reached on model deepseek/deepseek-v4-flash. Try again in 23h 59m",
+			)!.should.equal("23h 59m");
+		});
 
-			const result = ClineError.getErrorType(err)
-			;(result !== ClineErrorType.ClineFreePromotionEnded).should.be.true()
-		})
+		it("returns undefined when there is no reset window", () => {
+			(
+				extractClineFreeModelLimitResetTime(
+					"Daily free limit reached on model deepseek/deepseek-v4-flash.",
+				) === undefined
+			).should.be.true();
+		});
+	});
 
-		it("should not classify unrelated cline-free errors as ClineFreePromotionEnded", () => {
-			const err = new ClineError({ message: "Network error: socket hang up" }, "cline-free/glm-5")
+	describe("isClinePassLimitMessage", () => {
+		it("matches limit messages with variable period and reset", () => {
+			isClinePassLimitMessage(
+				"You have reached your weekly Clinepass limit. The limit resets in 7d, please try again later.",
+			).should.be.true();
+			isClinePassLimitMessage(
+				"You have reached your 5-hour ClinePass limit. The limit resets in 5h, please try again later.",
+			).should.be.true();
+		});
 
-			const result = ClineError.getErrorType(err)
-			;(result !== ClineErrorType.ClineFreePromotionEnded).should.be.true()
-		})
-	})
-})
+		it("does not match unrelated or partial messages", () => {
+			isClinePassLimitMessage(
+				"the user is not subscribed to required model plan",
+			).should.be.false();
+			isClinePassLimitMessage(
+				`You have reached your\t-\tClinepass limit.The limit resets in\t${"\t".repeat(10_000)}`,
+			).should.be.false();
+		});
+	});
+
+	describe("extractClinePassLimitMessage", () => {
+		it("extracts the limit message out of a wrapped error string", () => {
+			const message =
+				"You have reached your weekly Clinepass limit. The limit resets in 7d, please try again later.";
+
+			extractClinePassLimitMessage(`429 Error: ${message}`)!.should.equal(
+				message,
+			);
+		});
+
+		it("returns undefined when there is no limit message", () => {
+			(
+				extractClinePassLimitMessage("some other error") === undefined
+			).should.be.true();
+		});
+	});
+});

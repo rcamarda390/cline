@@ -24,13 +24,12 @@ import { Controller } from ".."
  * @returns Response containing the Oca models
  */
 export async function refreshOcaModels(controller: Controller, request: StringRequest): Promise<OcaCompatibleModelInfo> {
-	const parsePrice = (price: unknown) => {
+	const parsePrice = (price: any) => {
 		if (price) {
-			return Number.parseFloat(String(price)) * 1_000_000
+			return Number.parseFloat(price) * 1_000_000
 		}
 		return undefined
 	}
-	const noModelsMessage = "No models found. Did you set up your OCA access (possibly through entitlements)?"
 	const models: Record<string, OcaModelInfo> = {}
 	let defaultModelId: string | undefined
 	const ocaAccessToken = await OcaAuthService.getInstance().getAuthToken()
@@ -44,20 +43,18 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 	const ocaMode = controller.stateManager.getGlobalSettingsKey("ocaMode") || "internal"
 	const baseUrl = request.value || (ocaMode === "internal" ? DEFAULT_INTERNAL_OCA_BASE_URL : DEFAULT_EXTERNAL_OCA_BASE_URL)
 	const modelsUrl = `${baseUrl}/v1/model/info`
-	const headers = await createOcaHeaders(ocaAccessToken, "models-refresh")
+	const headers = await createOcaHeaders(ocaAccessToken!, "models-refresh")
 	try {
 		Logger.log(`Making refresh oca model request with customer opc-request-id: ${headers["opc-request-id"]}`)
 		const response = await axios.get(modelsUrl, { headers, ...getAxiosSettings() })
-		const responseModels = response.data?.data
-		if (Array.isArray(responseModels)) {
-			if (responseModels.length === 0) {
+		if (response.data?.data) {
+			if (response.data.data.length === 0) {
 				HostProvider.window.showMessage({
 					type: ShowMessageType.ERROR,
-					message: noModelsMessage,
+					message: "No models found. Did you set up your OCA access (possibly through entitlements)?",
 				})
-				return OcaCompatibleModelInfo.create({ error: noModelsMessage })
 			}
-			for (const model of responseModels) {
+			for (const model of response.data.data) {
 				const modelId = model.litellm_params?.model
 				if (typeof modelId !== "string" || !modelId) {
 					continue
@@ -65,13 +62,8 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 				if (!defaultModelId) {
 					defaultModelId = modelId
 				}
-				const modelInfo = model.model_info ?? {}
-				const supportedApiList = Array.isArray(modelInfo.supported_api_list)
-					? modelInfo.supported_api_list
-					: [CHAT_COMPLETIONS_API]
-				const reasoningEffortOptions = Array.isArray(modelInfo.reasoning_effort_options)
-					? modelInfo.reasoning_effort_options
-					: []
+				const modelInfo = model.model_info
+				const supportedApiList = modelInfo.supported_api_list ?? [CHAT_COMPLETIONS_API]
 
 				let apiFormat: ApiFormat = ApiFormat.OPENAI_CHAT
 				if (supportsChatCompletions(supportedApiList)) {
@@ -100,15 +92,8 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 					modelName: modelId,
 					apiFormat: apiFormat,
 					supportsReasoning: modelInfo.is_reasoning_model || false,
-					reasoningEffortOptions,
+					reasoningEffortOptions: modelInfo.reasoning_effort_options || [],
 				})
-			}
-			if (!defaultModelId || Object.keys(models).length === 0) {
-				HostProvider.window.showMessage({
-					type: ShowMessageType.ERROR,
-					message: noModelsMessage,
-				})
-				return OcaCompatibleModelInfo.create({ error: noModelsMessage })
 			}
 			Logger.log("OCA models fetched", models)
 
@@ -117,17 +102,17 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 			const planActSeparateModelsSetting = controller.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting")
 			const currentMode = controller.stateManager.getGlobalSettingsKey("mode")
 
-			const planModeSelectedModelId: string =
+			const planModeSelectedModelId =
 				apiConfiguration?.planModeOcaModelId && models[apiConfiguration.planModeOcaModelId]
 					? apiConfiguration.planModeOcaModelId
-					: defaultModelId
-			const actModeSelectedModelId: string =
+					: defaultModelId!
+			const actModeSelectedModelId =
 				apiConfiguration?.actModeOcaModelId && models[apiConfiguration.actModeOcaModelId]
 					? apiConfiguration.actModeOcaModelId
-					: defaultModelId
+					: defaultModelId!
 
-			let planModeOcaReasoningEffort: string | undefined
-			let actModeOcaReasoningEffort: string | undefined
+			let planModeOcaReasoningEffort
+			let actModeOcaReasoningEffort
 			if (
 				models[planModeSelectedModelId].supportsReasoning &&
 				models[planModeSelectedModelId].reasoningEffortOptions.length > 0
@@ -177,15 +162,13 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 			await controller.postStateToWebview?.()
 		} else {
 			Logger.error("Invalid response from OCA API")
-			const error = `Failed to fetch OCA models. Please check your configuration from ${baseUrl}`
 			HostProvider.window.showMessage({
 				type: ShowMessageType.ERROR,
-				message: error,
+				message: `Failed to fetch OCA models. Please check your configuration from ${baseUrl}`,
 			})
-			return OcaCompatibleModelInfo.create({ error })
 		}
 	} catch (err) {
-		let userMsg: string
+		let userMsg
 		if (err.response) {
 			// The request was made and the server responded with a status code that falls out of the range of 2xx
 			userMsg = `Did you set up your OCA access (possibly through entitlements)? OCA service returned ${err.response.status} ${err.response.statusText}.`
@@ -198,21 +181,21 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 		}
 		HostProvider.window.showMessage({
 			type: ShowMessageType.ERROR,
-			message: `Error refreshing OCA models. ${userMsg} opc-request-id: ${headers["opc-request-id"]}`,
+			message: `Error refreshing OCA models. ` + userMsg + ` opc-request-id: ${headers["opc-request-id"]}`,
 		})
 		return OcaCompatibleModelInfo.create({ error: userMsg })
 	}
 	return OcaCompatibleModelInfo.create({ models })
 }
 
-function supportsChatCompletions(modelSupportedApiList: string[]): boolean {
+function supportsChatCompletions(modelSupportedApiList: any): boolean {
 	return modelSupportedApiList.includes(CHAT_COMPLETIONS_API)
 }
 
-function supportsResponses(modelSupportedApiList: string[]): boolean {
+function supportsResponses(modelSupportedApiList: any): boolean {
 	return modelSupportedApiList.includes(RESPONSES_API)
 }
 
-function supportsMessages(modelSupportedApiList: string[]): boolean {
+function supportsMessages(modelSupportedApiList: any): boolean {
 	return modelSupportedApiList.includes(MESSAGES_API)
 }

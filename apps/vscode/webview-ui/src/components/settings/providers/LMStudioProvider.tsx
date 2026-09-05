@@ -1,14 +1,14 @@
-import { type ModelInfo, openAiModelInfoSafeDefaults } from "@shared/api"
 import type { Mode } from "@shared/storage/types"
 import { VSCodeDropdown, VSCodeLink, VSCodeOption, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useInterval } from "react-use"
+import UseCustomPromptCheckbox from "@/components/settings/UseCustomPromptCheckbox"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import { useProviderConfig } from "@/hooks/useProviderConfig"
-import { useProviderModelSelection } from "@/hooks/useProviderModelSelection"
 import { ModelsServiceClient } from "@/services/grpc-client"
 import { BaseUrlField } from "../common/BaseUrlField"
 import { DebouncedTextField } from "../common/DebouncedTextField"
 import { DropdownContainer } from "../common/ModelSelector"
+import { getModeSpecificFields } from "../utils/providerUtils"
 import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
 
 /**
@@ -38,82 +38,22 @@ interface LMStudioApiModel {
  */
 export const LMStudioProvider = ({ currentMode }: LMStudioProviderProps) => {
 	const { apiConfiguration } = useExtensionState()
-	const { handleFieldChange } = useApiConfigurationHandlers()
-	const { config, write, commitSelection } = useProviderConfig("lmstudio")
+	const { handleFieldChange, handleModeFieldChange } = useApiConfigurationHandlers()
+
+	const { lmStudioModelId } = getModeSpecificFields(apiConfiguration, currentMode)
 
 	const [lmStudioModels, setLmStudioModels] = useState<LMStudioApiModel[]>([])
-	const [pendingSelectedModelId, setPendingSelectedModelId] = useState<string | undefined>(undefined)
 
-	const toLmStudioModelInfo = useCallback((model: LMStudioApiModel | undefined, modelId: string): ModelInfo => {
-		const contextWindow = model?.loaded_context_length ?? model?.max_context_length
-		return {
-			...openAiModelInfoSafeDefaults,
-			name: modelId,
-			...(contextWindow !== undefined && contextWindow > 0 ? { contextWindow } : {}),
-			...(model?.max_context_length !== undefined && model.max_context_length > 0
-				? { maxTokens: model.max_context_length }
-				: {}),
-		}
-	}, [])
-	const lmStudioModelInfoById = useMemo(
-		() => Object.fromEntries(lmStudioModels.map((model) => [model.id, toLmStudioModelInfo(model, model.id)])),
-		[lmStudioModels, toLmStudioModelInfo],
-	)
-	const { selectedModel, commitModelSelection } = useProviderModelSelection("lmstudio", currentMode, {
-		models: lmStudioModelInfoById,
-		config,
-		commitSelection,
-		fallbackModelInfo: openAiModelInfoSafeDefaults,
-		customModelInfo: (modelId) => toLmStudioModelInfo(undefined, modelId),
-	})
-	const displayedSelectedModelId = pendingSelectedModelId ?? selectedModel.modelId
 	const currentLMStudioModel = useMemo(
-		() => lmStudioModels.find((model) => model.id === displayedSelectedModelId),
-		[displayedSelectedModelId, lmStudioModels],
+		() => lmStudioModels.find((model) => model.id === lmStudioModelId),
+		[lmStudioModels, lmStudioModelId],
 	)
 	const endpoint = useMemo(
-		() => config?.baseUrl ?? apiConfiguration?.lmStudioBaseUrl ?? "http://localhost:1234",
-		[apiConfiguration?.lmStudioBaseUrl, config?.baseUrl],
+		() => apiConfiguration?.lmStudioBaseUrl || "http://localhost:1234",
+		[apiConfiguration?.lmStudioBaseUrl],
 	)
 
-	const handleBaseUrlChange = useCallback(
-		(value: string) => {
-			void write({ baseUrl: value }).catch((error) => console.error("Failed to update LM Studio base URL:", error))
-		},
-		[write],
-	)
-	const handleBaseUrlClear = useCallback(async () => {
-		try {
-			await write({ baseUrl: "" })
-		} catch (error) {
-			console.error("Failed to clear LM Studio base URL:", error)
-			throw error
-		}
-	}, [write])
-
-	const handleModelChange = useCallback(
-		(modelId: string) => {
-			const trimmedModelId = modelId.trim()
-			if (!trimmedModelId) {
-				return
-			}
-			setPendingSelectedModelId(trimmedModelId)
-			const model = lmStudioModels.find((candidate) => candidate.id === trimmedModelId)
-			void commitModelSelection({
-				modelId: trimmedModelId,
-				modelInfo: toLmStudioModelInfo(model, trimmedModelId),
-			}).catch((error) => {
-				console.error("Failed to update LM Studio model selection:", error)
-				setPendingSelectedModelId(undefined)
-			})
-		},
-		[commitModelSelection, lmStudioModels, toLmStudioModelInfo],
-	)
-
-	// Fetch LM Studio models on mount, whenever the endpoint changes, and when
-	// the model control gains focus (no interval polling — the endpoint is
-	// user-configurable, see ENG-2344), so a server started after mount is
-	// still discovered.
+	// Poll LM Studio models
 	const requestLmStudioModels = useCallback(async () => {
 		await ModelsServiceClient.getLmStudioModels({
 			value: endpoint,
@@ -131,16 +71,10 @@ export const LMStudioProvider = ({ currentMode }: LMStudioProviderProps) => {
 
 	useEffect(() => {
 		requestLmStudioModels()
-	}, [requestLmStudioModels])
+	}, [])
 
 	const lmStudioMaxTokens = currentLMStudioModel?.max_context_length?.toString()
 	const currentLoadedContext = currentLMStudioModel?.loaded_context_length?.toString()
-
-	useEffect(() => {
-		if (pendingSelectedModelId && selectedModel.modelId === pendingSelectedModelId) {
-			setPendingSelectedModelId(undefined)
-		}
-	}, [pendingSelectedModelId, selectedModel.modelId])
 
 	useEffect(() => {
 		const curr = currentLMStudioModel?.loaded_context_length?.toString()
@@ -156,28 +90,34 @@ export const LMStudioProvider = ({ currentMode }: LMStudioProviderProps) => {
 		handleFieldChange,
 	])
 
+	useInterval(requestLmStudioModels, 6000)
+
 	return (
 		<div className="flex flex-col gap-2">
 			<BaseUrlField
-				initialValue={config?.baseUrl ?? apiConfiguration?.lmStudioBaseUrl}
+				initialValue={apiConfiguration?.lmStudioBaseUrl}
 				label="Use custom base URL"
-				onChange={handleBaseUrlChange}
-				onClear={handleBaseUrlClear}
+				onChange={(value) => handleFieldChange("lmStudioBaseUrl", value)}
 				placeholder="Default: http://localhost:1234"
 			/>
 
 			<div className="font-semibold">Model</div>
 			{lmStudioModels.length > 0 ? (
-				<DropdownContainer className="dropdown-container" onFocusCapture={() => void requestLmStudioModels()} zIndex={10}>
+				<DropdownContainer className="dropdown-container" zIndex={10}>
 					<VSCodeDropdown
 						className="w-full mb-3"
 						onChange={(e: any) => {
 							const value = e?.target?.value
-							if (typeof value === "string") {
-								handleModelChange(value)
-							}
+							handleModeFieldChange(
+								{
+									plan: "planModeLmStudioModelId",
+									act: "actModeLmStudioModelId",
+								},
+								value,
+								currentMode,
+							)
 						}}
-						value={displayedSelectedModelId}>
+						value={lmStudioModelId}>
 						{lmStudioModels.map((model) => (
 							<VSCodeOption className="w-full" key={model.id} value={model.id}>
 								{model.id}
@@ -186,14 +126,21 @@ export const LMStudioProvider = ({ currentMode }: LMStudioProviderProps) => {
 					</VSCodeDropdown>
 				</DropdownContainer>
 			) : (
-				<div onFocusCapture={() => void requestLmStudioModels()}>
-					<DebouncedTextField
-						initialValue={displayedSelectedModelId || ""}
-						onChange={handleModelChange}
-						placeholder={"e.g. meta-llama-3.1-8b-instruct"}
-						style={{ width: "100%" }}
-					/>
-				</div>
+				<DebouncedTextField
+					initialValue={lmStudioModelId || ""}
+					onChange={(value) =>
+						handleModeFieldChange(
+							{
+								plan: "planModeLmStudioModelId",
+								act: "actModeLmStudioModelId",
+							},
+							value,
+							currentMode,
+						)
+					}
+					placeholder={"e.g. meta-llama-3.1-8b-instruct"}
+					style={{ width: "100%" }}
+				/>
 			)}
 
 			<div className="font-semibold">Context Window</div>
@@ -203,6 +150,8 @@ export const LMStudioProvider = ({ currentMode }: LMStudioProviderProps) => {
 				title="Not editable - the value is returned by the connected endpoint"
 				value={String(currentLoadedContext ?? lmStudioMaxTokens ?? "0")}
 			/>
+
+			<UseCustomPromptCheckbox providerId="lmstudio" />
 
 			<div className="text-xs text-description">
 				LM Studio allows you to run models locally on your computer. For instructions on how to get started, see their
@@ -215,7 +164,7 @@ export const LMStudioProvider = ({ currentMode }: LMStudioProviderProps) => {
 				</VSCodeLink>{" "}
 				feature with <code>lms server start</code> to use it with this extension.{" "}
 				<div className="text-error">
-					<span className="font-semibold">Note:</span> Cline uses complex prompts, so behavior can vary across models.
+					<span className="font-semibold">Note:</span> Cline uses complex prompts and works best with Claude models.
 					Less capable models may not work as expected.
 				</div>
 			</div>

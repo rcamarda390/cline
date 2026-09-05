@@ -5,7 +5,7 @@ import {
 import type { ChoiceContext } from "@opentui-ui/dialog";
 import { useDialogKeyboard } from "@opentui-ui/dialog/react";
 import { useState } from "react";
-import { useDialogPalette } from "../../hooks/use-theme";
+import { palette } from "../../palette";
 
 export interface McpEntry {
 	name: string;
@@ -70,7 +70,6 @@ export function McpManagerContent(
 		servers: McpEntry[];
 	},
 ) {
-	const palette = useDialogPalette();
 	const [selected, setSelected] = useState(0);
 	const [servers, setServers] = useState(props.servers);
 	const [changed, setChanged] = useState(false);
@@ -122,7 +121,7 @@ export function McpManagerContent(
 
 	return (
 		<box flexDirection="column" paddingX={1}>
-			<text fg={palette.act}>MCP Servers</text>
+			<text fg="cyan">MCP Servers</text>
 
 			<text fg="gray" marginTop={1}>
 				Settings file:
@@ -142,7 +141,7 @@ export function McpManagerContent(
 						const enabledIcon =
 							typeof srv.enabled === "boolean" ? (enabled ? "● " : "○ ") : "";
 						const status = getMcpManagerEntryStatus(srv);
-						let rowColor = isSel ? palette.act : "gray";
+						let rowColor = isSel ? "cyan" : "gray";
 						if (enabled && typeof srv.enabled === "boolean") {
 							rowColor = palette.success;
 						}

@@ -9,11 +9,6 @@ import * as path from "node:path";
 import type { AgentToolContext } from "@cline/shared";
 import type { EditFileInput } from "../schemas";
 import type { EditorExecutor } from "../types";
-import {
-	detectLineEnding,
-	normalizeLineEndings,
-	normalizeNewFileLineEndings,
-} from "./line-endings";
 
 /**
  * Options for the editor executor
@@ -69,69 +64,39 @@ function countOccurrences(content: string, needle: string): number {
 	return content.split(needle).length - 1;
 }
 
-// Reads produced via readline strip "\r", so models emit LF-only text even
-// for CRLF files; edits must be normalized to the file's own EOL (see
-// ./line-endings) or they create mixed line endings and break subsequent
-// exact-match replacements.
-
 function createLineDiff(
 	oldContent: string,
 	newContent: string,
 	maxLines: number,
 ): string {
-	const oldLines = oldContent.split(/\r\n|\n/);
-	const newLines = newContent.split(/\r\n|\n/);
-
-	// Trim the common prefix and suffix so only the changed region is emitted;
-	// a naive positional compare would mispair every line after an edit that
-	// changes the line count.
-	let start = 0;
-	while (
-		start < oldLines.length &&
-		start < newLines.length &&
-		oldLines[start] === newLines[start]
-	) {
-		start++;
-	}
-	let oldEnd = oldLines.length;
-	let newEnd = newLines.length;
-	while (
-		oldEnd > start &&
-		newEnd > start &&
-		oldLines[oldEnd - 1] === newLines[newEnd - 1]
-	) {
-		oldEnd--;
-		newEnd--;
-	}
-
-	// Split the line budget between removals and additions so neither side is
-	// silently dropped when the other alone would exhaust maxLines.
-	const removedCount = oldEnd - start;
-	const addedCount = newEnd - start;
-	let removedBudget = removedCount;
-	let addedBudget = addedCount;
-	if (removedCount + addedCount > maxLines) {
-		removedBudget = Math.min(
-			removedCount,
-			Math.max(Math.ceil(maxLines / 2), maxLines - addedCount),
-		);
-		addedBudget = Math.min(addedCount, maxLines - removedBudget);
-	}
-
+	const oldLines = oldContent.split("\n");
+	const newLines = newContent.split("\n");
+	const max = Math.max(oldLines.length, newLines.length);
 	const out: string[] = ["```diff"];
-	for (let i = start; i < start + removedBudget; i++) {
-		out.push(`-${i + 1}: ${oldLines[i]}`);
-	}
-	for (let i = start; i < start + addedBudget; i++) {
-		out.push(`+${i + 1}: ${newLines[i]}`);
-	}
+	let emitted = 0;
 
-	const omittedRemoved = removedCount - removedBudget;
-	const omittedAdded = addedCount - addedBudget;
-	if (omittedRemoved > 0 || omittedAdded > 0) {
-		out.push(
-			`... diff truncated (${omittedRemoved} more removed, ${omittedAdded} more added lines) ...`,
-		);
+	for (let i = 0; i < max; i++) {
+		if (emitted >= maxLines) {
+			out.push("... diff truncated ...");
+			break;
+		}
+
+		const oldLine = oldLines[i];
+		const newLine = newLines[i];
+
+		if (oldLine === newLine) {
+			continue;
+		}
+
+		const lineNo = i + 1;
+		if (oldLine !== undefined) {
+			out.push(`-${lineNo}: ${oldLine}`);
+			emitted++;
+		}
+		if (newLine !== undefined && emitted < maxLines) {
+			out.push(`+${lineNo}: ${newLine}`);
+			emitted++;
+		}
 	}
 
 	out.push("```");
@@ -144,9 +109,7 @@ async function createFile(
 	encoding: BufferEncoding,
 ): Promise<string> {
 	await fs.mkdir(path.dirname(filePath), { recursive: true });
-	await fs.writeFile(filePath, normalizeNewFileLineEndings(fileText), {
-		encoding,
-	});
+	await fs.writeFile(filePath, fileText, { encoding });
 	return `File created successfully at: ${filePath}`;
 }
 
@@ -167,10 +130,7 @@ async function replaceInFile(
 	maxDiffLines: number,
 ): Promise<string> {
 	const content = await fs.readFile(filePath, encoding);
-	const eol = detectLineEnding(content);
-	const normalizedOldStr = normalizeLineEndings(oldStr, eol);
-	const normalizedNewStr = normalizeLineEndings(newStr ?? "", eol);
-	const occurrences = countOccurrences(content, normalizedOldStr);
+	const occurrences = countOccurrences(content, oldStr);
 
 	if (occurrences === 0) {
 		throw new Error(`No replacement performed: text not found in ${filePath}.`);
@@ -182,9 +142,7 @@ async function replaceInFile(
 		);
 	}
 
-	// Replacer function so "$"-sequences in new_text ($&, $', $`, $$, $n)
-	// are inserted literally instead of being expanded by String.replace.
-	const updated = content.replace(normalizedOldStr, () => normalizedNewStr);
+	const updated = content.replace(oldStr, newStr ?? "");
 	await fs.writeFile(filePath, updated, { encoding });
 
 	const diff = createLineDiff(content, updated, maxDiffLines);
@@ -198,8 +156,7 @@ async function insertInFile(
 	encoding: BufferEncoding,
 ): Promise<string> {
 	const content = await fs.readFile(filePath, encoding);
-	const eol = detectLineEnding(content);
-	const lines = content.split(/\r\n|\n/);
+	const lines = content.split("\n");
 	const maxBoundaryLine = lines.length + 1;
 
 	if (insertLineOneBased < 1 || insertLineOneBased > maxBoundaryLine) {
@@ -209,8 +166,8 @@ async function insertInFile(
 	}
 
 	const insertLine = insertLineOneBased - 1;
-	lines.splice(insertLine, 0, ...newStr.split(/\r\n|\n/));
-	await fs.writeFile(filePath, lines.join(eol), { encoding });
+	lines.splice(insertLine, 0, ...newStr.split("\n"));
+	await fs.writeFile(filePath, lines.join("\n"), { encoding });
 
 	return `Inserted content at line ${insertLineOneBased} in ${filePath}.`;
 }

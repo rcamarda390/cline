@@ -85,7 +85,7 @@ function inferProtoType(typeText, fieldName) {
 		["FocusChainSettings", "FocusChainSettings"],
 		["OpenaiReasoningEffort", "OpenaiReasoningEffort"],
 		["PlanActMode", "PlanActMode"],
-		["ApiProvider", "string"],
+		["ApiProvider", "ApiProvider"],
 		["LanguageModelChatSelector", "LanguageModelChatSelector"], // Must come before "Mode" check
 	]
 
@@ -297,86 +297,28 @@ function parseProtoMessageFieldNumbers(protoContent, messageName) {
 }
 
 /**
- * Parse `reserved` statements from an existing proto message definition so they
- * survive regeneration (removed fields must keep their numbers/names reserved).
- */
-function parseProtoMessageReservedStatements(protoContent, messageName) {
-	const messageRegex = new RegExp(`message\\s+${messageName}\\s*\\{([^}]*(?:\\{[^}]*\\}[^}]*)*)\\}`, "s")
-	const match = protoContent.match(messageRegex)
-
-	if (!match) {
-		return []
-	}
-
-	return [...match[1].matchAll(/^[ \t]*(reserved\b[^\n]*)$/gm)].map((m) => m[1].trim())
-}
-
-/**
- * Extract the set of field numbers covered by `reserved` statements
- * (single numbers, comma lists, and `N to M` ranges; name reservations are ignored).
- */
-function parseReservedFieldNumbers(reservedStatements) {
-	const reservedNumbers = new Set()
-
-	for (const statement of reservedStatements) {
-		// Strip the keyword, trailing semicolon, and any comment
-		const body = statement
-			.replace(/^reserved\b/, "")
-			.replace(/;.*$/, "")
-			.trim()
-
-		// Name reservations (quoted) carry no numbers
-		if (body.includes('"') || body.includes("'")) {
-			continue
-		}
-
-		for (const part of body.split(",")) {
-			const rangeMatch = part.trim().match(/^(\d+)\s+to\s+(\d+|max)$/)
-			if (rangeMatch) {
-				const start = Number.parseInt(rangeMatch[1], 10)
-				// "to max" reserves everything upward; represent with Infinity
-				const end = rangeMatch[2] === "max" ? Number.POSITIVE_INFINITY : Number.parseInt(rangeMatch[2], 10)
-				if (end === Number.POSITIVE_INFINITY) {
-					throw new Error(`"reserved ${part.trim()}" leaves no field numbers available for new fields`)
-				}
-				for (let n = start; n <= end; n++) {
-					reservedNumbers.add(n)
-				}
-			} else if (/^\d+$/.test(part.trim())) {
-				reservedNumbers.add(Number.parseInt(part.trim(), 10))
-			}
-		}
-	}
-
-	return reservedNumbers
-}
-
-/**
- * Load field number mappings and reserved statements from existing proto file
+ * Load field number mappings from existing proto file
  */
 async function loadFieldNumbersFromProto() {
 	try {
 		const protoContent = await fs.readFile(STATE_PROTO_PATH, "utf-8")
 		const secrets = parseProtoMessageFieldNumbers(protoContent, "Secrets")
 		const settings = parseProtoMessageFieldNumbers(protoContent, "Settings")
-		const secretsReserved = parseProtoMessageReservedStatements(protoContent, "Secrets")
-		const settingsReserved = parseProtoMessageReservedStatements(protoContent, "Settings")
 
 		console.log(`  Found ${Object.keys(secrets).length} existing Secrets fields`)
 		console.log(`  Found ${Object.keys(settings).length} existing Settings fields`)
 
-		return { Secrets: secrets, Settings: settings, SecretsReserved: secretsReserved, SettingsReserved: settingsReserved }
+		return { Secrets: secrets, Settings: settings }
 	} catch {
 		// Proto file doesn't exist, start fresh
-		return { Secrets: {}, Settings: {}, SecretsReserved: [], SettingsReserved: [] }
+		return { Secrets: {}, Settings: {} }
 	}
 }
 
 /**
- * Assign field numbers, preserving existing assignments and adding new ones.
- * Reserved numbers are never handed out to new fields.
+ * Assign field numbers, preserving existing assignments and adding new ones
  */
-function assignFieldNumbers(fields, existingNumbers, startNumber = 1, reservedNumbers = new Set()) {
+function assignFieldNumbers(fields, existingNumbers, startNumber = 1) {
 	const result = {}
 	let nextNumber = startNumber
 
@@ -405,21 +347,13 @@ function assignFieldNumbers(fields, existingNumbers, startNumber = 1, reservedNu
 
 		const existingFieldNumber = normalizedFieldNumber ?? rawFieldNumber
 		if (existingFieldNumber !== undefined) {
-			if (reservedNumbers.has(existingFieldNumber)) {
-				throw new Error(
-					`Field "${field.name}" uses number ${existingFieldNumber}, which is also covered by a reserved statement. Remove the field or the reservation.`,
-				)
-			}
 			result[field.name] = existingFieldNumber
 		}
 	}
 
-	// Assign new numbers for new fields, skipping reserved numbers
+	// Assign new numbers for new fields
 	for (const field of fields) {
 		if (result[field.name] === undefined) {
-			while (reservedNumbers.has(nextNumber)) {
-				nextNumber++
-			}
 			result[field.name] = nextNumber++
 		}
 	}
@@ -430,13 +364,8 @@ function assignFieldNumbers(fields, existingNumbers, startNumber = 1, reservedNu
 /**
  * Generate proto message definition
  */
-function generateProtoMessage(messageName, fields, fieldNumbers, reservedStatements = []) {
+function generateProtoMessage(messageName, fields, fieldNumbers) {
 	const lines = [`message ${messageName} {`]
-
-	// Re-emit reserved statements so removed field numbers/names stay reserved
-	for (const statement of reservedStatements) {
-		lines.push(`  ${statement}`)
-	}
 
 	// Sort fields by field number for consistent output
 	const sortedFields = [...fields].sort((a, b) => fieldNumbers[a.name] - fieldNumbers[b.name])
@@ -456,13 +385,13 @@ function generateProtoMessage(messageName, fields, fieldNumbers, reservedStateme
 /**
  * Generate Secrets message from SECRETS_KEYS
  */
-function generateSecretsMessage(secretsKeys, fieldNumbers, reservedStatements) {
+function generateSecretsMessage(secretsKeys, fieldNumbers) {
 	const fields = secretsKeys.map((key) => ({
 		name: key,
 		protoType: "string",
 	}))
 
-	return generateProtoMessage("Secrets", fields, fieldNumbers, reservedStatements)
+	return generateProtoMessage("Secrets", fields, fieldNumbers)
 }
 
 /**
@@ -501,28 +430,17 @@ async function main() {
 	// Load existing field numbers from proto file
 	const existingFieldNumbers = await loadFieldNumbersFromProto()
 
-	// Assign field numbers (preserving existing, adding new ones, never reusing reserved ones)
+	// Assign field numbers (preserving existing, adding new ones)
 	const secretsFieldNumbers = assignFieldNumbers(
 		secretsKeys.map((k) => ({ name: k })),
 		existingFieldNumbers.Secrets,
 		1,
-		parseReservedFieldNumbers(existingFieldNumbers.SecretsReserved),
 	)
-	const settingsFieldNumbers = assignFieldNumbers(
-		settingsFields,
-		existingFieldNumbers.Settings,
-		1,
-		parseReservedFieldNumbers(existingFieldNumbers.SettingsReserved),
-	)
+	const settingsFieldNumbers = assignFieldNumbers(settingsFields, existingFieldNumbers.Settings, 1)
 
 	// Generate messages
-	const secretsMessage = generateSecretsMessage(secretsKeys, secretsFieldNumbers, existingFieldNumbers.SecretsReserved)
-	const settingsMessage = generateProtoMessage(
-		"Settings",
-		settingsFields,
-		settingsFieldNumbers,
-		existingFieldNumbers.SettingsReserved,
-	)
+	const secretsMessage = generateSecretsMessage(secretsKeys, secretsFieldNumbers)
+	const settingsMessage = generateProtoMessage("Settings", settingsFields, settingsFieldNumbers)
 
 	// Read existing proto file
 	let protoContent = await fs.readFile(STATE_PROTO_PATH, "utf-8")
@@ -535,7 +453,7 @@ async function main() {
 	await fs.writeFile(STATE_PROTO_PATH, protoContent)
 	console.log(`Updated ${STATE_PROTO_PATH}`)
 
-	console.log("\nGeneration complete! Run 'bun run protos' to regenerate TypeScript from protos.")
+	console.log("\nGeneration complete! Run 'npm run protos' to regenerate TypeScript from protos.")
 }
 
 main().catch((error) => {

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -7,24 +8,19 @@ import type {
 	AgentHooks,
 	AgentRunLifecycleContext,
 	AgentRuntimeEvent,
-	BasicLogger,
-	HookControl,
-	HookSessionContext,
-	WorkspaceInfo,
 } from "@cline/shared";
-import { augmentNodeCommandForDebug } from "@cline/shared";
+import {
+	augmentNodeCommandForDebug,
+	type BasicLogger,
+	type HookControl,
+	type HookSessionContext,
+	type WorkspaceInfo,
+	withResolvedClineBuildEnv,
+} from "@cline/shared";
 import { ensureHookLogDir } from "@cline/shared/storage";
 import { createAgentHooksExtension } from "./hook-extension";
 import { listHookConfigFiles } from "./hook-file-config";
-import {
-	type HookEventName,
-	type HookEventPayload,
-	truncateHookContext,
-} from "./subprocess";
-import {
-	type RunSubprocessEventResult,
-	runSubprocessEvent,
-} from "./subprocess-runner";
+import type { HookEventName, HookEventPayload } from "./subprocess";
 
 type HookContextBase = {
 	agentId: string;
@@ -35,12 +31,6 @@ type HookContextBase = {
 type HookCommandControl = Omit<HookControl, "appendMessages"> & {
 	systemPrompt?: string;
 	appendMessages?: unknown[];
-	/**
-	 * Error message accompanying `cancel: true`. Kept separate from `context`
-	 * so injectable context from one hook never leaks into another hook's
-	 * cancellation reason when controls are merged.
-	 */
-	cancelReason?: string;
 };
 
 type HookCommandRunStartContext = HookContextBase & {
@@ -81,8 +71,6 @@ type HookRuntimeOptions = {
 	rootSessionId?: string;
 	logger?: BasicLogger;
 	toolCallTimeoutMs?: number;
-	/** Keep asynchronous hooks attached until exit. Intended for deterministic tests. */
-	detachAsyncHooks?: boolean;
 	/** Structured git + path metadata forwarded into every hook payload. */
 	workspaceInfo?: WorkspaceInfo;
 };
@@ -134,11 +122,6 @@ function mergeHookControls(
 			(value): value is string => typeof value === "string" && value.length > 0,
 		)
 		.join("\n");
-	const cancelReasons = [current.cancelReason, next.cancelReason]
-		.filter(
-			(value): value is string => typeof value === "string" && value.length > 0,
-		)
-		.join("\n");
 	const appendMessages = [
 		...(current.appendMessages ?? []),
 		...(next.appendMessages ?? []),
@@ -147,7 +130,6 @@ function mergeHookControls(
 		cancel: current.cancel === true || next.cancel === true ? true : undefined,
 		review: current.review === true || next.review === true ? true : undefined,
 		context: contexts || undefined,
-		cancelReason: cancelReasons || undefined,
 		overrideInput:
 			next.overrideInput !== undefined
 				? next.overrideInput
@@ -165,29 +147,18 @@ function parseHookControl(value: unknown): HookCommandControl | undefined {
 		return undefined;
 	}
 	const record = value as Record<string, unknown>;
-	const injectableContext =
+	const context =
 		typeof record.context === "string"
 			? record.context
 			: typeof record.contextModification === "string"
 				? record.contextModification
-				: undefined;
-	const errorMessage =
-		typeof record.errorMessage === "string" &&
-		record.errorMessage.trim().length > 0
-			? record.errorMessage
-			: undefined;
-	const cancel = typeof record.cancel === "boolean" ? record.cancel : undefined;
+				: typeof record.errorMessage === "string"
+					? record.errorMessage
+					: undefined;
 	return {
-		cancel,
+		cancel: typeof record.cancel === "boolean" ? record.cancel : undefined,
 		review: typeof record.review === "boolean" ? record.review : undefined,
-		// A cancelling hook's message is its error/reason, not injectable
-		// conversation context; errorMessage takes precedence there.
-		context:
-			cancel === true
-				? undefined
-				: truncateHookContext(injectableContext ?? errorMessage),
-		cancelReason:
-			cancel === true ? (errorMessage ?? injectableContext) : undefined,
+		context,
 		overrideInput: Object.hasOwn(record, "overrideInput")
 			? record.overrideInput
 			: undefined,
@@ -227,6 +198,91 @@ function createPayloadBase(
 
 type HookCommandMap = Partial<Record<HookEventName, string[][]>>;
 
+interface HookCommandResult {
+	exitCode: number | null;
+	stdout: string;
+	stderr: string;
+	parsedJson?: unknown;
+	parseError?: string;
+	timedOut?: boolean;
+}
+
+function parseHookStdout(stdout: string): {
+	parsedJson?: unknown;
+	parseError?: string;
+} {
+	const trimmed = stdout.trim();
+	if (!trimmed) {
+		return {};
+	}
+	const lines = trimmed
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	const prefixed = lines
+		.filter((line) => line.startsWith("HOOK_CONTROL\t"))
+		.map((line) => line.slice("HOOK_CONTROL\t".length));
+	const candidate =
+		prefixed.length > 0 ? prefixed[prefixed.length - 1] : trimmed;
+	try {
+		return { parsedJson: JSON.parse(candidate) };
+	} catch (error) {
+		return {
+			parseError:
+				error instanceof Error
+					? error.message
+					: "Failed to parse hook stdout JSON",
+		};
+	}
+}
+
+async function writeToChildStdin(
+	child: ReturnType<typeof spawn>,
+	body: string,
+): Promise<void> {
+	const stdin = child.stdin;
+	if (!stdin) {
+		throw new Error("hook command failed to create stdin");
+	}
+
+	await new Promise<void>((resolve, reject) => {
+		let settled = false;
+		const cleanup = () => {
+			stdin.off("error", onError);
+			stdin.off("finish", onFinish);
+			child.off("close", onChildClose);
+		};
+		const finish = (error?: Error | null) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			cleanup();
+			if (error) {
+				const code = (error as Error & { code?: string }).code;
+				if (code === "EPIPE" || code === "ERR_STREAM_DESTROYED") {
+					resolve();
+					return;
+				}
+				reject(error);
+				return;
+			}
+			resolve();
+		};
+		const onError = (error: Error) => finish(error);
+		const onFinish = () => finish();
+		const onChildClose = () => finish();
+		stdin.on("error", onError);
+		stdin.once("finish", onFinish);
+		child.once("close", onChildClose);
+		try {
+			stdin.end(body);
+		} catch (error) {
+			finish(error as Error);
+		}
+	});
+}
+
 async function runHookCommand(
 	payload: HookEventPayload,
 	options: {
@@ -236,12 +292,12 @@ async function runHookCommand(
 		detached: boolean;
 		timeoutMs?: number;
 	},
-): Promise<RunSubprocessEventResult | undefined> {
+): Promise<HookCommandResult | undefined> {
 	if (options.command.length === 0) {
 		throw new Error("runHookCommand requires non-empty command");
 	}
 	try {
-		return await runSubprocessEvent(payload, options);
+		return await runHookCommandOnce(payload, options);
 	} catch (error) {
 		const fallbackCommand = getWindowsPythonFallbackCommand(
 			options.command,
@@ -251,11 +307,91 @@ async function runHookCommand(
 		if (!fallbackCommand) {
 			throw error;
 		}
-		return await runSubprocessEvent(payload, {
+		return await runHookCommandOnce(payload, {
 			...options,
 			command: fallbackCommand,
 		});
 	}
+}
+
+async function runHookCommandOnce(
+	payload: HookEventPayload,
+	options: {
+		command: string[];
+		cwd: string;
+		env?: NodeJS.ProcessEnv;
+		detached: boolean;
+		timeoutMs?: number;
+	},
+): Promise<HookCommandResult | undefined> {
+	const command = augmentNodeCommandForDebug(options.command, {
+		env: options.env,
+		debugRole: "hook",
+	});
+	const child = spawn(command[0], command.slice(1), {
+		cwd: options.cwd,
+		env: withResolvedClineBuildEnv(options.env),
+		stdio: options.detached
+			? ["pipe", "ignore", "ignore"]
+			: ["pipe", "pipe", "pipe"],
+		detached: options.detached,
+		// Prevent a console window from flashing on Windows (especially when
+		// detached, which would otherwise allocate a new console).
+		windowsHide: true,
+	});
+	const spawned = new Promise<void>((resolve) => {
+		child.once("spawn", () => resolve());
+	});
+	const childError = new Promise<never>((_, reject) => {
+		child.once("error", (error) => reject(error));
+	});
+
+	const body = JSON.stringify(payload);
+	await Promise.race([spawned, childError]);
+	await writeToChildStdin(child, body);
+
+	if (options.detached) {
+		child.unref();
+		return;
+	}
+
+	if (!child.stdout || !child.stderr) {
+		throw new Error("hook command failed to create stdout/stderr");
+	}
+	let stdout = "";
+	let stderr = "";
+	let timedOut = false;
+	let timeoutId: NodeJS.Timeout | undefined;
+	child.stdout.on("data", (chunk: Buffer | string) => {
+		stdout += chunk.toString();
+	});
+	child.stderr.on("data", (chunk: Buffer | string) => {
+		stderr += chunk.toString();
+	});
+
+	const result = new Promise<HookCommandResult>((resolve) => {
+		if ((options.timeoutMs ?? 0) > 0) {
+			timeoutId = setTimeout(() => {
+				timedOut = true;
+				child.kill("SIGKILL");
+			}, options.timeoutMs);
+		}
+		child.once("close", (exitCode) => {
+			if (timeoutId) {
+				clearTimeout(timeoutId);
+			}
+			const { parsedJson, parseError } = parseHookStdout(stdout);
+			resolve({
+				exitCode,
+				stdout,
+				stderr,
+				parsedJson,
+				parseError,
+				timedOut,
+			});
+		});
+	});
+	return await Promise.race([result, childError]);
 }
 
 function parseShebangCommand(path: string): string[] | undefined {
@@ -397,7 +533,7 @@ async function runBlockingHookCommands(options: {
 			const result = await runHookCommand(options.payload, {
 				command,
 				cwd: options.cwd,
-				env: process.env,
+				env: withResolvedClineBuildEnv(process.env),
 				detached: false,
 				timeoutMs: options.timeoutMs,
 			});
@@ -424,50 +560,27 @@ async function runBlockingHookCommands(options: {
 	return merged;
 }
 
-async function runAsyncHookCommands(options: {
+function runAsyncHookCommands(options: {
 	commands: string[][];
 	payload: HookEventPayload;
 	cwd: string;
 	logger?: BasicLogger;
-	detached: boolean;
-}): Promise<void> {
-	if (options.detached) {
-		for (const command of options.commands) {
-			const commandLabel = command.join(" ");
-			void runHookCommand(options.payload, {
-				command,
-				cwd: options.cwd,
-				env: process.env,
-				detached: true,
-			}).catch((error) => {
-				logHookError(
-					options.logger,
-					`hook command failed: ${commandLabel}`,
-					error,
-				);
-			});
-		}
-		return;
+}): void {
+	for (const command of options.commands) {
+		const commandLabel = command.join(" ");
+		void runHookCommand(options.payload, {
+			command,
+			cwd: options.cwd,
+			env: withResolvedClineBuildEnv(process.env),
+			detached: true,
+		}).catch((error) => {
+			logHookError(
+				options.logger,
+				`hook command failed: ${commandLabel}`,
+				error,
+			);
+		});
 	}
-	await Promise.all(
-		options.commands.map(async (command) => {
-			const commandLabel = command.join(" ");
-			try {
-				await runHookCommand(options.payload, {
-					command,
-					cwd: options.cwd,
-					env: process.env,
-					detached: options.detached,
-				});
-			} catch (error) {
-				logHookError(
-					options.logger,
-					`hook command failed: ${commandLabel}`,
-					error,
-				);
-			}
-		}),
-	);
 }
 
 function baseContextFromSnapshot(
@@ -535,50 +648,16 @@ function textFromMessageContent(
 
 function beforeToolResultFromControl(
 	control: HookCommandControl | undefined,
-):
-	| { stop?: boolean; reason?: string; input?: unknown; appendContext?: string }
-	| undefined {
+): { stop?: boolean; reason?: string; input?: unknown } | undefined {
 	if (!control) {
 		return undefined;
 	}
-	const result: {
-		stop?: boolean;
-		reason?: string;
-		input?: unknown;
-		appendContext?: string;
-	} = {};
+	const result: { stop?: boolean; reason?: string; input?: unknown } = {};
 	if (control.cancel === true) {
 		result.stop = true;
-		if (control.cancelReason?.trim()) {
-			result.reason = control.cancelReason;
-		}
-	} else if (control.context?.trim()) {
-		// Context is injected only when the hook lets the run continue; a
-		// cancelling hook's message travels as cancelReason instead (legacy
-		// surfaced it as an error, never as conversation context).
-		result.appendContext = control.context;
 	}
 	if (control.overrideInput !== undefined) {
 		result.input = control.overrideInput;
-	}
-	return Object.keys(result).length > 0 ? result : undefined;
-}
-
-function afterToolResultFromControl(
-	control: HookCommandControl | undefined,
-): { stop?: boolean; reason?: string; appendContext?: string } | undefined {
-	if (!control) {
-		return undefined;
-	}
-	const result: { stop?: boolean; reason?: string; appendContext?: string } =
-		{};
-	if (control.cancel === true) {
-		result.stop = true;
-		if (control.cancelReason?.trim()) {
-			result.reason = control.cancelReason;
-		}
-	} else if (control.context?.trim()) {
-		result.appendContext = control.context;
 	}
 	return Object.keys(result).length > 0 ? result : undefined;
 }
@@ -727,11 +806,10 @@ export function createHookConfigFileHooks(
 		if (commandPaths.length === 0) {
 			return;
 		}
-		await runAsyncHookCommands({
+		runAsyncHookCommands({
 			commands: commandPaths,
 			cwd: options.cwd,
 			logger: options.logger,
-			detached: options.detachAsyncHooks ?? true,
 			payload:
 				hookName === "agent_resume"
 					? {
@@ -755,11 +833,10 @@ export function createHookConfigFileHooks(
 	): Promise<void> => {
 		const promptSubmit = commandMap.prompt_submit ?? [];
 		if (promptSubmit.length > 0) {
-			await runAsyncHookCommands({
+			runAsyncHookCommands({
 				commands: promptSubmit,
 				cwd: options.cwd,
 				logger: options.logger,
-				detached: options.detachAsyncHooks ?? true,
 				payload: {
 					...createPayloadBase(ctx, options),
 					hookName: "prompt_submit",
@@ -803,16 +880,15 @@ export function createHookConfigFileHooks(
 
 	const runToolCallEnd = async (
 		ctx: HookCommandToolCallEndContext,
-	): Promise<HookCommandControl | undefined> => {
+	): Promise<void> => {
 		const commandPaths = commandMap.tool_result ?? [];
 		if (commandPaths.length === 0) {
-			return undefined;
+			return;
 		}
-		return runBlockingHookCommands({
+		runAsyncHookCommands({
 			commands: commandPaths,
 			cwd: options.cwd,
 			logger: options.logger,
-			timeoutMs: options.toolCallTimeoutMs ?? 120000,
 			payload: {
 				...createPayloadBase(ctx, options),
 				hookName: "tool_result",
@@ -837,11 +913,10 @@ export function createHookConfigFileHooks(
 		if (commandPaths.length === 0) {
 			return;
 		}
-		await runAsyncHookCommands({
+		runAsyncHookCommands({
 			commands: commandPaths,
 			cwd: options.cwd,
 			logger: options.logger,
-			detached: options.detachAsyncHooks ?? true,
 			payload: {
 				...createPayloadBase(ctx, options),
 				hookName: "agent_end",
@@ -859,11 +934,10 @@ export function createHookConfigFileHooks(
 		if (commandPaths.length === 0) {
 			return;
 		}
-		await runAsyncHookCommands({
+		runAsyncHookCommands({
 			commands: commandPaths,
 			cwd: options.cwd,
 			logger: options.logger,
-			detached: options.detachAsyncHooks ?? true,
 			payload: {
 				...createPayloadBase(ctx, options),
 				hookName: "agent_error",
@@ -883,11 +957,10 @@ export function createHookConfigFileHooks(
 		if (isAbortReason(ctx.reason)) {
 			const abortCommands = commandMap.agent_abort ?? [];
 			if (abortCommands.length > 0) {
-				await runAsyncHookCommands({
+				runAsyncHookCommands({
 					commands: abortCommands,
 					cwd: options.cwd,
 					logger: options.logger,
-					detached: options.detachAsyncHooks ?? true,
 					payload: {
 						...createPayloadBase(ctx, options),
 						hookName: "agent_abort",
@@ -901,11 +974,10 @@ export function createHookConfigFileHooks(
 		if (shutdownCommands.length === 0) {
 			return;
 		}
-		await runAsyncHookCommands({
+		runAsyncHookCommands({
 			commands: shutdownCommands,
 			cwd: options.cwd,
 			logger: options.logger,
-			detached: options.detachAsyncHooks ?? true,
 			payload: {
 				...createPayloadBase(ctx, options),
 				hookName: "session_shutdown",
@@ -955,8 +1027,8 @@ export function createHookConfigFileHooks(
 	}
 	if ((commandMap.tool_result?.length ?? 0) > 0) {
 		hooks.afterTool = async (ctx: AgentAfterToolContext) => {
-			const control = await runToolCallEnd(toolCallEndContext(ctx));
-			return afterToolResultFromControl(control);
+			await runToolCallEnd(toolCallEndContext(ctx));
+			return undefined;
 		};
 	}
 	if ((commandMap.agent_end?.length ?? 0) > 0) {
@@ -1029,18 +1101,11 @@ function mergeHookFunction<K extends keyof AgentHooks>(
 				continue;
 			}
 			const record = next as Record<string, unknown>;
-			const appendContexts = [merged?.appendContext, record.appendContext]
-				.filter(
-					(value): value is string =>
-						typeof value === "string" && value.length > 0,
-				)
-				.join("\n\n");
 			merged = {
 				...(merged ?? {}),
 				...record,
 				stop:
 					merged?.stop === true || record.stop === true ? true : record.stop,
-				appendContext: appendContexts || undefined,
 				options:
 					merged?.options || record.options
 						? {

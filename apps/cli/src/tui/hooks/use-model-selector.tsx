@@ -6,7 +6,6 @@ import {
 	refreshProviderModelsFromSource,
 	resolveProviderConfig,
 } from "@cline/core";
-import { isClineProvider } from "@cline/shared";
 import type { ChoiceContext } from "@opentui-ui/dialog";
 import type { DialogActions } from "@opentui-ui/dialog/react";
 import { useCallback } from "react";
@@ -19,17 +18,14 @@ import {
 import type { Config } from "../../utils/types";
 import { withLoadingDialog } from "../components/dialogs/loading-dialog";
 import {
-	ClinePassSubscriptionContent,
 	CodexCliStatusContent,
-	type ExistingProviderOption,
-	OAuthApiKeyInputContent,
+	type ExistingProviderAction,
 	OAuthLoginContent,
-	type OAuthLoginResult,
 	ProviderConfigInputContent,
 	ProviderPickerContent,
 	UseExistingOrReconfigureContent,
 } from "../components/dialogs/provider-picker";
-import { buildFeaturedModelEntries } from "../components/model-selector/cline-model-picker";
+import { buildClineModelEntries } from "../components/model-selector/cline-model-picker";
 import {
 	BROWSE_ALL_ACTION,
 	ClineModelSelectorDialogContent,
@@ -82,81 +78,6 @@ function usesModelIdInput(providerId: string): boolean {
 	return providerId === "openai-compatible";
 }
 
-/**
- * Ask an OpenAI-compatible endpoint for its model list (`GET <baseUrl>/models`)
- * using the provider's stored API key and headers, mirroring the extension's
- * refreshOpenAiModels handler. Returns [] on any failure so callers fall back
- * to manual model-id entry.
- */
-async function fetchOpenAiCompatibleModelIds(
-	providerId: string,
-): Promise<string[]> {
-	try {
-		const manager = new ProviderSettingsManager();
-		const config = manager.getProviderConfig(providerId, {
-			includeKnownModels: false,
-		});
-		const baseUrl = config?.baseUrl?.trim().replace(/\/+$/, "");
-		if (!baseUrl || !URL.canParse(baseUrl)) return [];
-
-		const headers: Record<string, string> = { ...(config?.headers ?? {}) };
-		const apiKey = config?.apiKey?.trim();
-		if (
-			apiKey &&
-			!Object.keys(headers).some((h) => h.toLowerCase() === "authorization")
-		) {
-			headers.Authorization = `Bearer ${apiKey}`;
-		}
-
-		const response = await fetch(`${baseUrl}/models`, {
-			headers,
-			signal: AbortSignal.timeout(5_000),
-		});
-		if (!response.ok) return [];
-		const payload = (await response.json()) as { data?: unknown };
-		const list = Array.isArray(payload?.data) ? payload.data : [];
-		const ids = list
-			.map((model) => {
-				const id = (model as { id?: unknown } | null)?.id;
-				return typeof id === "string" ? id.trim() : "";
-			})
-			.filter(Boolean);
-		return [...new Set(ids)];
-	} catch {
-		return [];
-	}
-}
-
-function providerToExistingProviderOptions(input: {
-	providerId: string;
-	providerName: string;
-	dialog: DialogActions;
-	termHeight: number;
-}): ExistingProviderOption[] {
-	if (input.providerId !== "cline-pass") {
-		return [];
-	}
-
-	return [
-		{
-			value: "open_subscription_page",
-			label: "Manage subscription & see usage",
-			onSelect: async () => {
-				await input.dialog.choice<boolean>({
-					style: { maxHeight: input.termHeight - 2 },
-					closeOnEscape: false,
-					content: (ctx: ChoiceContext<boolean>) => (
-						<ClinePassSubscriptionContent
-							{...ctx}
-							providerName={input.providerName}
-						/>
-					),
-				});
-			},
-		},
-	];
-}
-
 async function runProviderChange(
 	dialog: DialogActions,
 	config: Config,
@@ -179,73 +100,32 @@ async function runProviderChange(
 	);
 	const existingSettings = manager.getProviderSettings(newProviderId);
 
-	// Manual API key entry is the escape hatch for when OAuth login isn't
-	// working; only the Cline providers accept a dashboard API key.
-	const supportsManualApiKey = isClineProvider(newProviderId);
-	const openManualApiKeyDialog = async (): Promise<boolean | undefined> =>
-		await dialog.choice<boolean>({
-			style: { maxHeight: termHeight - 2 },
-			closeOnEscape: false,
-			content: (ctx: ChoiceContext<boolean>) => (
-				<OAuthApiKeyInputContent
-					{...ctx}
-					providerId={newProviderId}
-					providerName={displayName}
-					providerSettingsManager={manager}
-				/>
-			),
-		});
-
 	let needsAuth = true;
 	if (isProviderConfigured(newProviderId, existingSettings)) {
-		let option: ExistingProviderOption | undefined;
-		const extraOptions = providerToExistingProviderOptions({
-			providerId: newProviderId,
-			providerName: displayName,
-			dialog,
-			termHeight,
+		const action = await dialog.choice<ExistingProviderAction>({
+			style: { maxHeight: termHeight - 2 },
+			content: (ctx: ChoiceContext<ExistingProviderAction>) => (
+				<UseExistingOrReconfigureContent {...ctx} providerName={displayName} />
+			),
 		});
-		while (true) {
-			option = await dialog.choice<ExistingProviderOption>({
-				style: { maxHeight: termHeight - 2 },
-				content: (ctx: ChoiceContext<ExistingProviderOption>) => (
-					<UseExistingOrReconfigureContent
-						{...ctx}
-						providerName={displayName}
-						extraOptions={extraOptions}
-					/>
-				),
-			});
-			if (!option) return false;
-			if (option.onSelect) {
-				await option.onSelect();
-				option = undefined;
-				continue;
-			}
-			break;
-		}
-		needsAuth = option.value === "reconfigure";
+		if (!action) return false;
+		needsAuth = action === "reconfigure";
 	}
 
 	if (needsAuth) {
 		let saved: boolean | undefined;
 		if (isOAuthProvider(newProviderId)) {
-			const loginResult = await dialog.choice<OAuthLoginResult>({
+			saved = await dialog.choice<boolean>({
 				style: { maxHeight: termHeight - 2 },
 				closeOnEscape: false,
-				content: (ctx: ChoiceContext<OAuthLoginResult>) => (
+				content: (ctx: ChoiceContext<boolean>) => (
 					<OAuthLoginContent
 						{...ctx}
 						providerId={newProviderId}
 						providerName={displayName}
-						allowApiKeyFallback={supportsManualApiKey}
 					/>
 				),
 			});
-			saved =
-				loginResult === "use_api_key"
-					? await openManualApiKeyDialog()
-					: loginResult;
 		} else if (isOpenAICodexCliProvider(newProviderId)) {
 			saved = await dialog.choice<boolean>({
 				style: { maxHeight: termHeight - 2 },
@@ -345,28 +225,12 @@ export function useModelSelector(opts: {
 				config.knownModels as Record<string, Llms.ModelInfo>,
 			);
 			let providerDisplayName = config.providerId;
-			let endpointModelOptions: ModelOption[] = [];
 
 			const refreshProviderContext = async () => {
 				modelOptions = buildModelOptions(
 					config.knownModels as Record<string, Llms.ModelInfo>,
 				);
 				providerDisplayName = await getProviderDisplayName(config.providerId);
-				// Free-text providers (openai-compatible) can still suggest model
-				// ids when their endpoint answers /models; otherwise they keep the
-				// manual input.
-				endpointModelOptions = usesModelIdInput(config.providerId)
-					? buildModelOptions(
-							Object.fromEntries(
-								(await fetchOpenAiCompatibleModelIds(config.providerId)).map(
-									(id) => [id, { id, name: id }],
-								),
-							),
-						)
-					: [];
-				if (endpointModelOptions.length > 0) {
-					modelOptions = endpointModelOptions;
-				}
 			};
 
 			if (!options?.startWithProviderChange) {
@@ -402,10 +266,7 @@ export function useModelSelector(opts: {
 			let pickingModel = true;
 
 			while (pickingModel) {
-				if (
-					usesModelIdInput(config.providerId) &&
-					endpointModelOptions.length === 0
-				) {
+				if (usesModelIdInput(config.providerId)) {
 					const modelId = await dialog.choice<string>({
 						style: { maxHeight: termHeight - 2 },
 						content: (ctx: ChoiceContext<string>) => (
@@ -430,13 +291,7 @@ export function useModelSelector(opts: {
 					continue;
 				}
 
-				if (
-					config.providerId === "cline" ||
-					config.providerId === "cline-pass"
-				) {
-					// ClinePass gets the same sectioned picker with Subscribed/Free
-					// sections — free models are selectable while staying on ClinePass
-					const featuredProviderId = config.providerId;
+				if (config.providerId === "cline") {
 					const clineResult = await dialog.choice<string>({
 						style: { maxHeight: termHeight - 2 },
 						content: (ctx: ChoiceContext<string>) => (
@@ -444,11 +299,9 @@ export function useModelSelector(opts: {
 								{...ctx}
 								currentModel={config.modelId}
 								currentProviderName={providerDisplayName}
+								knownModels={config.knownModels as Record<string, unknown>}
 								loadEntries={async () =>
-									buildFeaturedModelEntries(
-										featuredProviderId,
-										await fetchClineRecommendedModels(),
-									)
+									buildClineModelEntries(await fetchClineRecommendedModels())
 								}
 							/>
 						),

@@ -18,6 +18,12 @@ export class PostHogClientProvider {
 		return PostHogClientProvider.getInstance().client
 	}
 
+	public static async disposeInstance(): Promise<void> {
+		const instance = PostHogClientProvider._instance
+		PostHogClientProvider._instance = null
+		await instance?.dispose()
+	}
+
 	private readonly client: PostHog | null
 
 	private constructor() {

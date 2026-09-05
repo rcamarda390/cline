@@ -215,7 +215,7 @@ export class PendingPromptsController {
 
 	update(input: PendingPromptsUpdateInput): PendingPromptMutationResult {
 		const session = this.deps.getSession(input.sessionId);
-		if (!session) {
+		if (!session || session.aborting) {
 			return { sessionId: input.sessionId, prompts: [], updated: false };
 		}
 		const result = this.service.update(session, input);
@@ -226,7 +226,7 @@ export class PendingPromptsController {
 
 	delete(input: PendingPromptsDeleteInput): PendingPromptMutationResult {
 		const session = this.deps.getSession(input.sessionId);
-		if (!session) {
+		if (!session || session.aborting) {
 			return { sessionId: input.sessionId, prompts: [], removed: false };
 		}
 		const result = this.service.delete(session, input);
@@ -246,13 +246,7 @@ export class PendingPromptsController {
 		},
 	): void {
 		const session = this.deps.getSession(sessionId);
-		if (!session) return;
-		// The queue survives aborts and is visible while one settles, so
-		// queue operations must keep working during the abort window: a
-		// prompt typed right after Escape joins the queue instead of being
-		// silently dropped, and queued prompts stay editable/deletable before
-		// they auto-run. scheduleDrain/drain still refuse to run while the
-		// abort is settling.
+		if (!session || session.aborting) return;
 		this.service.enqueue(session, entry);
 		this.emitPrompts(session);
 		this.scheduleDrain(sessionId, session);
@@ -268,12 +262,7 @@ export class PendingPromptsController {
 		return steer;
 	}
 
-	/**
-	 * Drops every queued prompt. Only called when the user aborts a
-	 * queue-initiated turn — that gesture means "stop the queued work", not
-	 * just "stop this response", so the remainder must not auto-run.
-	 */
-	discardQueue(session: ActiveSession): void {
+	clearAborted(session: ActiveSession): void {
 		if (session.pendingPrompts.length === 0) return;
 		this.service.clear(session);
 		this.emitPrompts(session);
@@ -319,21 +308,13 @@ export class PendingPromptsController {
 		session.drainingPendingPrompts = true;
 		let continueDrain = true;
 		try {
-			const result = await this.deps.send({
+			await this.deps.send({
 				sessionId,
 				prompt: next.prompt,
 				...(next.mode ? { mode: next.mode } : {}),
 				userImages: next.userImages,
 				userFiles: next.userFiles,
 			});
-			// A turn that resolves with an error finish ran (the prompt is in
-			// the conversation and the error is surfaced), so the entry is not
-			// requeued — but stop draining instead of firing the remaining
-			// queue into a failing provider. The rest stays queued and drains
-			// on the next enqueue/update or successful turn.
-			if (isErrorFinish(result)) {
-				continueDrain = false;
-			}
 		} catch {
 			continueDrain = false;
 			this.service.requeueFront(session, next);
@@ -363,20 +344,9 @@ export class PendingPromptsController {
 				prompt: prompt.prompt,
 				delivery: prompt.delivery,
 				attachmentCount: prompt.attachmentCount,
-				userImages: prompt.userImages,
-				userFiles: prompt.userFiles,
 			},
 		});
 	}
-}
-
-function isErrorFinish(result: unknown): boolean {
-	return (
-		typeof result === "object" &&
-		result !== null &&
-		"finishReason" in result &&
-		(result as { finishReason?: unknown }).finishReason === "error"
-	);
 }
 
 function snapshotPrompt(entry: PendingPromptEntry): SessionPendingPrompt {
@@ -386,8 +356,6 @@ function snapshotPrompt(entry: PendingPromptEntry): SessionPendingPrompt {
 		delivery: entry.delivery,
 		attachmentCount:
 			(entry.userImages?.length ?? 0) + (entry.userFiles?.length ?? 0),
-		userImages: entry.userImages,
-		userFiles: entry.userFiles,
 	};
 }
 

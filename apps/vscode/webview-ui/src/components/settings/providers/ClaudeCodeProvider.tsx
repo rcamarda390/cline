@@ -1,15 +1,29 @@
-import { openAiModelInfoSafeDefaults } from "@shared/api"
+import { claudeCodeModels } from "@shared/api"
 import { Mode } from "@shared/storage/types"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import { useProviderConfig } from "@/hooks/useProviderConfig"
-import { useProviderModelSelection } from "@/hooks/useProviderModelSelection"
-import { useProviderModels } from "@/hooks/useProviderModels"
-import { useProviderUsageCostDisplay } from "@/hooks/useProviderUsageCostDisplay"
 import { DebouncedTextField } from "../common/DebouncedTextField"
 import { ModelInfoView } from "../common/ModelInfoView"
 import { ModelSelector } from "../common/ModelSelector"
-import ReasoningEffortSelector from "../ReasoningEffortSelector"
+import ThinkingBudgetSlider from "../ThinkingBudgetSlider"
+import { normalizeApiConfiguration } from "../utils/providerUtils"
 import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
+import { SUPPORTED_ANTHROPIC_THINKING_MODELS } from "./AnthropicProvider"
+
+const SUPPORTED_CLAUDE_CODE_THINKING_MODELS = [
+	...SUPPORTED_ANTHROPIC_THINKING_MODELS,
+	"sonnet",
+	"sonnet[1m]",
+	"claude-sonnet-5[1m]",
+	"claude-fable-5[1m]",
+	"claude-opus-5[1m]",
+	"claude-opus-4-8[1m]",
+	"claude-opus-4-7[1m]",
+	"claude-sonnet-4-6[1m]",
+	"claude-sonnet-4-5-20250929[1m]",
+	"claude-opus-4-6[1m]",
+	"opus",
+	"opus[1m]",
+]
 
 /**
  * Props for the ClaudeCodeProvider component
@@ -25,34 +39,10 @@ interface ClaudeCodeProviderProps {
  */
 export const ClaudeCodeProvider = ({ showModelOptions, isPopup, currentMode }: ClaudeCodeProviderProps) => {
 	const { apiConfiguration } = useExtensionState()
-	const { handleFieldChange } = useApiConfigurationHandlers()
-	const providerId = "claude-code"
-	const { models, defaultModelId } = useProviderModels(providerId)
-	// The models reuse Anthropic API pricing metadata, but usage is billed
-	// through the Claude subscription — suppress the per-token price rows.
-	const hideUsageCost = useProviderUsageCostDisplay(providerId) !== "show"
-	const { config, write, commitSelection } = useProviderConfig(providerId)
-	const { selectedModelId, selectedModelInfo, commitModelSelection } = useProviderModelSelection(providerId, currentMode, {
-		models,
-		defaultModelId,
-		config,
-		commitSelection,
-	})
+	const { handleFieldChange, handleModeFieldChange } = useApiConfigurationHandlers()
 
-	const handleModelSelect = (event: {
-		target?: { value?: unknown }
-		currentTarget?: { value?: unknown }
-		detail?: { value?: unknown }
-	}) => {
-		const modelId = event.target?.value ?? event.currentTarget?.value ?? event.detail?.value
-		if (typeof modelId !== "string" || modelId.length === 0) {
-			return
-		}
-		void commitModelSelection({
-			modelId,
-			modelInfo: models[modelId] ?? selectedModelInfo ?? openAiModelInfoSafeDefaults,
-		}).catch((err) => console.error("Failed to commit Claude Code model selection:", err))
-	}
+	// Get the normalized configuration
+	const { selectedModelId, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode)
 
 	return (
 		<div>
@@ -76,7 +66,18 @@ export const ClaudeCodeProvider = ({ showModelOptions, isPopup, currentMode }: C
 
 			{showModelOptions && (
 				<>
-					<ModelSelector label="Model" models={models} onChange={handleModelSelect} selectedModelId={selectedModelId} />
+					<ModelSelector
+						label="Model"
+						models={claudeCodeModels}
+						onChange={(e: any) =>
+							handleModeFieldChange(
+								{ plan: "planModeApiModelId", act: "actModeApiModelId" },
+								e.target.value,
+								currentMode,
+							)
+						}
+						selectedModelId={selectedModelId}
+					/>
 
 					{(selectedModelId === "sonnet" || selectedModelId === "opus") && (
 						<p
@@ -90,25 +91,11 @@ export const ClaudeCodeProvider = ({ showModelOptions, isPopup, currentMode }: C
 						</p>
 					)}
 
-					{selectedModelInfo.supportsReasoning === true && (
-						<ReasoningEffortSelector
-							currentMode={currentMode}
-							defaultEffort="none"
-							description="Use None to disable extended thinking. Higher effort improves depth, but uses more tokens."
-							onEffortChange={(effort) => {
-								void write({
-									reasoning: { enabled: effort !== "none", effort: effort !== "none" ? effort : undefined },
-								}).catch((err) => console.error("Failed to update Claude Code reasoning effort:", err))
-							}}
-						/>
+					{SUPPORTED_CLAUDE_CODE_THINKING_MODELS.includes(selectedModelId) && (
+						<ThinkingBudgetSlider currentMode={currentMode} maxBudget={selectedModelInfo.thinkingConfig?.maxBudget} />
 					)}
 
-					<ModelInfoView
-						hideUsageCost={hideUsageCost}
-						isPopup={isPopup}
-						modelInfo={selectedModelInfo}
-						selectedModelId={selectedModelId}
-					/>
+					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />
 				</>
 			)}
 		</div>

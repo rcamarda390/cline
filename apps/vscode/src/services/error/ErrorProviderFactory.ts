@@ -8,7 +8,7 @@ import { PostHogErrorProvider } from "./providers/PostHogErrorProvider"
 /**
  * Supported error provider types
  */
-type ErrorProviderType = "posthog" | "no-op"
+export type ErrorProviderType = "posthog" | "no-op"
 
 /**
  * Configuration for error providers
@@ -52,9 +52,9 @@ export class ErrorProviderFactory {
 	 * Gets the default error provider configuration
 	 * @returns Default configuration using PostHog, or no-op for self-hosted mode
 	 */
-	public static getDefaultConfig(): ErrorProviderConfig {
+	public static getDefaultConfig(offlineMode = false): ErrorProviderConfig {
 		// Use no-op provider in self-hosted mode to avoid external network calls
-		if (ClineEndpoint.isSelfHosted()) {
+		if (offlineMode || ClineEndpoint.isSelfHosted()) {
 			return {
 				type: "no-op",
 				config: posthogConfig,

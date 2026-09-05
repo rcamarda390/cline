@@ -85,6 +85,44 @@ const esbuildProblemMatcherPlugin = {
 	},
 }
 
+const copyWasmFiles = {
+	name: "copy-wasm-files",
+	setup(build) {
+		build.onEnd(() => {
+			// tree sitter
+			const sourceDir = path.join(__dirname, "node_modules", "web-tree-sitter")
+			const targetDir = path.join(__dirname, destDir)
+
+			// Copy tree-sitter.wasm
+			fs.copyFileSync(path.join(sourceDir, "tree-sitter.wasm"), path.join(targetDir, "tree-sitter.wasm"))
+
+			// Copy language-specific WASM files
+			const languageWasmDir = path.join(__dirname, "node_modules", "tree-sitter-wasms", "out")
+			const languages = [
+				"typescript",
+				"tsx",
+				"python",
+				"rust",
+				"javascript",
+				"go",
+				"cpp",
+				"c",
+				"c_sharp",
+				"ruby",
+				"java",
+				"php",
+				"swift",
+				"kotlin",
+			]
+
+			languages.forEach((lang) => {
+				const filename = `tree-sitter-${lang}.wasm`
+				fs.copyFileSync(path.join(languageWasmDir, filename), path.join(targetDir, filename))
+			})
+		})
+	},
+}
+
 const buildEnvVars = {
 	"import.meta.url": "_importMetaUrl",
 	"process.env.IS_STANDALONE": JSON.stringify(standalone ? "true" : "false"),
@@ -141,6 +179,7 @@ const baseConfig = {
 	define: buildEnvVars,
 	tsconfig: path.resolve(__dirname, "tsconfig.json"),
 	plugins: [
+		copyWasmFiles,
 		aliasResolverPlugin,
 		/* add to the end of plugins array */
 		esbuildProblemMatcherPlugin,
@@ -148,7 +187,6 @@ const baseConfig = {
 	format: "cjs",
 	sourcesContent: false,
 	platform: "node",
-	target: "node22.15",
 	banner: {
 		js: "const _importMetaUrl=require('url').pathToFileURL(__filename)",
 	},

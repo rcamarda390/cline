@@ -1,7 +1,7 @@
 import "opentui-spinner/react";
 import { useEffect, useState } from "react";
 import { useSession } from "../contexts/session-context";
-import { useTheme } from "../hooks/use-theme";
+import { palette } from "../palette";
 import type { QueuedPromptItem } from "../types";
 
 function truncatePrompt(prompt: string): string {
@@ -20,7 +20,6 @@ export function QueuedPrompts(props: {
 	onEditConfirm: (id: string, prompt: string) => void;
 }) {
 	const session = useSession();
-	const theme = useTheme();
 	if (props.items.length === 0) return null;
 
 	const selected = props.selectedId
@@ -43,7 +42,7 @@ export function QueuedPrompts(props: {
 			flexDirection="column"
 			border
 			borderStyle="rounded"
-			borderColor={selected ? theme.selection : "gray"}
+			borderColor={selected ? palette.selection : "gray"}
 			paddingX={1}
 		>
 			<text fg="gray">
@@ -76,7 +75,6 @@ function QueuedPromptRow(props: {
 	onEditConfirm: (prompt: string) => void;
 }) {
 	const { item, selected, editing } = props;
-	const theme = useTheme();
 	const [editValue, setEditValue] = useState(item.prompt);
 
 	useEffect(() => {
@@ -90,15 +88,15 @@ function QueuedPromptRow(props: {
 			paddingX={1}
 			flexDirection="row"
 			gap={1}
-			backgroundColor={selected ? theme.selection : undefined}
+			backgroundColor={selected ? palette.selection : undefined}
 		>
 			{item.steer && !editing ? (
 				<spinner
 					name="dots"
-					color={selected ? theme.textOnSelection : "gray"}
+					color={selected ? palette.textOnSelection : "gray"}
 				/>
 			) : (
-				<text fg={selected ? theme.textOnSelection : "gray"} flexShrink={0}>
+				<text fg={selected ? palette.textOnSelection : "gray"} flexShrink={0}>
 					{selected ? "❯" : " "}
 				</text>
 			)}
@@ -108,24 +106,21 @@ function QueuedPromptRow(props: {
 					onInput={setEditValue}
 					onSubmit={() => props.onEditConfirm(editValue)}
 					placeholder="Edit message..."
-					backgroundColor={theme.selection}
-					focusedBackgroundColor={theme.selection}
-					textColor={theme.textOnSelection}
-					cursorColor={theme.textOnSelection}
-					placeholderColor={theme.textOnSelection}
+					backgroundColor={palette.selection}
+					focusedBackgroundColor={palette.selection}
+					textColor={palette.textOnSelection}
+					cursorColor={palette.textOnSelection}
+					placeholderColor={palette.textOnSelection}
 					focused
 					flexGrow={1}
 				/>
 			) : (
-				<text
-					fg={selected ? theme.textOnSelection : theme.defaultForeground}
-					flexGrow={1}
-				>
+				<text fg={selected ? palette.textOnSelection : undefined} flexGrow={1}>
 					{truncatePrompt(item.prompt)}
 				</text>
 			)}
 			{!editing && item.attachmentCount > 0 && (
-				<text fg={selected ? theme.textOnSelection : "gray"} flexShrink={0}>
+				<text fg={selected ? palette.textOnSelection : "gray"} flexShrink={0}>
 					{attachmentLabel(item.attachmentCount)}
 				</text>
 			)}

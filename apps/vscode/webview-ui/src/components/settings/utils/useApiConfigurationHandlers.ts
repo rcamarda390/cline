@@ -1,58 +1,41 @@
 import { ApiConfiguration } from "@shared/api"
-import { UpdateApiConfigurationRequest } from "@shared/proto/cline/models"
+import { UpdateApiConfigurationPartialRequest } from "@shared/proto/cline/models"
 import { convertApiConfigurationToProto } from "@shared/proto-conversions/models/api-configuration-conversion"
 import { Mode } from "@shared/storage/types"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { ModelsServiceClient } from "@/services/grpc-client"
 
+export const buildApiConfigurationPartialRequest = (updates: Partial<ApiConfiguration>) =>
+	UpdateApiConfigurationPartialRequest.create({
+		apiConfiguration: convertApiConfigurationToProto(updates as ApiConfiguration),
+		updateMask: Object.keys(updates),
+	})
+
 export const useApiConfigurationHandlers = () => {
-	const { apiConfiguration, planActSeparateModelsSetting } = useExtensionState()
+	const { planActSeparateModelsSetting } = useExtensionState()
 
 	/**
-	 * Updates a single field in the API configuration.
+	 * Updates exactly one API configuration field.
 	 *
-	 * **Warning**: If this function is called multiple times in rapid succession,
-	 * it can lead to race conditions where later calls may overwrite changes from
-	 * earlier calls. For updating multiple fields, use `handleFieldsChange` instead.
-	 *
-	 * @param field - The field key to update
-	 * @param value - The new value for the field
+	 * Uses the partial-update RPC so a stale webview snapshot cannot overwrite
+	 * unrelated settings while switching Plan/Act settings tabs.
 	 */
 	const handleFieldChange = async <K extends keyof ApiConfiguration>(field: K, value: ApiConfiguration[K]) => {
-		const updatedConfig = {
-			...apiConfiguration,
-			[field]: value,
-		}
-
-		const protoConfig = convertApiConfigurationToProto(updatedConfig)
-		await ModelsServiceClient.updateApiConfigurationProto(
-			UpdateApiConfigurationRequest.create({
-				apiConfiguration: protoConfig,
-			}),
+		await ModelsServiceClient.updateApiConfigurationPartial(
+			buildApiConfigurationPartialRequest({
+				[field]: value,
+			} as Partial<ApiConfiguration>),
 		)
 	}
 
 	/**
-	 * Updates multiple fields in the API configuration at once.
+	 * Updates only the explicitly supplied API configuration fields.
 	 *
-	 * This function should be used when updating multiple fields to avoid race conditions
-	 * that can occur when calling `handleFieldChange` multiple times in succession.
-	 * All updates are applied together as a single operation.
-	 *
-	 * @param updates - An object containing the fields to update and their new values
+	 * The field mask prevents unrelated Plan/Act/shared prompt-cache values from
+	 * being carried in a stale full configuration snapshot.
 	 */
 	const handleFieldsChange = async (updates: Partial<ApiConfiguration>) => {
-		const updatedConfig = {
-			...apiConfiguration,
-			...updates,
-		}
-
-		const protoConfig = convertApiConfigurationToProto(updatedConfig)
-		await ModelsServiceClient.updateApiConfigurationProto(
-			UpdateApiConfigurationRequest.create({
-				apiConfiguration: protoConfig,
-			}),
-		)
+		await ModelsServiceClient.updateApiConfigurationPartial(buildApiConfigurationPartialRequest(updates))
 	}
 
 	const handleModeFieldChange = async <PlanK extends keyof ApiConfiguration, ActK extends keyof ApiConfiguration>(

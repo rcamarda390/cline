@@ -15,29 +15,31 @@ function createConfig(compaction?: Config["compaction"]): Config {
 }
 
 describe("CLI compaction mode helpers", () => {
-	it("defaults enabled compaction to agentic summarization", () => {
-		expect(DEFAULT_CLI_COMPACTION_MODE).toBe("agentic");
+	it("defaults enabled compaction to basic truncation", () => {
+		expect(DEFAULT_CLI_COMPACTION_MODE).toBe("basic");
 		expect(getCliCompactionMode(createConfig())).toBe(
 			DEFAULT_CLI_COMPACTION_MODE,
 		);
-		expect(formatCliCompactionMode(DEFAULT_CLI_COMPACTION_MODE)).toBe("LLM");
+		expect(formatCliCompactionMode(DEFAULT_CLI_COMPACTION_MODE)).toBe(
+			"Truncation",
+		);
 	});
 
 	it("maps basic and off modes to core compaction config", () => {
-		const config = createConfig({ enabled: true, preserveRecentTokens: 123 });
+		const config = createConfig({ enabled: true, maxInputTokens: 123 });
 
 		applyCliCompactionMode(config, "basic");
 		expect(config.compaction).toEqual({
 			enabled: true,
 			strategy: "basic",
-			preserveRecentTokens: 123,
+			maxInputTokens: 123,
 		});
 		expect(getCliCompactionMode(config)).toBe("basic");
 
 		applyCliCompactionMode(config, "off");
 		expect(config.compaction).toEqual({
 			enabled: false,
-			preserveRecentTokens: 123,
+			maxInputTokens: 123,
 		});
 		expect(getCliCompactionMode(config)).toBe("off");
 	});
@@ -45,6 +47,7 @@ describe("CLI compaction mode helpers", () => {
 	it("builds default and explicit core compaction config", () => {
 		expect(buildCliCompactionConfig()).toEqual({
 			enabled: true,
+			strategy: "basic",
 		});
 		expect(buildCliCompactionConfig("agentic")).toEqual({
 			enabled: true,

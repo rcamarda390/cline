@@ -33,7 +33,7 @@ export function addRootOptions(cmd: Command): Command {
 			.option("-c, --cwd <path>", "Working directory")
 			.option(
 				"--thinking <level>",
-				"Set reasoning effort: none|low|medium|high|xhigh. Bare --thinking uses medium; omitted leaves provider default.",
+				"Set reasoning effort level between none|low|medium|high|xhigh (default: medium)",
 			)
 			.option("--compaction <mode>", CLI_COMPACTION_MODE_OPTION_DESCRIPTION)
 			.option(
@@ -64,10 +64,13 @@ export function addRootOptions(cmd: Command): Command {
 				"--acp",
 				"Run in Agent Client Protocol (ACP) mode for editor integration",
 			)
-			.option("--config <path>", "Configuration directory (default: ~/.cline)")
+			.option(
+				"--config <path>",
+				"Configuration directory (default: ~/.cline/data/settings)",
+			)
 			.option(
 				"--data-dir <path>",
-				"Use isolated local state at this directory path (default: ~/.cline/data)",
+				"Use isolated local state at this directory path (default: ~/.cline)",
 			)
 			.option(
 				"--hooks-dir <path>",
@@ -133,7 +136,6 @@ export function commanderToParsedArgs(program: Command): ParsedArgs {
 		interactive: !!opts.tui,
 		outputMode: opts.json ? "json" : "text",
 		mode: opts.plan ? "plan" : opts.yolo ? "yolo" : opts.zen ? "zen" : "act",
-		modeExplicitlySet: !!(opts.plan || opts.act || opts.yolo || opts.zen),
 		sandbox: !!opts.dataDir,
 		acpMode: !!opts.acp,
 		thinking: false,

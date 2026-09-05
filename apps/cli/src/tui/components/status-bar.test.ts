@@ -3,7 +3,6 @@ import {
 	createContextBar,
 	formatStatusBarUsageText,
 	resolveContextBarFilledForeground,
-	resolveModelDisplayName,
 } from "./status-bar";
 
 vi.mock("@opentui/react", () => ({
@@ -14,14 +13,14 @@ describe("createContextBar", () => {
 	it("keeps a stable width while changing segment lengths", () => {
 		expect(createContextBar(0, 100)).toEqual({
 			filled: "",
-			empty: "\u2588\u2588\u2588\u2588\u2588\u2588",
+			empty: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
 		});
 		expect(createContextBar(50, 100)).toEqual({
-			filled: "\u2588\u2588\u2588",
-			empty: "\u2588\u2588\u2588",
+			filled: "\u2588\u2588\u2588\u2588",
+			empty: "\u2588\u2588\u2588\u2588",
 		});
 		expect(createContextBar(100, 100)).toEqual({
-			filled: "\u2588\u2588\u2588\u2588\u2588\u2588",
+			filled: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
 			empty: "",
 		});
 	});
@@ -29,17 +28,17 @@ describe("createContextBar", () => {
 	it("shows a non-empty fill when usage is above zero", () => {
 		expect(createContextBar(7_000, 1_000_000)).toEqual({
 			filled: "\u2588",
-			empty: "\u2588\u2588\u2588\u2588\u2588",
+			empty: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
 		});
 	});
 
 	it("reserves the final segment for usage at or above the limit", () => {
 		expect(createContextBar(999_999, 1_000_000)).toEqual({
-			filled: "\u2588\u2588\u2588\u2588\u2588",
+			filled: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
 			empty: "\u2588",
 		});
 		expect(createContextBar(1_000_000, 1_000_000)).toEqual({
-			filled: "\u2588\u2588\u2588\u2588\u2588\u2588",
+			filled: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
 			empty: "",
 		});
 	});
@@ -56,77 +55,18 @@ describe("formatStatusBarUsageText", () => {
 			formatStatusBarUsageText({
 				totalTokens: 12_345,
 				totalCost: 0.123,
-				providerId: "cline",
+				showCost: true,
 			}),
-		).toBe("(12,345) $0.12");
+		).toBe("(12,345 tokens) $0.12");
 	});
 
-	it("rounds cost to two decimals even when tiny", () => {
-		expect(
-			formatStatusBarUsageText({
-				totalTokens: 12_345,
-				totalCost: 0.0004,
-				providerId: "cline",
-			}),
-		).toBe("(12,345) $0.00");
-	});
-
-	it("hides cost entirely for subscription providers", () => {
+	it("omits cost when usage cost is hidden", () => {
 		expect(
 			formatStatusBarUsageText({
 				totalTokens: 12_345,
 				totalCost: 0.123,
-				providerId: "cline-pass",
+				showCost: false,
 			}),
-		).toBe("(12,345)");
-	});
-});
-
-describe("resolveModelDisplayName", () => {
-	it("uses the friendly model name with a ClinePass prefix", () => {
-		expect(
-			resolveModelDisplayName({
-				providerId: "cline-pass",
-				modelId: "zai/glm-5.2",
-				knownModels: {
-					"zai/glm-5.2": { name: "GLM 5.2" },
-				},
-			}),
-		).toBe("ClinePass: GLM 5.2");
-	});
-
-	it("falls back to the bare model id with a ClinePass prefix when unknown", () => {
-		expect(
-			resolveModelDisplayName({
-				providerId: "cline-pass",
-				modelId: "zai/glm-5.2",
-			}),
-		).toBe("ClinePass: glm-5.2");
-	});
-
-	it("keeps the reasoning effort next to the model name", () => {
-		expect(
-			resolveModelDisplayName({
-				providerId: "cline-pass",
-				modelId: "zai/glm-5.2",
-				knownModels: {
-					"zai/glm-5.2": { name: "GLM 5.2" },
-				},
-				thinking: true,
-				reasoningEffort: "high",
-			}),
-		).toBe("ClinePass: GLM 5.2 (high)");
-	});
-
-	it("uses the friendly model name for non-ClinePass providers", () => {
-		expect(
-			resolveModelDisplayName({
-				providerId: "cline",
-				modelId: "zai/glm-5.2",
-				knownModels: {
-					"zai/glm-5.2": { name: "GLM 5.2" },
-				},
-			}),
-		).toBe("GLM 5.2");
+		).toBe("(12,345 tokens)");
 	});
 });

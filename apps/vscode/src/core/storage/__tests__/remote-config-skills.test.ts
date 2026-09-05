@@ -3,8 +3,8 @@
  * Covers: transformRemoteConfigToStateShape and toggle synchronisation logic.
  */
 
-import { describe, it } from "bun:test"
 import { expect } from "chai"
+import { describe, it } from "mocha"
 import { synchronizeRemoteRuleToggles } from "@/core/context/instructions/user-instructions/rule-helpers"
 import { parseRemoteSkillEntries } from "@/core/context/instructions/user-instructions/skills"
 import { transformRemoteConfigToStateShape } from "@/core/storage/remote-config/utils"
@@ -43,6 +43,20 @@ describe("transformRemoteConfigToStateShape - globalSkills", () => {
 		const result = transformRemoteConfigToStateShape(makeConfig(entries))
 		expect(result.remoteGlobalSkills![0].alwaysEnabled).to.equal(true)
 		expect(result.remoteGlobalSkills![1].alwaysEnabled).to.equal(false)
+	})
+})
+
+describe("transformRemoteConfigToStateShape - Bedrock prompt cache", () => {
+	it("maps an enforced remote value onto shared and split-mode preferences", () => {
+		const result = transformRemoteConfigToStateShape({
+			version: "v1",
+			providerSettings: { AwsBedrock: { awsBedrockUsePromptCache: false } },
+		})
+
+		expect(result.awsBedrockUsePromptCache).to.equal(false)
+		expect(result.usePromptCache).to.equal(false)
+		expect(result.planModeUsePromptCache).to.equal(false)
+		expect(result.actModeUsePromptCache).to.equal(false)
 	})
 })
 

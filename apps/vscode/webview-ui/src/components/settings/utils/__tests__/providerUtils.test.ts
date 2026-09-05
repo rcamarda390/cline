@@ -1,31 +1,113 @@
-import type { ApiConfiguration } from "@shared/api"
+import type { ApiConfiguration, ModelInfo } from "@shared/api"
+import { clinePassDefaultModelId, clinePassModels } from "@shared/api"
 import { describe, expect, it } from "vitest"
-import { getModeSpecificFields } from "../providerUtils"
+import { getModeSpecificFields, normalizeApiConfiguration, syncModeConfigurations } from "../providerUtils"
 
-describe("getModeSpecificFields", () => {
-	it("returns undefined provider-specific fields when apiConfiguration is undefined", () => {
-		const fields = getModeSpecificFields(undefined, "plan")
-		expect(fields.apiProvider).toBeUndefined()
-		expect(fields.openRouterModelId).toBeUndefined()
-		expect(fields.clineModelId).toBeUndefined()
+describe("providerUtils", () => {
+	const freeModelInfo: ModelInfo = {
+		maxTokens: 32_768,
+		contextWindow: 256_000,
+		supportsImages: false,
+		supportsPromptCache: false,
+		supportsReasoning: true,
+		inputPrice: 0,
+		outputPrice: 0,
+		cacheReadsPrice: 0,
+		cacheWritesPrice: 0,
+		description: "A free model",
+	}
+
+	describe("Bedrock prompt-cache mode fields", () => {
+		it("does not inherit the shared prompt-cache value in Plan mode", () => {
+			const apiConfiguration: ApiConfiguration = {
+				awsBedrockUsePromptCache: true,
+				planModeAwsBedrockUsePromptCache: false,
+				actModeAwsBedrockUsePromptCache: true,
+			}
+			expect(getModeSpecificFields(apiConfiguration, "plan").awsBedrockUsePromptCache).toBe(false)
+		})
+
+		it("does not inherit the shared prompt-cache value in Act mode", () => {
+			const apiConfiguration: ApiConfiguration = {
+				awsBedrockUsePromptCache: true,
+				planModeAwsBedrockUsePromptCache: true,
+				actModeAwsBedrockUsePromptCache: false,
+			}
+			expect(getModeSpecificFields(apiConfiguration, "act").awsBedrockUsePromptCache).toBe(false)
+		})
+
+		it("leaves an unset split-mode prompt-cache value unset", () => {
+			const apiConfiguration: ApiConfiguration = { awsBedrockUsePromptCache: true }
+			expect(getModeSpecificFields(apiConfiguration, "plan").awsBedrockUsePromptCache).toBeUndefined()
+			expect(getModeSpecificFields(apiConfiguration, "act").awsBedrockUsePromptCache).toBeUndefined()
+		})
 	})
 
-	it("isolates each provider's saved fields so cross-provider state does not leak", () => {
-		// Reproduces the original cline/openrouter conflation guard: even when
-		// the user has stale OpenRouter selection state and is now configured
-		// for Cline, Cline-specific fields stay undefined until the user
-		// commits a Cline selection.
-		const apiConfiguration: ApiConfiguration = {
-			planModeApiProvider: "cline",
-			planModeOpenRouterModelId: "openrouter/some-model",
-			planModeOpenRouterModelInfo: { description: "stale OpenRouter model" },
-		} as ApiConfiguration
+	describe("normalizeApiConfiguration cline-pass", () => {
+		it("passes a free (non cline-pass prefixed) model id through with its stored info", () => {
+			const apiConfiguration: ApiConfiguration = {
+				actModeApiProvider: "cline-pass",
+				actModeClinePassModelId: "kwaipilot/kat-coder-pro",
+				actModeClinePassModelInfo: freeModelInfo,
+			}
 
-		const fields = getModeSpecificFields(apiConfiguration, "plan")
+			const normalized = normalizeApiConfiguration(apiConfiguration, "act", { isClinePassEnabled: true })
+			expect(normalized.selectedProvider).toBe("cline-pass")
+			expect(normalized.selectedModelId).toBe("kwaipilot/kat-coder-pro")
+			expect(normalized.selectedModelInfo).toEqual(freeModelInfo)
+		})
 
-		expect(fields.apiProvider).toBe("cline")
-		expect(fields.openRouterModelId).toBe("openrouter/some-model")
-		expect(fields.clineModelId).toBeUndefined()
-		expect(fields.clineModelInfo).toBeUndefined()
+		it("passes a :free suffixed model id through with its stored info", () => {
+			const apiConfiguration: ApiConfiguration = {
+				actModeApiProvider: "cline-pass",
+				actModeClinePassModelId: "arcee-ai/trinity-large-preview:free",
+				actModeClinePassModelInfo: freeModelInfo,
+			}
+
+			const normalized = normalizeApiConfiguration(apiConfiguration, "act", { isClinePassEnabled: true })
+			expect(normalized.selectedModelId).toBe("arcee-ai/trinity-large-preview:free")
+			expect(normalized.selectedModelInfo).toEqual(freeModelInfo)
+		})
+
+		it("keeps cline-pass prefixed ids resolved against the static model table", () => {
+			const apiConfiguration: ApiConfiguration = {
+				actModeApiProvider: "cline-pass",
+				actModeClinePassModelId: "cline-pass/glm-5.2",
+			}
+
+			const normalized = normalizeApiConfiguration(apiConfiguration, "act", { isClinePassEnabled: true })
+			expect(normalized.selectedModelId).toBe("cline-pass/glm-5.2")
+			expect(normalized.selectedModelInfo).toEqual(clinePassModels["cline-pass/glm-5.2"])
+		})
+
+		it("falls back to the default pass model when no model id is configured", () => {
+			const apiConfiguration: ApiConfiguration = {
+				actModeApiProvider: "cline-pass",
+			}
+
+			const normalized = normalizeApiConfiguration(apiConfiguration, "act", { isClinePassEnabled: true })
+			expect(normalized.selectedModelId).toBe(clinePassDefaultModelId)
+			expect(normalized.selectedModelInfo).toEqual(clinePassModels[clinePassDefaultModelId])
+		})
+	})
+
+	describe("syncModeConfigurations cline-pass", () => {
+		it("copies a free model id and info across plan and act modes", async () => {
+			const apiConfiguration: ApiConfiguration = {
+				planModeApiProvider: "cline-pass",
+				actModeApiProvider: "cline-pass",
+				actModeClinePassModelId: "kwaipilot/kat-coder-pro",
+				actModeClinePassModelInfo: freeModelInfo,
+			}
+
+			let updates: Partial<ApiConfiguration> | undefined
+			await syncModeConfigurations(apiConfiguration, "act", async (fields) => {
+				updates = fields
+			})
+
+			expect(updates?.planModeClinePassModelId).toBe("kwaipilot/kat-coder-pro")
+			expect(updates?.planModeClinePassModelInfo).toEqual(freeModelInfo)
+			expect(updates?.actModeClinePassModelId).toBe("kwaipilot/kat-coder-pro")
+		})
 	})
 })

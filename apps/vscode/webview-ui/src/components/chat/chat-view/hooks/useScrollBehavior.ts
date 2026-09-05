@@ -19,6 +19,8 @@ export function useScrollBehavior(
 	expandedRows: Record<number, boolean>,
 	setExpandedRows: React.Dispatch<React.SetStateAction<Record<number, boolean>>>,
 ): ScrollBehavior & {
+	showScrollToBottom: boolean
+	setShowScrollToBottom: React.Dispatch<React.SetStateAction<boolean>>
 	isAtBottom: boolean
 	setIsAtBottom: React.Dispatch<React.SetStateAction<boolean>>
 	pendingScrollToMessage: number | null
@@ -30,9 +32,9 @@ export function useScrollBehavior(
 	const virtuosoRef = useRef<VirtuosoHandle>(null)
 	const scrollContainerRef = useRef<HTMLDivElement>(null)
 	const disableAutoScrollRef = useRef(false)
-	const layoutSettleScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
 	// State
+	const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 	const [isAtBottom, setIsAtBottom] = useState(false)
 	const [pendingScrollToMessage, setPendingScrollToMessage] = useState<number | null>(null)
 	const [scrolledPastUserMessage, setScrolledPastUserMessage] = useState<ClineMessage | null>(null)
@@ -214,7 +216,7 @@ export function useScrollBehavior(
 
 	// scroll when user toggles certain rows
 	const toggleRowExpansion = useCallback(
-		(ts: number, options?: { preserveAutoScroll?: boolean }) => {
+		(ts: number) => {
 			const isCollapsing = expandedRows[ts] ?? false
 			const lastGroup = groupedMessages.at(-1)
 			const isLast = Array.isArray(lastGroup) ? lastGroup[0].ts === ts : lastGroup?.ts === ts
@@ -234,9 +236,8 @@ export function useScrollBehavior(
 				[ts]: !prev[ts],
 			}))
 
-			// Disable auto-scroll when the user expands a row. Programmatic expansions
-			// for active command output should keep bottom pinning engaged.
-			if (!isCollapsing && !options?.preserveAutoScroll) {
+			// disable auto scroll when user expands row
+			if (!isCollapsing) {
 				disableAutoScrollRef.current = true
 			}
 			// Only scroll on collapse, never on expand - expanding should stay in place
@@ -260,41 +261,20 @@ export function useScrollBehavior(
 		[groupedMessages, expandedRows, scrollToBottomAuto, isAtBottom],
 	)
 
-	const clearLayoutSettleScrollTimers = useCallback(() => {
-		if (layoutSettleScrollTimerRef.current !== null) {
-			clearTimeout(layoutSettleScrollTimerRef.current)
-			layoutSettleScrollTimerRef.current = null
-		}
-	}, [])
-
-	const keepPinnedToBottomAfterLayout = useCallback(() => {
-		if (disableAutoScrollRef.current) {
-			return
-		}
-
-		if (layoutSettleScrollTimerRef.current !== null) {
-			clearTimeout(layoutSettleScrollTimerRef.current)
-		}
-		layoutSettleScrollTimerRef.current = setTimeout(() => {
-			if (!disableAutoScrollRef.current) {
-				scrollToBottomSmooth()
-			}
-			layoutSettleScrollTimerRef.current = null
-		}, 500)
-	}, [scrollToBottomSmooth])
-
 	const handleRowHeightChange = useCallback(
-		(_isTaller: boolean) => {
-			keepPinnedToBottomAfterLayout()
+		(isTaller: boolean) => {
+			if (!disableAutoScrollRef.current) {
+				if (isTaller) {
+					scrollToBottomSmooth()
+				} else {
+					setTimeout(() => {
+						scrollToBottomAuto()
+					}, 0)
+				}
+			}
 		},
-		[keepPinnedToBottomAfterLayout],
+		[scrollToBottomSmooth, scrollToBottomAuto],
 	)
-
-	const handleLastRowContentChange = useCallback(() => {
-		keepPinnedToBottomAfterLayout()
-	}, [keepPinnedToBottomAfterLayout])
-
-	useEffect(() => clearLayoutSettleScrollTimers, [clearLayoutSettleScrollTimers])
 
 	useEffect(() => {
 		if (!disableAutoScrollRef.current) {
@@ -319,6 +299,12 @@ export function useScrollBehavior(
 		}
 	}, [pendingScrollToMessage, groupedMessages, scrollToMessage])
 
+	useEffect(() => {
+		if (!messages?.length) {
+			setShowScrollToBottom(false)
+		}
+	}, [messages.length])
+
 	const handleWheel = useCallback((event: Event) => {
 		const wheelEvent = event as WheelEvent
 		if (wheelEvent.deltaY && wheelEvent.deltaY < 0) {
@@ -339,7 +325,8 @@ export function useScrollBehavior(
 		scrollToMessage,
 		toggleRowExpansion,
 		handleRowHeightChange,
-		handleLastRowContentChange,
+		showScrollToBottom,
+		setShowScrollToBottom,
 		isAtBottom,
 		setIsAtBottom,
 		pendingScrollToMessage,

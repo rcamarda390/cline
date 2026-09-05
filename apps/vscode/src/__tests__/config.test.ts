@@ -1,21 +1,9 @@
-import { afterEach, beforeEach, describe, it, mock } from "bun:test"
+import { afterEach, beforeEach, describe, it } from "mocha"
 import "should"
 import fs from "fs/promises"
-import * as actualOs from "os"
+import os from "os"
 import path from "path"
 import sinon from "sinon"
-
-// The SUT does `import * as os from "os"; os.homedir()`. Under bun, sinon's
-// `stub(os, "homedir")` on the test's own `os` binding does NOT propagate to the
-// SUT's namespace import, so inject a module-level homedir stub via mock.module
-// (the rest of `os` — tmpdir() etc. — keeps its real behavior).
-const homedirStub = sinon.stub()
-const osMockNamespace = { ...actualOs, homedir: homedirStub }
-const osMock = () => ({ ...osMockNamespace, default: osMockNamespace })
-mock.module("os", osMock)
-mock.module("node:os", osMock)
-
-import os from "os"
 import { ClineConfigurationError, ClineEndpoint, ClineEnv, Environment } from "../config"
 
 describe("ClineEndpoint configuration", () => {
@@ -31,10 +19,11 @@ describe("ClineEndpoint configuration", () => {
 		// Create .cline directory
 		await fs.mkdir(path.join(tempDir, ".cline"), { recursive: true })
 
-		// Stub os.homedir to return our temp directory (via mock.module homedirStub)
+		// Stub os.homedir to return our temp directory
 		originalHomedir = os.homedir
-		homedirStub.reset()
-		homedirStub.returns(tempDir)
+		sandbox
+			.stub(os, "homedir")
+			.returns(tempDir)
 
 		// Reset the singleton state using internal method
 		;(ClineEndpoint as any)._instance = null

@@ -1,7 +1,7 @@
 import { PostHog } from "posthog-node"
 import { StateManager } from "@/core/storage/StateManager"
 import { HostProvider } from "@/hosts/host-provider"
-import { getDeviceId, getDistinctId } from "@/services/logging/distinctId"
+import { getDistinctId } from "@/services/logging/distinctId"
 import { PostHogClientProvider } from "@/services/telemetry/providers/posthog/PostHogClientProvider"
 import { fetch } from "@/shared/net"
 import { Setting } from "@/shared/proto/index.host"
@@ -74,7 +74,6 @@ export class PostHogErrorProvider implements IErrorProvider {
 			name: error.name,
 			extension_version: pkg.version,
 			is_dev: isDev,
-			...this.deviceIdProperty,
 			...properties,
 		}
 
@@ -92,7 +91,6 @@ export class PostHogErrorProvider implements IErrorProvider {
 			name: error.name,
 			extension_version: pkg.version,
 			is_dev: isDev,
-			...this.deviceIdProperty,
 			...properties,
 		}
 
@@ -140,7 +138,6 @@ export class PostHogErrorProvider implements IErrorProvider {
 				extension_version: pkg.version,
 				is_dev: isDev,
 				timestamp: new Date().toISOString(),
-				...this.deviceIdProperty,
 				...properties,
 			},
 		})
@@ -156,11 +153,6 @@ export class PostHogErrorProvider implements IErrorProvider {
 
 	private get distinctId(): string {
 		return getDistinctId()
-	}
-
-	private get deviceIdProperty(): Record<string, string> {
-		const deviceId = getDeviceId()
-		return deviceId ? { device_id: deviceId } : {}
 	}
 
 	public async dispose(): Promise<void> {

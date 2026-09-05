@@ -44,7 +44,6 @@ function toProtobufThinkingConfig(appConfig: ModelInfo["thinkingConfig"] | undef
  */
 export function fromProtobufModelInfo(protoInfo: OpenRouterModelInfo): ModelInfo {
 	return {
-		name: protoInfo.name,
 		maxTokens: protoInfo.maxTokens,
 		contextWindow: protoInfo.contextWindow,
 		supportsImages: protoInfo.supportsImages,
@@ -58,8 +57,7 @@ export function fromProtobufModelInfo(protoInfo: OpenRouterModelInfo): ModelInfo
 		thinkingConfig: convertThinkingConfig(protoInfo.thinkingConfig),
 		supportsGlobalEndpoint: protoInfo.supportsGlobalEndpoint,
 		tiers: protoInfo.tiers.length > 0 ? protoInfo.tiers : undefined,
-		temperature: protoInfo.temperature,
-		apiFormat: protoInfo.apiFormat,
+		requiresNativeToolCalls: protoInfo.requiresNativeToolCalls,
 	}
 }
 
@@ -68,7 +66,6 @@ export function fromProtobufModelInfo(protoInfo: OpenRouterModelInfo): ModelInfo
  */
 export function toProtobufModelInfo(modelInfo: ModelInfo): OpenRouterModelInfo {
 	return OpenRouterModelInfo.create({
-		name: modelInfo.name,
 		maxTokens: modelInfo.maxTokens,
 		contextWindow: modelInfo.contextWindow,
 		supportsImages: modelInfo.supportsImages,
@@ -82,8 +79,7 @@ export function toProtobufModelInfo(modelInfo: ModelInfo): OpenRouterModelInfo {
 		thinkingConfig: toProtobufThinkingConfig(modelInfo.thinkingConfig),
 		supportsGlobalEndpoint: modelInfo.supportsGlobalEndpoint,
 		tiers: modelInfo.tiers || [],
-		temperature: modelInfo.temperature,
-		apiFormat: modelInfo.apiFormat,
+		requiresNativeToolCalls: modelInfo.requiresNativeToolCalls,
 	})
 }
 
@@ -105,6 +101,7 @@ export function fromProtobufOpenAiCompatibleModelInfo(protoInfo: ProtoOpenAiComp
 		supportsGlobalEndpoint: protoInfo.supportsGlobalEndpoint,
 		tiers: protoInfo.tiers.length > 0 ? protoInfo.tiers : undefined,
 		temperature: protoInfo.temperature,
+		isR1FormatRequired: protoInfo.isR1FormatRequired,
 	}
 }
 

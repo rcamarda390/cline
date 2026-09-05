@@ -1,20 +1,17 @@
+import { type ModelInfo, vertexCustomModelInfoSaneDefaults, vertexGlobalModels, vertexModels } from "@shared/api"
 import VertexData from "@shared/providers/vertex.json"
 import type { Mode } from "@shared/storage/types"
 import { isClaudeOpusAdaptiveThinkingModel, resolveClaudeOpusAdaptiveThinking } from "@shared/utils/reasoning-support"
 import { VSCodeCheckbox, VSCodeDropdown, VSCodeLink, VSCodeOption } from "@vscode/webview-ui-toolkit/react"
-import { useCallback, useEffect, useRef, useState } from "react"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import { fromProtobufProviderModelOverrides, type ProviderModelOverrides, useProviderConfig } from "@/hooks/useProviderConfig"
-import { useProviderModelSelection } from "@/hooks/useProviderModelSelection"
-import { useProviderModels } from "@/hooks/useProviderModels"
-import { useProviderUsageCostDisplay } from "@/hooks/useProviderUsageCostDisplay"
 import { DROPDOWN_Z_INDEX, DropdownContainer } from "../ApiOptions"
 import { DebouncedTextField } from "../common/DebouncedTextField"
 import { ModelInfoView } from "../common/ModelInfoView"
 import { LockIcon, RemotelyConfiguredInputWrapper } from "../common/RemotelyConfiguredInputWrapper"
 import ReasoningEffortSelector from "../ReasoningEffortSelector"
-import { getModeSpecificFields } from "../utils/providerUtils"
-import { type ModelPickerSelection, ModelPickerWithManualEntry } from "./ModelPickerWithManualEntry"
+import ThinkingBudgetSlider from "../ThinkingBudgetSlider"
+import { getModeSpecificFields, normalizeApiConfiguration } from "../utils/providerUtils"
+import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
 
 /**
  * Props for the VertexProvider component
@@ -25,175 +22,60 @@ interface VertexProviderProps {
 	currentMode: Mode
 }
 
+// Vertex models that support thinking
+const SUPPORTED_THINKING_MODELS = [
+	"claude-sonnet-5",
+	"claude-sonnet-5:1m",
+	"claude-sonnet-4-6",
+	"claude-sonnet-4-6:1m",
+	"claude-fable-5",
+	"claude-haiku-4-5",
+	"claude-haiku-4-5@20251001",
+	"claude-sonnet-4-5",
+	"claude-sonnet-4-5@20250929",
+	"claude-3-7-sonnet@20250219",
+	"claude-sonnet-4@20250514",
+	"claude-opus-4@20250514",
+	"claude-opus-4-1",
+	"claude-opus-4-1@20250805",
+	"claude-opus-4-5",
+	"claude-opus-4-6",
+	"claude-opus-4-7",
+	"claude-opus-4-8",
+	"claude-opus-5",
+	"claude-opus-5:1m",
+	"gemini-2.5-flash",
+	"gemini-2.5-pro",
+	"gemini-2.5-flash-lite-preview-06-17",
+]
+
 const REGIONS = VertexData.regions
-const CUSTOM_MODEL_DEFAULT_OVERRIDES: ProviderModelOverrides = {
-	contextWindow: 200_000,
-	maxInputTokens: 200_000,
-	maxTokens: 64_000,
-	supportsVision: true,
-	supportsReasoning: true,
-	capabilities: ["prompt-cache"],
-}
-
-type NumericOverrideKey = "contextWindow" | "maxTokens"
-
-function withCustomModelDefaults(overrides?: ProviderModelOverrides): ProviderModelOverrides {
-	return {
-		...CUSTOM_MODEL_DEFAULT_OVERRIDES,
-		...overrides,
-		capabilities: Array.from(new Set([...(overrides?.capabilities ?? []), "prompt-cache"])),
-	}
-}
 
 /**
  * The GCP Vertex AI provider configuration component
  */
 export const VertexProvider = ({ showModelOptions, isPopup, currentMode }: VertexProviderProps) => {
 	const { apiConfiguration, remoteConfigSettings } = useExtensionState()
-	const { models: allVertexModels, defaultModelId, isLoading, isStale, error } = useProviderModels("vertex")
-	const { config, write, commitSelection } = useProviderConfig("vertex")
-	const { selectedModel, selectedModelId, selectedModelInfo } = useProviderModelSelection("vertex", currentMode, {
-		models: allVertexModels,
-		defaultModelId,
-		config,
-		commitSelection,
-	})
-	const hideUsageCost = useProviderUsageCostDisplay("vertex") === "hide"
+	const { handleFieldChange, handleModeFieldChange, handleModeFieldsChange } = useApiConfigurationHandlers()
 	const modeFields = getModeSpecificFields(apiConfiguration, currentMode)
-	const vertexProjectId = config?.gcp?.projectId ?? apiConfiguration?.vertexProjectId ?? ""
-	const vertexRegion = config?.gcp?.region ?? config?.region ?? apiConfiguration?.vertexRegion ?? ""
-	const committedSelection = currentMode === "plan" ? config?.planSelection : config?.actSelection
-	const committedOverrides = fromProtobufProviderModelOverrides(committedSelection?.overrides)
-	const hasCommittedOverrides = committedOverrides !== undefined
-	// The catalog hydrates asynchronously; while it loads (or failed) the map
-	// is empty and any committed id would be misclassified as custom, letting
-	// the seed effect below stamp generic 200k/64k overrides onto a catalog
-	// model. Only classify once the catalog has resolved.
-	const catalogResolved = !isLoading && Object.keys(allVertexModels).length > 0
-	const isCustomModelSelected = catalogResolved && Boolean(selectedModelId) && !Object.hasOwn(allVertexModels, selectedModelId)
-	const customOverrides = isCustomModelSelected ? withCustomModelDefaults(committedOverrides) : undefined
-	const customOverridesRef = useRef<{ modelId: string; overrides: ProviderModelOverrides }>({
-		modelId: selectedModelId,
-		overrides: customOverrides ?? CUSTOM_MODEL_DEFAULT_OVERRIDES,
-	})
-	const pendingCommitsRef = useRef(0)
-	const commitQueueRef = useRef<Promise<unknown>>(Promise.resolve())
-	const [fieldErrors, setFieldErrors] = useState<Partial<Record<NumericOverrideKey, string>>>({})
 
-	useEffect(() => {
-		if (pendingCommitsRef.current === 0 && customOverrides) {
-			customOverridesRef.current = { modelId: selectedModelId, overrides: customOverrides }
-		}
-	}, [customOverrides, selectedModelId])
-
-	const commitVertexSelection = useCallback(
-		(modelId: string, overrides?: ProviderModelOverrides) => {
-			pendingCommitsRef.current += 1
-			// Serialize commits: rapid edits must apply in issue order. Each
-			// commit ends with a config read() in useProviderConfig, so an older
-			// commit resolving last can otherwise restore stale overrides in the
-			// UI and persisted settings. Errors are swallowed per-link so one
-			// failed commit never jams the queue.
-			commitQueueRef.current = commitQueueRef.current
-				.then(() =>
-					commitSelection(currentMode, {
-						providerId: "vertex",
-						modelId,
-						...(overrides !== undefined ? { overrides } : {}),
-					}),
-				)
-				.catch((err) => console.error("Failed to commit Vertex model selection:", err))
-				.finally(() => {
-					pendingCommitsRef.current -= 1
-				})
-		},
-		[commitSelection, currentMode],
-	)
-
-	// Seed durable defaults exactly once for a committed custom model with no
-	// stored overrides, so the editor's displayed defaults match what the
-	// runtime resolves instead of silently diverging from fallback model info.
-	// Stored overrides live per (provider, modelId) in models.json and round-
-	// trip through committedSelection.overrides, so `undefined` here proves
-	// nothing is stored. The seed commit writes non-empty overrides, making
-	// this condition false on the next round-trip — no loop. The pending-
-	// commit guard keeps it from racing an in-flight user edit.
-	useEffect(() => {
-		if (
-			isCustomModelSelected &&
-			committedSelection?.modelId === selectedModelId &&
-			!hasCommittedOverrides &&
-			pendingCommitsRef.current === 0
-		) {
-			commitVertexSelection(selectedModelId, withCustomModelDefaults(undefined))
-		}
-	}, [isCustomModelSelected, committedSelection?.modelId, hasCommittedOverrides, selectedModelId, commitVertexSelection])
-
-	const handleModelSelect = (selection: ModelPickerSelection) => {
-		const custom = !Object.hasOwn(allVertexModels, selection.modelId)
-		// Custom models: omit overrides (tri-state "preserve") so tuning stored
-		// per (provider, modelId) in models.json survives re-selection and
-		// plan/act mode switches; the seed effect above writes defaults only
-		// when the round-tripped config proves nothing is stored. Catalog
-		// models: an explicit `{}` clears any stale stored overrides.
-		commitVertexSelection(selection.modelId, custom ? undefined : {})
-	}
-
-	const updateCustomOverrides = (updates: Partial<ProviderModelOverrides>) => {
-		if (!isCustomModelSelected) {
-			return
-		}
-		const current =
-			customOverridesRef.current.modelId === selectedModelId
-				? customOverridesRef.current.overrides
-				: withCustomModelDefaults(committedOverrides)
-		const next = withCustomModelDefaults({ ...current, ...updates })
-		customOverridesRef.current = { modelId: selectedModelId, overrides: next }
-		commitVertexSelection(selectedModelId, next)
-	}
-
-	const updateNumericOverride = (key: NumericOverrideKey, label: string, value: string) => {
-		const parsed = Number(value)
-		if (!Number.isInteger(parsed) || parsed <= 0) {
-			setFieldErrors((current) => ({ ...current, [key]: `${label} must be a positive integer.` }))
-			return
-		}
-		setFieldErrors((current) => ({ ...current, [key]: undefined }))
-		const currentValue = customOverridesRef.current.overrides[key]
-		if (currentValue === parsed) {
-			return
-		}
-		updateCustomOverrides(key === "contextWindow" ? { contextWindow: parsed, maxInputTokens: parsed } : { maxTokens: parsed })
-	}
-
-	const writeProviderConfig = (patch: Parameters<typeof write>[0], label: string) => {
-		void write(patch).catch((err) => console.error(`Failed to update Vertex ${label}:`, err))
-	}
-	const writeGcp = (gcp: NonNullable<Parameters<typeof write>[0]["gcp"]>, label: string) => {
-		writeProviderConfig({ gcp }, label)
-	}
-
-	const handleProjectIdChange = (value: string) => {
-		writeGcp({ projectId: value }, "project ID")
-	}
-
-	const handleRegionChange = (value: string) => {
-		writeProviderConfig({ region: value, gcp: { region: value } }, "region")
-	}
-
-	// Catalog and selection come from the SDK via gRPC. The picker shows the
-	// full catalog for every region, including "global": endpoint support
-	// changes faster than any host-maintained allowlist, and an unsupported
-	// pick fails loudly at request time with guidance (see
-	// describeVertexGlobalRegionError in src/sdk/message-translator.ts).
+	// Get the normalized configuration
+	const { selectedModelId, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode)
 	const isAdaptiveThinkingModel = isClaudeOpusAdaptiveThinkingModel(selectedModelId)
-
 	const adaptiveThinkingDefaultEffort =
 		resolveClaudeOpusAdaptiveThinking(modeFields.reasoningEffort, modeFields.thinkingBudgetTokens).effort ?? "none"
-	const handleReasoningEffortChange = (effort: string) => {
-		writeProviderConfig(
-			{ reasoning: { enabled: effort !== "none", effort: effort !== "none" ? effort : undefined } },
-			"reasoning effort",
+
+	// Determine which models to use based on region
+	const modelsToUse = apiConfiguration?.vertexRegion === "global" ? vertexGlobalModels : vertexModels
+
+	const isCustomModelSelected = !!modeFields.vertexCustomModelSelected
+	const customModelInfo = modeFields.vertexCustomModelInfo ?? vertexCustomModelInfoSaneDefaults
+
+	const handleCustomModelInfoChange = (updates: Partial<ModelInfo>) => {
+		handleModeFieldChange(
+			{ plan: "planModeVertexCustomModelInfo", act: "actModeVertexCustomModelInfo" },
+			{ ...customModelInfo, ...updates },
+			currentMode,
 		)
 	}
 
@@ -207,8 +89,8 @@ export const VertexProvider = ({ showModelOptions, isPopup, currentMode }: Verte
 			<RemotelyConfiguredInputWrapper hidden={remoteConfigSettings?.vertexProjectId === undefined}>
 				<DebouncedTextField
 					disabled={remoteConfigSettings?.vertexProjectId !== undefined}
-					initialValue={vertexProjectId}
-					onChange={handleProjectIdChange}
+					initialValue={apiConfiguration?.vertexProjectId || ""}
+					onChange={(value) => handleFieldChange("vertexProjectId", value)}
 					placeholder="Enter Project ID..."
 					style={{ width: "100%" }}>
 					<div className="flex items-center gap-2 mb-1">
@@ -231,9 +113,9 @@ export const VertexProvider = ({ showModelOptions, isPopup, currentMode }: Verte
 					<VSCodeDropdown
 						disabled={remoteConfigSettings?.vertexRegion !== undefined}
 						id="vertex-region-dropdown"
-						onChange={(event) => handleRegionChange((event.target as HTMLSelectElement).value)}
+						onChange={(e: any) => handleFieldChange("vertexRegion", e.target.value)}
 						style={{ width: "100%" }}
-						value={vertexRegion}>
+						value={apiConfiguration?.vertexRegion || ""}>
 						<VSCodeOption value="">Select a region...</VSCodeOption>
 						{REGIONS.map((region) => (
 							<VSCodeOption key={region} value={region}>
@@ -265,57 +147,124 @@ export const VertexProvider = ({ showModelOptions, isPopup, currentMode }: Verte
 
 			{showModelOptions && (
 				<>
-					<ModelPickerWithManualEntry
-						allowsCustomIds={true}
-						error={error}
-						isLoading={isLoading}
-						isStale={isStale}
-						models={allVertexModels}
-						onSelect={handleModelSelect}
-						selectedModel={selectedModel}
-					/>
+					<DropdownContainer className="dropdown-container" zIndex={DROPDOWN_Z_INDEX - 2}>
+						<label htmlFor="vertex-model-dropdown">
+							<span className="font-medium">Model</span>
+						</label>
+						<VSCodeDropdown
+							className="w-full"
+							id="vertex-model-dropdown"
+							onChange={(e: any) => {
+								const isCustom = e.target.value === "custom"
 
-					{isCustomModelSelected && customOverrides && (
-						<div className="flex flex-col gap-1">
-							<p className="m-0 text-sm text-description">
-								Adjust the custom model's capabilities if they differ from the defaults.
+								handleModeFieldsChange(
+									{
+										apiModelId: { plan: "planModeApiModelId", act: "actModeApiModelId" },
+										vertexCustomModelSelected: {
+											plan: "planModeVertexCustomModelSelected",
+											act: "actModeVertexCustomModelSelected",
+										},
+										vertexCustomModelInfo: {
+											plan: "planModeVertexCustomModelInfo",
+											act: "actModeVertexCustomModelInfo",
+										},
+									},
+									{
+										apiModelId: isCustom ? "" : e.target.value,
+										vertexCustomModelSelected: isCustom,
+										vertexCustomModelInfo: isCustom ? { ...vertexCustomModelInfoSaneDefaults } : undefined,
+									},
+									currentMode,
+								)
+							}}
+							value={isCustomModelSelected ? "custom" : selectedModelId}>
+							<VSCodeOption value="">Select a model...</VSCodeOption>
+							{Object.keys(modelsToUse).map((modelId) => (
+								<VSCodeOption
+									className="whitespace-normal wrap-break-word max-w-full"
+									key={modelId}
+									value={modelId}>
+									{modelId}
+								</VSCodeOption>
+							))}
+							<VSCodeOption value="custom">Custom</VSCodeOption>
+						</VSCodeDropdown>
+					</DropdownContainer>
+
+					{isCustomModelSelected && (
+						<div>
+							<p className="mt-1 text-sm text-description">
+								Select "Custom" to use a Vertex AI model that isn't in the list. Enter the model ID and adjust the
+								model's capabilities below if needed.
 							</p>
-							<div className="flex gap-2">
-								<div style={{ flex: 1 }}>
-									<DebouncedTextField
-										initialValue={String(customOverrides.contextWindow ?? 200_000)}
-										onChange={(value) =>
-											updateNumericOverride("contextWindow", "Context Window Size", value)
-										}>
-										<span className="font-medium">Context Window Size</span>
-									</DebouncedTextField>
-									{fieldErrors.contextWindow && <div role="alert">{fieldErrors.contextWindow}</div>}
-								</div>
-								<div style={{ flex: 1 }}>
-									<DebouncedTextField
-										initialValue={String(customOverrides.maxTokens ?? 64_000)}
-										onChange={(value) => updateNumericOverride("maxTokens", "Max Output Tokens", value)}>
-										<span className="font-medium">Max Output Tokens</span>
-									</DebouncedTextField>
-									{fieldErrors.maxTokens && <div role="alert">{fieldErrors.maxTokens}</div>}
-								</div>
+							<DebouncedTextField
+								className="w-full mt-0.5"
+								id="vertex-custom-model-input"
+								initialValue={modeFields.apiModelId || ""}
+								onChange={(value) =>
+									handleModeFieldChange(
+										{ plan: "planModeApiModelId", act: "actModeApiModelId" },
+										value,
+										currentMode,
+									)
+								}
+								placeholder="Enter custom model ID...">
+								<span className="font-medium">Model ID</span>
+							</DebouncedTextField>
+
+							<div style={{ display: "flex", gap: 10, marginTop: "5px" }}>
+								<DebouncedTextField
+									initialValue={
+										customModelInfo.contextWindow?.toString() ??
+										vertexCustomModelInfoSaneDefaults.contextWindow?.toString() ??
+										""
+									}
+									onChange={(value) => {
+										// Only save valid values so clearing the field doesn't
+										// snap it back to the previously saved value mid-edit.
+										const parsed = Number.parseInt(value, 10)
+										if (!Number.isNaN(parsed) && parsed > 0) {
+											handleCustomModelInfoChange({ contextWindow: parsed })
+										}
+									}}
+									style={{ flex: 1 }}>
+									<span className="font-medium">Context Window Size</span>
+								</DebouncedTextField>
+
+								<DebouncedTextField
+									initialValue={
+										customModelInfo.maxTokens?.toString() ??
+										vertexCustomModelInfoSaneDefaults.maxTokens?.toString() ??
+										""
+									}
+									onChange={(value) => {
+										const parsed = Number.parseInt(value, 10)
+										if (!Number.isNaN(parsed) && parsed > 0) {
+											handleCustomModelInfoChange({ maxTokens: parsed })
+										}
+									}}
+									style={{ flex: 1 }}>
+									<span className="font-medium">Max Output Tokens</span>
+								</DebouncedTextField>
 							</div>
-							<VSCodeCheckbox
-								checked={customOverrides.supportsVision !== false}
-								onChange={(event) =>
-									updateCustomOverrides({ supportsVision: (event.target as HTMLInputElement).checked === true })
-								}>
-								Supports Images
-							</VSCodeCheckbox>
-							<VSCodeCheckbox
-								checked={customOverrides.supportsReasoning !== false}
-								onChange={(event) =>
-									updateCustomOverrides({
-										supportsReasoning: (event.target as HTMLInputElement).checked === true,
-									})
-								}>
-								Supports Reasoning
-							</VSCodeCheckbox>
+
+							<div className="flex flex-col gap-1 mt-1">
+								<VSCodeCheckbox
+									checked={!!customModelInfo.supportsImages}
+									onChange={(e: any) =>
+										handleCustomModelInfoChange({ supportsImages: e.target.checked === true })
+									}>
+									Supports Images
+								</VSCodeCheckbox>
+
+								<VSCodeCheckbox
+									checked={!!customModelInfo.supportsReasoning}
+									onChange={(e: any) =>
+										handleCustomModelInfoChange({ supportsReasoning: e.target.checked === true })
+									}>
+									Supports Reasoning
+								</VSCodeCheckbox>
+							</div>
 						</div>
 					)}
 
@@ -326,23 +275,17 @@ export const VertexProvider = ({ showModelOptions, isPopup, currentMode }: Verte
 							defaultEffort={adaptiveThinkingDefaultEffort}
 							description="Use None to disable adaptive thinking. Higher effort increases response detail and token usage."
 							label="Adaptive Thinking"
-							onEffortChange={handleReasoningEffortChange}
 						/>
-					) : selectedModelInfo.supportsReasoning === true ? (
-						<ReasoningEffortSelector
-							currentMode={currentMode}
-							defaultEffort="none"
-							description="Use None to disable extended thinking. Higher effort improves depth, but uses more tokens."
-							onEffortChange={handleReasoningEffortChange}
-						/>
+					) : SUPPORTED_THINKING_MODELS.includes(selectedModelId) ||
+						(isCustomModelSelected && customModelInfo.supportsReasoning) ? (
+						<ThinkingBudgetSlider currentMode={currentMode} maxBudget={selectedModelInfo.thinkingConfig?.maxBudget} />
 					) : null}
 
-					<ModelInfoView
-						hideUsageCost={hideUsageCost}
-						isPopup={isPopup}
-						modelInfo={selectedModelInfo}
-						selectedModelId={selectedModelId}
-					/>
+					{selectedModelInfo.thinkingConfig?.supportsThinkingLevel && (
+						<ReasoningEffortSelector currentMode={currentMode} />
+					)}
+
+					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />
 				</>
 			)}
 		</div>

@@ -3,7 +3,6 @@ import type {
 	ProviderListItem,
 	ProviderModel,
 } from "@cline/core";
-import type { GeneratedMedia } from "@cline/shared";
 
 export type WebviewUsage = {
 	inputTokens?: number;
@@ -15,12 +14,7 @@ export type WebviewUsage = {
 
 export type WebviewProviderModel = Pick<
 	ProviderModel,
-	| "id"
-	| "name"
-	| "operation"
-	| "supportsReasoning"
-	| "inputModalities"
-	| "outputModalities"
+	"id" | "name" | "supportsReasoning"
 > & {
 	supportsThinking?: boolean;
 };
@@ -41,7 +35,6 @@ export type WebviewToolEvent = {
 export type WebviewChatMessageBlock =
 	| { id: string; type: "text"; text: string }
 	| { id: string; type: "reasoning"; text: string; redacted?: boolean }
-	| { id: string; type: "media"; media: GeneratedMedia }
 	| {
 			id: string;
 			type: "tool";
@@ -279,13 +272,7 @@ export type WebviewInboundMessage =
 
 export type WebviewOutboundMessage =
 	| { type: "status"; text: string }
-	/**
-	 * `recoverable: true` marks an in-run notice (e.g. a MistakeTracker
-	 * mistake such as a plan-mode guard-blocked command) — the run continues,
-	 * so peers should not treat it as the turn's outcome. Absent/false means
-	 * a genuine failure.
-	 */
-	| { type: "error"; text: string; recoverable?: boolean }
+	| { type: "error"; text: string }
 	| {
 			type: "desktopCommandResult";
 			id: string;
@@ -309,7 +296,6 @@ export type WebviewOutboundMessage =
 	  }
 	| { type: "assistant_delta"; text: string }
 	| { type: "reasoning_delta"; text: string; redacted?: boolean }
-	| { type: "assistant_media"; media: GeneratedMedia }
 	| { type: "tool_event"; text: string; event?: WebviewToolEvent }
 	| ({ type: "approval_request" } & WebviewToolApprovalRequest)
 	| {

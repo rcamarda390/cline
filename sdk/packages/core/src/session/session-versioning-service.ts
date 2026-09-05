@@ -8,12 +8,10 @@ import type { RestoreSessionInput } from "../runtime/host/runtime-host";
 import type { SessionRecord } from "../types/sessions";
 import {
 	applyCheckpointToWorktree,
-	beginWorktreeRestoreTransaction,
 	type CheckpointRestorePlan,
 	createCheckpointRestorePlan,
 	createRestoredCheckpointMetadata,
-	trimMessagesBeforeUserRun,
-	type WorktreeRestoreTransaction,
+	trimMessagesBeforeCheckpoint,
 } from "./checkpoint-restore";
 import {
 	type CoreSessionSnapshot,
@@ -37,11 +35,11 @@ export class SessionVersioningError extends Error {
 
 export interface SessionCheckpointRestoreContext {
 	sourceSession: SessionRecord;
-	sourceMessages?: LlmsProviders.MessageWithMetadata[];
+	sourceMessages?: LlmsProviders.Message[];
 	sourceSnapshot: CoreSessionSnapshot;
 	plan: CheckpointRestorePlan;
 	restoredCheckpointMetadata?: CheckpointMetadata;
-	initialMessages: LlmsProviders.MessageWithMetadata[];
+	initialMessages: LlmsProviders.Message[];
 	restoreMessages: boolean;
 	restoreWorkspace: boolean;
 	checkpointRunCount: number;
@@ -50,7 +48,7 @@ export interface SessionCheckpointRestoreContext {
 export interface SessionCheckpointRestoreResult<TStartResult = unknown> {
 	sessionId?: string;
 	startResult?: TStartResult;
-	messages?: LlmsProviders.MessageWithMetadata[];
+	messages?: LlmsProviders.Message[];
 	checkpoint: CheckpointEntry;
 	sourceSnapshot: CoreSessionSnapshot;
 	restoredSnapshot?: CoreSessionSnapshot;
@@ -67,14 +65,13 @@ export interface SessionCheckpointRestoreInput<
 	restore?: RestoreSessionInput["restore"];
 	start?: TRestoreStartInput;
 	getSession(sessionId: string): Promise<SessionRecord | undefined>;
-	readMessages(sessionId: string): Promise<LlmsProviders.MessageWithMetadata[]>;
+	readMessages(sessionId: string): Promise<LlmsProviders.Message[]>;
 	buildStartInput?: (
 		context: SessionCheckpointRestoreContext,
 		start: TRestoreStartInput,
 	) => TStartInput | Promise<TStartInput>;
 	startSession?: (input: TStartInput) => Promise<TStartResult>;
 	getStartedSessionId?: (result: TStartResult) => string | undefined;
-	cleanupStartedSession?: (result: Awaited<TStartResult>) => Promise<void>;
 	readRestoredSession?: (
 		sessionId: string,
 	) => Promise<SessionRecord | undefined>;
@@ -82,9 +79,6 @@ export interface SessionCheckpointRestoreInput<
 		cwd: string,
 		checkpoint: CheckpointEntry,
 	) => Promise<void>;
-	beginWorkspaceRestoreTransaction?: (
-		cwd: string,
-	) => Promise<WorktreeRestoreTransaction>;
 	retainCheckpointRefs?: (
 		cwd: string,
 		sessionId: string,
@@ -172,157 +166,80 @@ export class SessionVersioningService {
 			cwd: input.cwd,
 			restoreMessages,
 		});
+		if (restoreWorkspace) {
+			await (input.applyWorkspaceCheckpoint ?? applyCheckpointToWorktree)(
+				plan.cwd,
+				plan.checkpoint,
+			);
+		}
+
 		const sourceSnapshot = createCoreSessionSnapshot({
 			session: sourceSession,
 			messages: sourceMessages,
 		});
-		let restoredCheckpointMetadata: CheckpointMetadata | undefined;
-		let initialMessages: LlmsProviders.MessageWithMetadata[] = [];
-		let startInput: TStartInput | undefined;
-		let messageRestoreOperations:
-			| {
-					startSession: (input: TStartInput) => Promise<TStartResult>;
-					getStartedSessionId: (result: TStartResult) => string | undefined;
-					cleanupStartedSession: (
-						result: Awaited<TStartResult>,
-					) => Promise<void>;
-			  }
-			| undefined;
-		if (restoreMessages) {
-			const { startSession, getStartedSessionId, cleanupStartedSession } =
-				input;
-			if (
-				!input.start ||
-				!startSession ||
-				!getStartedSessionId ||
-				!cleanupStartedSession
-			) {
-				throw new SessionVersioningError(
-					"invalid_restore",
-					"startSession, getStartedSessionId, and cleanupStartedSession are required when restore.messages is true",
-				);
-			}
-			messageRestoreOperations = {
-				startSession,
-				getStartedSessionId,
-				cleanupStartedSession,
-			};
-			restoredCheckpointMetadata = createRestoredCheckpointMetadata(
-				sourceSession,
-				input.checkpointRunCount,
-			);
-			initialMessages = input.restore?.omitCheckpointMessageFromSession
-				? trimMessagesBeforeUserRun(
-						sourceMessages ?? [],
-						input.checkpointRunCount,
-					)
-				: (plan.messages ?? []);
-			const context: SessionCheckpointRestoreContext = {
-				sourceSession,
-				sourceMessages,
-				sourceSnapshot,
-				plan,
-				restoredCheckpointMetadata,
-				initialMessages,
-				restoreMessages,
-				restoreWorkspace,
-				checkpointRunCount: input.checkpointRunCount,
-			};
-			startInput = input.buildStartInput
-				? await input.buildStartInput(context, input.start)
-				: (input.start as unknown as TStartInput);
+		if (!restoreMessages) {
+			return { checkpoint: plan.checkpoint, sourceSnapshot };
 		}
 
-		const applyWorkspaceCheckpoint =
-			input.applyWorkspaceCheckpoint ?? applyCheckpointToWorktree;
-		const beginWorkspaceRestoreTransaction =
-			input.beginWorkspaceRestoreTransaction ??
-			(input.applyWorkspaceCheckpoint
-				? undefined
-				: beginWorktreeRestoreTransaction);
-		const transaction =
-			restoreWorkspace && beginWorkspaceRestoreTransaction
-				? await beginWorkspaceRestoreTransaction(plan.cwd)
-				: undefined;
-		let workspaceCommitted = false;
-		let startedSession:
-			| {
-					result: Awaited<TStartResult>;
-					cleanup: (result: Awaited<TStartResult>) => Promise<void>;
-			  }
-			| undefined;
-		try {
-			if (restoreWorkspace) {
-				await applyWorkspaceCheckpoint(plan.cwd, plan.checkpoint);
-			}
-			if (!messageRestoreOperations) {
-				await transaction?.commit();
-				workspaceCommitted = true;
-				return { checkpoint: plan.checkpoint, sourceSnapshot };
-			}
+		const restoredCheckpointMetadata = createRestoredCheckpointMetadata(
+			sourceSession,
+			input.checkpointRunCount,
+		);
+		const initialMessages = input.restore?.omitCheckpointMessageFromSession
+			? trimMessagesBeforeCheckpoint(
+					sourceMessages ?? [],
+					input.checkpointRunCount,
+				)
+			: (plan.messages ?? []);
+		const context: SessionCheckpointRestoreContext = {
+			sourceSession,
+			sourceMessages,
+			sourceSnapshot,
+			plan,
+			restoredCheckpointMetadata,
+			initialMessages,
+			restoreMessages,
+			restoreWorkspace,
+			checkpointRunCount: input.checkpointRunCount,
+		};
 
-			const startResult = await messageRestoreOperations.startSession(
-				startInput as TStartInput,
+		if (!input.start || !input.startSession) {
+			throw new SessionVersioningError(
+				"invalid_restore",
+				"start is required when restore.messages is true",
 			);
-			startedSession = {
-				result: startResult,
-				cleanup: messageRestoreOperations.cleanupStartedSession,
-			};
-			const newSessionId =
-				messageRestoreOperations.getStartedSessionId(startResult);
-			if (!newSessionId) {
-				throw new SessionVersioningError(
-					"invalid_restore",
-					"Restored session did not return a session id",
-				);
-			}
+		}
+
+		const startInput = input.buildStartInput
+			? await input.buildStartInput(context, input.start)
+			: (input.start as unknown as TStartInput);
+		const startResult = await input.startSession(startInput);
+		const newSessionId = input.getStartedSessionId?.(startResult);
+		if (newSessionId) {
 			await (input.retainCheckpointRefs ?? defaultRetainCheckpointRefs)(
 				plan.cwd,
 				newSessionId,
 				restoredCheckpointMetadata?.history ?? [],
 			);
-			const restoredSession = input.readRestoredSession
+		}
+		const restoredSession =
+			newSessionId && input.readRestoredSession
 				? await input.readRestoredSession(newSessionId)
 				: undefined;
-			const restoredSnapshot = restoredSession
-				? createCoreSessionSnapshot({
-						session: restoredSession,
-						messages: initialMessages,
-					})
-				: undefined;
-			await transaction?.commit();
-			workspaceCommitted = true;
-			return {
-				sessionId: newSessionId,
-				startResult,
-				messages: plan.messages,
-				checkpoint: plan.checkpoint,
-				sourceSnapshot,
-				...(restoredSnapshot ? { restoredSnapshot } : {}),
-			};
-		} catch (error) {
-			const recoveryErrors: unknown[] = [];
-			if (startedSession) {
-				try {
-					await startedSession.cleanup(startedSession.result);
-				} catch (cleanupError) {
-					recoveryErrors.push(cleanupError);
-				}
-			}
-			if (transaction && !workspaceCommitted) {
-				try {
-					await transaction.rollback();
-				} catch (rollbackError) {
-					recoveryErrors.push(rollbackError);
-				}
-			}
-			if (recoveryErrors.length > 0) {
-				throw new AggregateError(
-					[error, ...recoveryErrors],
-					"Checkpoint restore failed and recovery did not complete",
-				);
-			}
-			throw error;
-		}
+		return {
+			sessionId: newSessionId,
+			startResult,
+			messages: plan.messages,
+			checkpoint: plan.checkpoint,
+			sourceSnapshot,
+			...(restoredSession
+				? {
+						restoredSnapshot: createCoreSessionSnapshot({
+							session: restoredSession,
+							messages: initialMessages,
+						}),
+					}
+				: {}),
+		};
 	}
 }

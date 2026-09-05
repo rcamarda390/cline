@@ -16,4 +16,6 @@ export type McpConnection = {
 	authProvider?: OAuthClientProvider
 }
 
+export type McpTransportType = "stdio" | "sse" | "http"
+
 export type McpServerConfig = z.infer<typeof ServerConfigSchema>

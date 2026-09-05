@@ -1,29 +1,12 @@
-import {
-	type GatewayUsageCostDisplay,
-	USAGE_COST_DISPLAYS,
-} from "@cline/shared";
 import { normalizeProviderId } from "./ids";
 import { getProviderCollectionSync } from "./model-registry";
 
-export type ProviderUsageCostDisplay = GatewayUsageCostDisplay;
-
-const isValidMetadataUsage = (
-	usageCostDisplay: unknown,
-): usageCostDisplay is ProviderUsageCostDisplay => {
-	return (
-		!!usageCostDisplay &&
-		typeof usageCostDisplay === "string" &&
-		USAGE_COST_DISPLAYS.includes(usageCostDisplay as ProviderUsageCostDisplay)
-	);
-};
+export type ProviderUsageCostDisplay = "show" | "hide";
 
 function resolveMetadataUsageCostDisplay(
 	metadata: Record<string, unknown> | undefined,
 ): ProviderUsageCostDisplay {
-	if (isValidMetadataUsage(metadata?.usageCostDisplay)) {
-		return metadata.usageCostDisplay;
-	}
-	return "show";
+	return metadata?.usageCostDisplay === "hide" ? "hide" : "show";
 }
 
 export function resolveProviderUsageCostDisplay(

@@ -2,13 +2,8 @@
 import type { ChoiceContext } from "@opentui-ui/dialog";
 import { useDialogKeyboard } from "@opentui-ui/dialog/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useDialogPalette } from "../../hooks/use-theme";
-import type { DialogPalette } from "../../themes";
-import {
-	CLINE_MODEL_PICKER_TIER_LABELS,
-	type ClineModelPickerEntry,
-	freeTierDescriptionFor,
-} from "./cline-model-picker";
+import { palette } from "../../palette";
+import type { ClineModelPickerEntry } from "./cline-model-picker";
 import { CHANGE_PROVIDER_ACTION } from "./model-selector";
 import { ProviderRow } from "./provider-row";
 
@@ -19,16 +14,34 @@ type ClineModelEntriesState =
 	| { status: "loaded"; entries: ClineModelPickerEntry[] }
 	| { status: "error"; message: string };
 
-function tagColor(tag: string, palette: DialogPalette): string {
+function tagColor(tag: string): string {
 	if (tag === "FREE") return palette.success;
 	if (tag === "BEST") return "magenta";
-	return palette.act;
+	return "cyan";
+}
+
+function resolveDisplayName(
+	modelId: string,
+	knownModels?: Record<string, unknown>,
+): string {
+	if (knownModels) {
+		const candidates = [modelId, modelId.split("/").pop()];
+		for (const key of candidates) {
+			if (!key) continue;
+			const hit = knownModels[key] as { name?: string } | undefined;
+			if (hit?.name) return hit.name;
+		}
+	}
+	return modelId.includes("/")
+		? (modelId.split("/").pop() ?? modelId)
+		: modelId;
 }
 
 export function ClineModelSelectorContent(
 	props: ChoiceContext<string> & {
 		currentModel: string;
 		currentProviderName: string;
+		knownModels?: Record<string, unknown>;
 		entries: ClineModelPickerEntry[];
 	},
 ) {
@@ -38,9 +51,9 @@ export function ClineModelSelectorContent(
 		dialogId,
 		currentModel,
 		currentProviderName,
+		knownModels,
 		entries,
 	} = props;
-	const palette = useDialogPalette();
 	const [selected, setSelected] = useState(0);
 	const [onProvider, setOnProvider] = useState(false);
 
@@ -49,13 +62,11 @@ export function ClineModelSelectorContent(
 			key: string;
 			kind: "header" | "model" | "browse";
 			label: string;
-			description?: string;
 			tags: string[];
 			isCurrent: boolean;
 			entryIndex: number;
 		}[] = [];
 		let lastTier: string | null = null;
-		const freeTierDescription = freeTierDescriptionFor(entries);
 		for (let i = 0; i < entries.length; i++) {
 			const entry = entries[i];
 			if (!entry) continue;
@@ -65,9 +76,7 @@ export function ClineModelSelectorContent(
 					rows.push({
 						key: `tier-${entry.tier}`,
 						kind: "header",
-						label: CLINE_MODEL_PICKER_TIER_LABELS[entry.tier],
-						description:
-							entry.tier === "free" ? freeTierDescription : undefined,
+						label: entry.tier === "recommended" ? "Recommended" : "Free",
 						tags: [],
 						isCurrent: false,
 						entryIndex: -1,
@@ -76,8 +85,7 @@ export function ClineModelSelectorContent(
 				rows.push({
 					key: entry.model.id,
 					kind: "model",
-					// Names arrive display-ready from fetchClineRecommendedModels
-					label: entry.model.name || entry.model.id,
+					label: resolveDisplayName(entry.model.id, knownModels),
 					tags: entry.model.tags,
 					isCurrent: currentModel === entry.model.id,
 					entryIndex: i,
@@ -94,7 +102,7 @@ export function ClineModelSelectorContent(
 			}
 		}
 		return rows;
-	}, [entries, currentModel]);
+	}, [entries, knownModels, currentModel]);
 
 	useDialogKeyboard((key) => {
 		if (key.name === "escape") {
@@ -148,18 +156,8 @@ export function ClineModelSelectorContent(
 					if (row.kind === "header") {
 						const isFirst = idx === 0;
 						return (
-							<box
-								key={row.key}
-								paddingX={1}
-								marginTop={isFirst ? 0 : 1}
-								flexDirection="column"
-							>
+							<box key={row.key} paddingX={1} marginTop={isFirst ? 0 : 1}>
 								<text fg="gray">{row.label}</text>
-								{row.description && (
-									<text fg="gray">
-										<em>{row.description}</em>
-									</text>
-								)}
 							</box>
 						);
 					}
@@ -190,7 +188,7 @@ export function ClineModelSelectorContent(
 							{row.tags.map((t) => (
 								<text
 									key={t}
-									fg={isSel ? palette.textOnSelection : tagColor(t, palette)}
+									fg={isSel ? palette.textOnSelection : tagColor(t)}
 									flexShrink={0}
 								>
 									{t}
@@ -220,11 +218,11 @@ export function ClineModelSelectorDialogContent(
 	props: ChoiceContext<string> & {
 		currentModel: string;
 		currentProviderName: string;
+		knownModels?: Record<string, unknown>;
 		loadEntries: () => Promise<ClineModelPickerEntry[]>;
 	},
 ) {
 	const { dismiss, dialogId, loadEntries } = props;
-	const palette = useDialogPalette();
 	const [state, setState] = useState<ClineModelEntriesState>({
 		status: "loading",
 		message: "Loading Cline models...",
@@ -274,7 +272,7 @@ export function ClineModelSelectorDialogContent(
 	if (state.status === "error") {
 		return (
 			<box flexDirection="column" gap={1}>
-				<text fg={palette.act}>Choose a model</text>
+				<text fg="cyan">Choose a model</text>
 				<ProviderRow providerName={props.currentProviderName} focused={false} />
 				<text fg="red">{state.message}</text>
 				<text fg="gray">R to retry, Esc to go back</text>
@@ -284,7 +282,7 @@ export function ClineModelSelectorDialogContent(
 
 	return (
 		<box flexDirection="column" gap={1}>
-			<text fg={palette.act}>Choose a model</text>
+			<text fg="cyan">Choose a model</text>
 			<ProviderRow providerName={props.currentProviderName} focused={false} />
 			<text fg="gray">{state.message}</text>
 			<text fg="gray">Esc to go back</text>

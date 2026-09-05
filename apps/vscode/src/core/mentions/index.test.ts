@@ -1,4 +1,3 @@
-import { afterEach, beforeEach, describe, it } from "mocha"
 import { FileContextTracker } from "@core/context/context-tracking/FileContextTracker"
 import * as extractTextModule from "@integrations/misc/extract-text"
 import { UrlContentFetcher } from "@services/browser/UrlContentFetcher"
@@ -11,7 +10,7 @@ import * as sinon from "sinon"
 import { HostProvider } from "@/hosts/host-provider"
 import * as terminalModule from "@/hosts/vscode/terminal/get-latest-output"
 import { setVscodeHostProviderMock } from "@/test/host-provider-test-utils"
-import { getFileMentionFromPath, parseMentions } from "."
+import { parseMentions } from "."
 
 describe("parseMentions", () => {
 	let sandbox: sinon.SinonSandbox
@@ -411,18 +410,6 @@ Content
 </file_content>`
 
 			expect(result).to.equal(expectedOutput)
-		})
-	})
-
-	describe("getFileMentionFromPath", () => {
-		it("should quote paths containing spaces", async () => {
-			// getCwd() shifts the paths array, so return a fresh object per call
-			sandbox.stub(HostProvider.workspace, "getWorkspacePaths").callsFake(async () => ({ paths: [cwd] }) as any)
-
-			expect(await getFileMentionFromPath(path.join(cwd, "src", "index.ts"))).to.equal("@/src/index.ts")
-			expect(await getFileMentionFromPath("/Library/Application Support/typst/sections.typ")).to.equal(
-				'@"/../../Library/Application Support/typst/sections.typ"',
-			)
 		})
 	})
 

@@ -68,7 +68,6 @@
 									"!@cline/core/telemetry",
 									"!@cline/core/rpc",
 									"!@cline/shared/browser",
-									"!@cline/shared/node",
 									"!@cline/shared/types",
 									"!@cline/shared/storage",
 									"!@cline/shared/db"

@@ -17,6 +17,7 @@ import { z } from "zod";
 export const OpenAiCompatibleModelSchema = z.object({
 	id: z.string(), // The model ID is required
 	temperature: z.number().optional(),
+	isR1FormatRequired: z.boolean().optional(),
 	maxTokens: z.number().optional(),
 	contextWindow: z.number().optional(),
 	inputPrice: z.number().optional(),
@@ -185,10 +186,10 @@ export const RemoteConfigSchema = z.object({
 	kanbanEnabled: z.boolean().optional(),
 
 	// MCP settings
-	// Legacy field name. If this is false, locally configured MCP servers are blocked.
+	// If this is false, the MCP marketplace is disabled in the extension
 	mcpMarketplaceEnabled: z.boolean().optional(),
 
-	// If this is configured, users only have access to these allowlisted local MCP servers.
+	// If this is configured, the users only have access to these allowlisted MCP servers in the marketplace.
 	allowedMCPServers: z.array(AllowedMCPServerSchema).optional(),
 
 	// A list of pre-configured remote MCP servers.

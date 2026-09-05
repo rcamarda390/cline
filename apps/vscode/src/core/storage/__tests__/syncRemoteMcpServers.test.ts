@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, it } from "bun:test"
+import { afterEach, beforeEach, describe, it } from "mocha"
 import "should"
+import * as diskModule from "@core/storage/disk"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import sinon from "sinon"
-
 import { syncRemoteMcpServersToSettings } from "../remote-config/syncRemoteMcpServers"
 
 describe("syncRemoteMcpServersToSettings", () => {
@@ -18,7 +18,14 @@ describe("syncRemoteMcpServersToSettings", () => {
 		await fs.mkdir(tempDir, { recursive: true })
 		settingsPath = path.join(tempDir, "cline_mcp_settings.json")
 
-		await fs.writeFile(settingsPath, JSON.stringify({ mcpServers: {} }, null, 2))
+		sandbox.stub(diskModule, "getMcpSettingsFilePath").callsFake(async () => {
+			try {
+				await fs.access(settingsPath)
+			} catch {
+				await fs.writeFile(settingsPath, JSON.stringify({ mcpServers: {} }, null, 2))
+			}
+			return settingsPath
+		})
 	})
 
 	afterEach(async () => {
@@ -41,7 +48,7 @@ describe("syncRemoteMcpServersToSettings", () => {
 
 	describe("adding remote servers", () => {
 		it("should add a new remote server with remoteConfigured marker", async () => {
-			await syncRemoteMcpServersToSettings([{ name: "test-server", url: "https://example.com/mcp" }], settingsPath)
+			await syncRemoteMcpServersToSettings([{ name: "test-server", url: "https://example.com/mcp" }], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers["test-server"].should.have.property("url", "https://example.com/mcp")
@@ -60,32 +67,9 @@ describe("syncRemoteMcpServersToSettings", () => {
 				},
 			})
 
-			await syncRemoteMcpServersToSettings([{ name: "test-server", url: "https://example.com/mcp" }], settingsPath)
+			await syncRemoteMcpServersToSettings([{ name: "test-server", url: "https://example.com/mcp" }], tempDir)
 
 			const result = await readSettings()
-			result.mcpServers["test-server"].disabled.should.equal(true)
-			result.mcpServers["test-server"].autoApprove.should.deepEqual(["some-tool"])
-			result.mcpServers["test-server"].remoteConfigured.should.equal(true)
-		})
-
-		it("should preserve nested transport remote server settings when matching remote config", async () => {
-			await writeSettings({
-				"test-server": {
-					transport: { type: "streamableHttp", url: "https://example.com/mcp" },
-					disabled: true,
-					autoApprove: ["some-tool"],
-					remoteConfigured: true,
-				},
-			})
-
-			await syncRemoteMcpServersToSettings([{ name: "test-server", url: "https://example.com/mcp" }], settingsPath)
-
-			const result = await readSettings()
-			result.mcpServers["test-server"].transport.should.deepEqual({
-				type: "streamableHttp",
-				url: "https://example.com/mcp",
-			})
-			result.mcpServers["test-server"].url.should.equal("https://example.com/mcp")
 			result.mcpServers["test-server"].disabled.should.equal(true)
 			result.mcpServers["test-server"].autoApprove.should.deepEqual(["some-tool"])
 			result.mcpServers["test-server"].remoteConfigured.should.equal(true)
@@ -99,7 +83,7 @@ describe("syncRemoteMcpServersToSettings", () => {
 					{ name: "server-a", url: "https://a.example.com" },
 					{ name: "server-b", url: "https://b.example.com" },
 				],
-				settingsPath,
+				tempDir,
 			)
 
 			const result = await readSettings()
@@ -117,7 +101,7 @@ describe("syncRemoteMcpServersToSettings", () => {
 				},
 			})
 
-			await syncRemoteMcpServersToSettings([{ name: "remote-server", url: "https://example.com" }], settingsPath)
+			await syncRemoteMcpServersToSettings([{ name: "remote-server", url: "https://example.com" }], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers.should.have.property("local-server")
@@ -136,29 +120,10 @@ describe("syncRemoteMcpServersToSettings", () => {
 				},
 			})
 
-			await syncRemoteMcpServersToSettings([], settingsPath)
+			await syncRemoteMcpServersToSettings([], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers.should.not.have.property("old-server")
-		})
-
-		it("should not remove nested transport remote server when URL still matches remote config", async () => {
-			await writeSettings({
-				"keep-server": {
-					transport: { type: "streamableHttp", url: "https://keep.example.com" },
-					remoteConfigured: true,
-					disabled: true,
-					autoApprove: ["tool-a"],
-				},
-			})
-
-			await syncRemoteMcpServersToSettings([{ name: "keep-server", url: "https://keep.example.com" }], settingsPath)
-
-			const result = await readSettings()
-			result.mcpServers.should.have.property("keep-server")
-			result.mcpServers["keep-server"].transport.url.should.equal("https://keep.example.com")
-			result.mcpServers["keep-server"].disabled.should.equal(true)
-			result.mcpServers["keep-server"].autoApprove.should.deepEqual(["tool-a"])
 		})
 
 		it("should NOT remove a server without remoteConfigured marker", async () => {
@@ -169,7 +134,7 @@ describe("syncRemoteMcpServersToSettings", () => {
 				},
 			})
 
-			await syncRemoteMcpServersToSettings([], settingsPath)
+			await syncRemoteMcpServersToSettings([], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers.should.have.property("user-server")
@@ -189,7 +154,7 @@ describe("syncRemoteMcpServersToSettings", () => {
 				},
 			})
 
-			await syncRemoteMcpServersToSettings([{ name: "keep-server", url: "https://keep.example.com" }], settingsPath)
+			await syncRemoteMcpServersToSettings([{ name: "keep-server", url: "https://keep.example.com" }], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers.should.have.property("keep-server")
@@ -203,7 +168,7 @@ describe("syncRemoteMcpServersToSettings", () => {
 				"local-server": { command: "node", type: "stdio" },
 			})
 
-			await syncRemoteMcpServersToSettings([], settingsPath)
+			await syncRemoteMcpServersToSettings([], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers.should.not.have.property("server-a")
@@ -222,7 +187,7 @@ describe("syncRemoteMcpServersToSettings", () => {
 				},
 			})
 
-			await syncRemoteMcpServersToSettings([{ name: "legacy-server", url: "https://legacy.example.com" }], settingsPath)
+			await syncRemoteMcpServersToSettings([{ name: "legacy-server", url: "https://legacy.example.com" }], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers["legacy-server"].remoteConfigured.should.equal(true)
@@ -233,7 +198,7 @@ describe("syncRemoteMcpServersToSettings", () => {
 		it("should handle empty settings file with no mcpServers key", async () => {
 			await fs.writeFile(settingsPath, JSON.stringify({}, null, 2))
 
-			await syncRemoteMcpServersToSettings([{ name: "new-server", url: "https://new.example.com" }], settingsPath)
+			await syncRemoteMcpServersToSettings([{ name: "new-server", url: "https://new.example.com" }], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers["new-server"].url.should.equal("https://new.example.com")
@@ -249,26 +214,28 @@ describe("syncRemoteMcpServersToSettings", () => {
 				},
 			})
 
-			await syncRemoteMcpServersToSettings([{ name: "my-server", url: "https://new-url.example.com" }], settingsPath)
+			await syncRemoteMcpServersToSettings([{ name: "my-server", url: "https://new-url.example.com" }], tempDir)
 
 			const result = await readSettings()
 			result.mcpServers["my-server"].url.should.equal("https://new-url.example.com")
 			result.mcpServers["my-server"].remoteConfigured.should.equal(true)
 		})
 
-		it("should record the post-write McpHub fingerprint when an McpHub is provided", async () => {
+		it("should set McpHub isUpdatingFromRemoteConfig flag during write", async () => {
 			await writeSettings({})
 
 			const mockMcpHub = {
-				recordSettingsFingerprint: sandbox.stub(),
+				setIsUpdatingFromRemoteConfig: sandbox.stub(),
 			}
 
-			await syncRemoteMcpServersToSettings([{ name: "test", url: "https://test.com" }], settingsPath, mockMcpHub as any)
+			await syncRemoteMcpServersToSettings([{ name: "test", url: "https://test.com" }], tempDir, mockMcpHub as any)
 
-			mockMcpHub.recordSettingsFingerprint.calledOnce.should.be.true()
-			const result = await readSettings()
-			result.mcpServers["test"].url.should.equal("https://test.com")
-			result.mcpServers["test"].remoteConfigured.should.equal(true)
+			mockMcpHub.setIsUpdatingFromRemoteConfig.calledWith(true).should.be.true()
+			mockMcpHub.setIsUpdatingFromRemoteConfig.calledWith(false).should.be.true()
+
+			const calls = mockMcpHub.setIsUpdatingFromRemoteConfig.getCalls()
+			calls[0].args[0].should.equal(true)
+			calls[1].args[0].should.equal(false)
 		})
 	})
 })

@@ -2,7 +2,7 @@
 import type { ChoiceContext } from "@opentui-ui/dialog";
 import { useDialogKeyboard } from "@opentui-ui/dialog/react";
 import { useMemo, useRef, useState } from "react";
-import { useDialogPalette } from "../../hooks/use-theme";
+import { palette } from "../../palette";
 
 export interface CheckpointPickerItem {
 	runCount: number;
@@ -36,7 +36,6 @@ export function CheckpointPickerContent(
 	},
 ) {
 	const { resolve, dismiss, dialogId, items } = props;
-	const palette = useDialogPalette();
 	const lastIndex = Math.max(0, items.length - 1);
 	const [selected, setSelected] = useState(lastIndex);
 	const selectedRef = useRef(lastIndex);

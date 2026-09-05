@@ -18,7 +18,7 @@ interface WhatsNewModalProps {
 	onBannerAction?: (action: BannerAction) => void
 }
 
-const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ open, onClose, version, welcomeBanners, onBannerAction }) => {
+export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ open, onClose, version, welcomeBanners, onBannerAction }) => {
 	const { refreshOpenRouterModels } = useExtensionState()
 
 	// Get latest model list in case user hits shortcut button to set model

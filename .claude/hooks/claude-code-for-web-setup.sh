@@ -41,11 +41,11 @@ fi
 
 # Install project dependencies
 echo "Installing dependencies..."
-bun run install:all
+npm run install:all
 
 # Generate gRPC/protobuf types (required for TypeScript)
 echo "Generating proto types..."
-bun run protos
+npm run protos
 
 echo ""
 echo "Session setup complete!"

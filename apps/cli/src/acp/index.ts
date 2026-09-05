@@ -1,11 +1,7 @@
 import { Readable, Writable } from "node:stream";
 import { writeDiagnostic } from "../utils/output";
 
-export interface AcpModeOptions {
-	autoApproveTools?: boolean;
-}
-
-export async function runAcpMode(options?: AcpModeOptions): Promise<void> {
+export async function runAcpMode(): Promise<void> {
 	const { AgentSideConnection, ndJsonStream } = await import(
 		"@agentclientprotocol/sdk"
 	);
@@ -19,9 +15,7 @@ export async function runAcpMode(options?: AcpModeOptions): Promise<void> {
 	);
 
 	const connection = new AgentSideConnection((conn) => {
-		return new AcpAgent(conn, {
-			autoApproveTools: options?.autoApproveTools,
-		});
+		return new AcpAgent(conn);
 	}, stream);
 
 	// Keep the process alive until the connection closes

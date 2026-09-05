@@ -42,7 +42,7 @@ Here, we use the common `StringRequest` and `KeyValuePair` types.
 
 After editing a `.proto` file, regenerate the TypeScript code. From the project root, run:
 ```bash
-bun run protos
+npm run protos
 ```
 This command compiles all `.proto` files and outputs the generated code to `src/generated/` and `src/shared/`. Do not edit these generated files manually.
 

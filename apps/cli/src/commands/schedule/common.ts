@@ -148,10 +148,8 @@ export function isJsonPath(path: string): boolean {
 	return path.toLowerCase().endsWith(".json");
 }
 
-export function parseMode(
-	raw: string | undefined,
-): "act" | "plan" | "yolo" | undefined {
-	if (raw === "act" || raw === "plan" || raw === "yolo") {
+export function parseMode(raw: string | undefined): "act" | "plan" | undefined {
+	if (raw === "act" || raw === "plan") {
 		return raw;
 	}
 	return undefined;

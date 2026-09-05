@@ -1,16 +1,10 @@
-import { supportsModelTool } from "@cline/llms";
 import type {
 	AgentTool,
 	BasicLogger,
-	ITelemetryService,
-	ModelTool,
 	RuntimeConfigExtensionKind,
 	TeamTeammateSpec,
 } from "@cline/shared";
-import {
-	hasRuntimeConfigExtension,
-	resolveMcpTimeoutSeconds,
-} from "@cline/shared";
+import { hasRuntimeConfigExtension } from "@cline/shared";
 import { nanoid } from "nanoid";
 import { createUserInstructionConfigService } from "../../extensions/config";
 import {
@@ -24,7 +18,6 @@ import {
 import {
 	createBuiltinTools,
 	DEFAULT_MODEL_TOOL_ROUTING_RULES,
-	type RunCommandExecutionController,
 	resolveToolPresetName,
 	resolveToolRoutingConfig,
 	type SkillsExecutorWithMetadata,
@@ -32,7 +25,6 @@ import {
 	ToolPresets,
 	type ToolRoutingRule,
 } from "../../extensions/tools";
-import { createPlanModeCommandGuardExtension } from "../../extensions/tools/command-guard-extension";
 import {
 	AgentTeamsRuntime,
 	bootstrapAgentTeams,
@@ -44,7 +36,6 @@ import { loadConfiguredAgentConfigs } from "../../extensions/tools/team/configur
 import { createConfiguredAgentTools } from "../../extensions/tools/team/configured-agent-tool";
 import {
 	filterDisabledTools,
-	isModelToolEnabledGlobally,
 	resolveDisabledToolNames,
 } from "../../services/global-settings";
 import { createLocalTeamStore } from "../../services/storage/team-store";
@@ -141,8 +132,6 @@ function createBuiltinToolsList(
 	toolPolicies: CoreSessionConfig["toolPolicies"],
 	skillsExecutor?: SkillsExecutorWithMetadata,
 	executorOverrides?: Partial<ToolExecutors>,
-	telemetry?: ITelemetryService,
-	runCommandExecutionController?: RunCommandExecutionController,
 ): AgentTool[] {
 	const preset = ToolPresets[resolveToolPresetName({ mode })];
 	const toolRoutingConfig = resolveToolRoutingConfig(
@@ -155,10 +144,6 @@ function createBuiltinToolsList(
 	return filterAvailableTools(
 		createBuiltinTools({
 			cwd,
-			telemetry,
-			executorOptions: {
-				bash: { executionController: runCommandExecutionController },
-			},
 			...preset,
 			enableSkills: !!skillsExecutor,
 			...toolRoutingConfig,
@@ -232,13 +217,7 @@ async function loadConfiguredMcpTools(logger?: BasicLogger): Promise<{
 	const enabled = registrations.filter((r) => r.disabled !== true);
 	const results = await Promise.allSettled(
 		enabled.map((r) =>
-			createMcpTools({
-				serverName: r.name,
-				provider: manager,
-				// Keep the tool wrapper timeout in agreement with the MCP
-				// request timeout: both derive from the server's registration.
-				timeoutMs: resolveMcpTimeoutSeconds(r.timeoutSeconds) * 1000,
-			}),
+			createMcpTools({ serverName: r.name, provider: manager }),
 		),
 	);
 	const tools: AgentTool[] = [];
@@ -369,26 +348,6 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 		} = input;
 		const onTeamEvent = input.onTeamEvent ?? (() => {});
 		const normalized = normalizeConfig(config);
-		const modelTools: ModelTool[] = [];
-		if (
-			normalized.enableTools &&
-			isModelToolEnabledGlobally("web_search") &&
-			supportsModelTool(
-				{ providerId: config.providerId, modelId: config.modelId },
-				"web_search",
-			)
-		) {
-			modelTools.push({ name: "web_search" });
-		}
-		if (
-			normalized.enableTools &&
-			supportsModelTool(
-				{ providerId: config.providerId, modelId: config.modelId },
-				"image_generation",
-			)
-		) {
-			modelTools.push({ name: "image_generation", outputFormat: "png" });
-		}
 		const workspaceConfigRoot = config.workspaceRoot ?? config.cwd;
 		const effectiveToolPolicies = input.toolPolicies ?? config.toolPolicies;
 		const globallyDisabledToolNames = resolveDisabledToolNames();
@@ -474,27 +433,9 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 						allowedSkillNames: config.skills,
 					})
 				: undefined;
-		// Plan mode keeps run_commands for read-only investigation; this
-		// beforeTool hook is the hard backstop that rejects file-editing
-		// commands before approval/execution. Registered as an extension so it
-		// rides the shared hook merge for the lead agent, host-provided
-		// run_commands replacements (e.g. the VS Code terminal tool), and
-		// delegated sub-agents alike. Mode switches rebuild the runtime, so
-		// the guard appears/disappears with the mode.
-		const planModeCommandGuard =
-			normalized.mode === "plan" && normalized.enableTools
-				? createPlanModeCommandGuardExtension({
-						telemetry: telemetry ?? config.telemetry,
-					})
-				: undefined;
-		const injectedExtensions = [
-			userInstructionPlugin,
-			planModeCommandGuard,
-		].filter((extension) => extension !== undefined);
-		const runtimeExtensions =
-			injectedExtensions.length > 0
-				? [...(extensions ?? config.extensions ?? []), ...injectedExtensions]
-				: (extensions ?? config.extensions);
+		const runtimeExtensions = userInstructionPlugin
+			? [...(extensions ?? config.extensions ?? []), userInstructionPlugin]
+			: (extensions ?? config.extensions);
 
 		if (normalized.enableTools) {
 			tools.push(
@@ -507,8 +448,6 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 					effectiveToolPolicies,
 					undefined,
 					toolExecutors,
-					telemetry ?? config.telemetry,
-					input.runCommandExecutionController,
 				),
 			);
 			if (!normalized.disableMcpSettingsTools) {
@@ -539,8 +478,6 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 		const delegatedAgentConfigProvider = createDelegatedAgentConfigProvider({
 			providerId: config.providerId,
 			modelId: config.modelId,
-			distinctId: input.distinctId,
-			sessionId: config.sessionId,
 			cwd: config.cwd,
 			apiKey: config.apiKey ?? "",
 			baseUrl: config.baseUrl,
@@ -548,10 +485,6 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 			providerConfig: config.providerConfig,
 			knownModels: config.knownModels,
 			thinking: config.thinking,
-			reasoningEffort: config.reasoningEffort,
-			thinkingBudgetTokens: config.thinkingBudgetTokens,
-			maxTokensPerTurn: config.maxTokensPerTurn,
-			temperature: config.temperature,
 			maxIterations: config.maxIterations,
 			hooks,
 			extensions: runtimeExtensions,
@@ -583,8 +516,6 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 														)
 													: undefined,
 												toolExecutors,
-												telemetry ?? config.telemetry,
-												input.runCommandExecutionController,
 											),
 											agent,
 										)
@@ -689,8 +620,6 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 									effectiveToolPolicies,
 									undefined,
 									toolExecutors,
-									telemetry ?? config.telemetry,
-									input.runCommandExecutionController,
 								)
 						: undefined,
 					teammateConfigProvider: delegatedAgentConfigProvider,
@@ -775,7 +704,6 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 
 		return {
 			tools: finalTools,
-			modelTools,
 			logger: logger ?? config.logger,
 			telemetry: telemetry ?? config.telemetry,
 			teamRuntime,

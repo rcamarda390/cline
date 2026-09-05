@@ -8,7 +8,7 @@ const TIMEOUT_MINUTE = 1
 const INSTALL_TIMEOUT_MS = TIMEOUT_MINUTE * 60 * 1000
 
 async function installVSCode() {
-	const VSCODE_APP_TYPE = "stable"
+	const VSCODE_APP_TYPE = process.env.VSCODE_TEST_VERSION ?? "1.98.2"
 	console.log("Downloading VS Code...")
 	return await downloadAndUnzipVSCode(VSCODE_APP_TYPE, undefined, new SilentReporter())
 }

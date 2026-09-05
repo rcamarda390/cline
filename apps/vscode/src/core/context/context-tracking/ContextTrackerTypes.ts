@@ -8,14 +8,14 @@ export interface FileMetadataEntry {
 	user_edit_date?: number | null
 }
 
-interface ModelMetadataEntry {
+export interface ModelMetadataEntry {
 	ts: number
 	model_id: string
 	model_provider_id: string
 	mode: string
 }
 
-interface EnvironmentMetadataEntry {
+export interface EnvironmentMetadataEntry {
 	ts: number
 	os_name: string
 	os_version: string

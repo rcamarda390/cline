@@ -1,17 +1,24 @@
 import { DEFAULT_AUTO_APPROVAL_SETTINGS } from "@shared/AutoApprovalSettings"
+import { findLastIndex } from "@shared/array"
 import { DEFAULT_BROWSER_SETTINGS } from "@shared/BrowserSettings"
 import { DEFAULT_PLATFORM, type ExtensionState } from "@shared/ExtensionMessage"
+import { DEFAULT_FOCUS_CHAIN_SETTINGS } from "@shared/FocusChainSettings"
 import { DEFAULT_MCP_DISPLAY_MODE } from "@shared/McpDisplayMode"
 import type { UserInfo } from "@shared/proto/cline/account"
 import { EmptyRequest } from "@shared/proto/cline/common"
-import type { OpenRouterCompatibleModelInfo, ProviderModelsResponse } from "@shared/proto/cline/models"
+import type { OpenRouterCompatibleModelInfo } from "@shared/proto/cline/models"
 import { OnboardingModelGroup, type TerminalProfile } from "@shared/proto/cline/state"
 import { convertProtoToClineMessage } from "@shared/proto-conversions/cline-message"
 import { convertProtoMcpServersToMcpServers } from "@shared/proto-conversions/mcp/mcp-server-conversion"
 import { fromProtobufModels } from "@shared/proto-conversions/models/typeConversion"
+import { isClineProvider } from "@shared/utils/cline"
 import type React from "react"
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import {
+	basetenDefaultModelId,
+	basetenModels,
+	groqDefaultModelId,
+	groqModels,
 	type ModelInfo,
 	openRouterDefaultModelId,
 	openRouterDefaultModelInfo,
@@ -19,34 +26,14 @@ import {
 	requestyDefaultModelInfo,
 } from "../../../src/shared/api"
 import { Environment } from "../../../src/shared/config-types"
-import type { McpServer, McpViewTab } from "../../../src/shared/mcp"
-import {
-	createReplicaState,
-	type ReplicaState,
-	applyMessage as reducerApplyMessage,
-	applyStateSnapshot as reducerApplyStateSnapshot,
-} from "../components/chat/chat-view/messageReducer"
+import type { McpMarketplaceCatalog, McpServer, McpViewTab } from "../../../src/shared/mcp"
 import { McpServiceClient, ModelsServiceClient, StateServiceClient, UiServiceClient } from "../services/grpc-client"
-
-export type ProviderId = string
-
-interface ProviderModelsState {
-	providerId: ProviderId
-	models: Record<string, ModelInfo>
-	defaultModelId: string
-	configFingerprint: string
-	requestId: string
-	source?: string
-	fetchedAt: number
-	isLoading: boolean
-	isStale: boolean
-	error?: string
-}
 
 export interface ExtensionStateContextType extends ExtensionState {
 	didHydrateState: boolean
 	showWelcome: boolean
 	onboardingModels: OnboardingModelGroup | undefined
+	clineModels: Record<string, ModelInfo> | null
 	openRouterModels: Record<string, ModelInfo>
 	vercelAiGatewayModels: Record<string, ModelInfo>
 	hicapModels: Record<string, ModelInfo>
@@ -56,9 +43,8 @@ export interface ExtensionStateContextType extends ExtensionState {
 	groqModels: Record<string, ModelInfo>
 	basetenModels: Record<string, ModelInfo>
 	huggingFaceModels: Record<string, ModelInfo>
-	providerModelsByProvider: Partial<Record<ProviderId, ProviderModelsState>>
-	latestModelRequestIdByProvider: Partial<Record<ProviderId, string>>
 	mcpServers: McpServer[]
+	mcpMarketplaceCatalog: McpMarketplaceCatalog
 	totalTasksSize: number | null
 	lastDismissedCliBannerVersion: number
 	dismissedBanners?: Array<{ bannerId: string; dismissedAt: number }>
@@ -66,7 +52,6 @@ export interface ExtensionStateContextType extends ExtensionState {
 	availableTerminalProfiles: TerminalProfile[]
 
 	// View state
-	showMarketplace: boolean
 	showMcp: boolean
 	mcpTab?: McpViewTab
 	showSettings: boolean
@@ -97,14 +82,14 @@ export interface ExtensionStateContextType extends ExtensionState {
 	setLocalSkillsToggles: (toggles: Record<string, boolean>) => void
 	setRemoteRulesToggles: (toggles: Record<string, boolean>) => void
 	setRemoteWorkflowToggles: (toggles: Record<string, boolean>) => void
+	setMcpMarketplaceCatalog: (value: McpMarketplaceCatalog) => void
 	setTotalTasksSize: (value: number | null) => void
 	setExpandTaskHeader: (value: boolean) => void
 	setShowWelcome: (value: boolean) => void
 	setOnboardingModels: (value: OnboardingModelGroup | undefined) => void
-	startProviderModelsRequest: (providerId: ProviderId, requestId: string) => void
-	applyProviderModelsResponse: (response: ProviderModelsResponse) => void
 
 	// Refresh functions
+	refreshClineModels: () => void
 	refreshOpenRouterModels: () => void
 	refreshVercelAiGatewayModels: () => void
 	refreshHicapModels: () => void
@@ -112,12 +97,10 @@ export interface ExtensionStateContextType extends ExtensionState {
 	setUserInfo: (userInfo?: UserInfo) => void
 
 	// Navigation state setters
-	setShowMarketplace: (value: boolean) => void
 	setShowMcp: (value: boolean) => void
 	setMcpTab: (tab?: McpViewTab) => void
 
 	// Navigation functions
-	navigateToMarketplace: () => void
 	navigateToMcp: (tab?: McpViewTab) => void
 	navigateToSettings: (targetSection?: string) => void
 	navigateToSettingsModelPicker: (opts: { targetSection?: string; initialModelTab?: "recommended" | "free" }) => void
@@ -132,7 +115,6 @@ export interface ExtensionStateContextType extends ExtensionState {
 	hideAccount: () => void
 	hideWorktrees: () => void
 	hideAnnouncement: () => void
-	closeMarketplaceView: () => void
 	closeMcpView: () => void
 
 	// Event callbacks
@@ -145,7 +127,6 @@ export const ExtensionStateContextProvider: React.FC<{
 	children: React.ReactNode
 }> = ({ children }) => {
 	// UI view state
-	const [showMarketplace, setShowMarketplace] = useState(false)
 	const [showMcp, setShowMcp] = useState(false)
 	const [mcpTab, setMcpTab] = useState<McpViewTab | undefined>(undefined)
 	const [showSettings, setShowSettings] = useState(false)
@@ -161,9 +142,6 @@ export const ExtensionStateContextProvider: React.FC<{
 		setShowMcp(false)
 		setMcpTab(undefined)
 	}, [setShowMcp, setMcpTab])
-	const closeMarketplaceView = useCallback(() => {
-		setShowMarketplace(false)
-	}, [])
 
 	// Hide functions
 	const hideSettings = useCallback(() => {
@@ -183,27 +161,16 @@ export const ExtensionStateContextProvider: React.FC<{
 			setShowHistory(false)
 			setShowAccount(false)
 			setShowWorktrees(false)
-			closeMcpView()
 			if (tab) {
 				setMcpTab(tab)
 			}
-			setShowMarketplace(true)
+			setShowMcp(true)
 		},
-		[closeMcpView, setMcpTab, setShowSettings, setShowHistory, setShowAccount, setShowWorktrees],
+		[setShowMcp, setMcpTab, setShowSettings, setShowHistory, setShowAccount, setShowWorktrees],
 	)
-
-	const navigateToMarketplace = useCallback(() => {
-		setShowSettings(false)
-		closeMcpView()
-		setShowHistory(false)
-		setShowAccount(false)
-		setShowWorktrees(false)
-		setShowMarketplace(true)
-	}, [closeMcpView])
 
 	const navigateToSettings = useCallback(
 		(targetSection?: string) => {
-			closeMarketplaceView()
 			setShowHistory(false)
 			closeMcpView()
 			setShowAccount(false)
@@ -212,12 +179,11 @@ export const ExtensionStateContextProvider: React.FC<{
 			setSettingsInitialModelTab(undefined)
 			setShowSettings(true)
 		},
-		[closeMarketplaceView, closeMcpView],
+		[closeMcpView],
 	)
 
 	const navigateToSettingsModelPicker = useCallback(
 		(opts: { targetSection?: string; initialModelTab?: "recommended" | "free" }) => {
-			closeMarketplaceView()
 			setShowHistory(false)
 			closeMcpView()
 			setShowAccount(false)
@@ -226,53 +192,49 @@ export const ExtensionStateContextProvider: React.FC<{
 			setSettingsInitialModelTab(opts.initialModelTab)
 			setShowSettings(true)
 		},
-		[closeMarketplaceView, closeMcpView],
+		[closeMcpView],
 	)
 
 	const navigateToHistory = useCallback(() => {
-		closeMarketplaceView()
 		setShowSettings(false)
 		closeMcpView()
 		setShowAccount(false)
 		setShowWorktrees(false)
 		setShowHistory(true)
-	}, [closeMarketplaceView, setShowSettings, closeMcpView, setShowAccount, setShowWorktrees, setShowHistory])
+	}, [setShowSettings, closeMcpView, setShowAccount, setShowWorktrees, setShowHistory])
 
 	const navigateToAccount = useCallback(() => {
-		closeMarketplaceView()
 		setShowSettings(false)
 		closeMcpView()
 		setShowHistory(false)
 		setShowWorktrees(false)
 		setShowAccount(true)
-	}, [closeMarketplaceView, setShowSettings, closeMcpView, setShowHistory, setShowWorktrees, setShowAccount])
+	}, [setShowSettings, closeMcpView, setShowHistory, setShowWorktrees, setShowAccount])
 
 	const navigateToWorktrees = useCallback(() => {
-		closeMarketplaceView()
 		setShowSettings(false)
 		closeMcpView()
 		setShowHistory(false)
 		setShowAccount(false)
 		setShowWorktrees(true)
-	}, [closeMarketplaceView, setShowSettings, closeMcpView, setShowHistory, setShowAccount, setShowWorktrees])
+	}, [setShowSettings, closeMcpView, setShowHistory, setShowAccount, setShowWorktrees])
 
 	const navigateToChat = useCallback(() => {
-		closeMarketplaceView()
 		setShowSettings(false)
 		closeMcpView()
 		setShowHistory(false)
 		setShowAccount(false)
 		setShowWorktrees(false)
-	}, [closeMarketplaceView, setShowSettings, closeMcpView, setShowHistory, setShowAccount, setShowWorktrees])
+	}, [setShowSettings, closeMcpView, setShowHistory, setShowAccount, setShowWorktrees])
 
 	const [state, setState] = useState<ExtensionState>({
 		version: "",
 		clineMessages: [],
-		queuedPrompts: [],
 		taskHistory: [],
 		shouldShowAnnouncement: false,
 		autoApprovalSettings: DEFAULT_AUTO_APPROVAL_SETTINGS,
 		browserSettings: DEFAULT_BROWSER_SETTINGS,
+		focusChainSettings: DEFAULT_FOCUS_CHAIN_SETTINGS,
 		preferredLanguage: "English",
 		mode: "act",
 		platform: DEFAULT_PLATFORM,
@@ -282,6 +244,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		planActSeparateModelsSetting: true,
 		enableCheckpointsSetting: true,
 		mcpDisplayMode: DEFAULT_MCP_DISPLAY_MODE,
+		offlineModeEnabled: false,
 		globalClineRulesToggles: {},
 		localClineRulesToggles: {},
 		localCursorRulesToggles: {},
@@ -292,28 +255,32 @@ export const ExtensionStateContextProvider: React.FC<{
 		shellIntegrationTimeout: 4000,
 		terminalReuseEnabled: true,
 		vscodeTerminalExecutionMode: "vscodeTerminal",
+		terminalOutputLineLimit: 500,
+		maxConsecutiveMistakes: 3,
 		defaultTerminalProfile: "default",
 		isNewUser: false,
 		welcomeViewCompleted: false,
 		onboardingModels: undefined,
 		mcpResponsesCollapsed: false, // Default value (expanded), will be overwritten by extension state
-		useAutoCondense: true,
-		compactionStrategy: "basic",
-		webSearchEnabled: false,
+		strictPlanModeEnabled: false,
+		yoloModeToggled: false,
+		customPrompt: undefined,
+		useAutoCondense: false,
 		subagentsEnabled: false,
+		clineWebToolsEnabled: { user: true, featureFlag: false },
 		worktreesEnabled: { user: true, featureFlag: false },
 		favoritedModelIds: [],
 		lastDismissedInfoBannerVersion: 0,
 		lastDismissedModelBannerVersion: 0,
 		optOutOfRemoteConfig: false,
-		remoteConfigAvailable: false,
 		remoteConfigSettings: {},
 		backgroundCommandRunning: false,
 		backgroundCommandTaskId: undefined,
-		foregroundCommandRunning: false,
 		lastDismissedCliBannerVersion: 0,
 		backgroundEditEnabled: false,
-		showFeatureTips: false,
+		doubleCheckCompletionEnabled: false,
+		lazyTeammateModeEnabled: false,
+		showFeatureTips: true,
 		globalSkillsToggles: {},
 		localSkillsToggles: {},
 
@@ -323,6 +290,8 @@ export const ExtensionStateContextProvider: React.FC<{
 		isMultiRootWorkspace: false,
 		multiRootSetting: { user: false, featureFlag: false },
 		hooksEnabled: false,
+		nativeToolCallSetting: false,
+		enableParallelToolCalling: false,
 	})
 	const [expandTaskHeader, setExpandTaskHeader] = useState(true)
 	const [didHydrateState, setDidHydrateState] = useState(false)
@@ -330,6 +299,7 @@ export const ExtensionStateContextProvider: React.FC<{
 	const [showWelcome, setShowWelcome] = useState(false)
 	const [onboardingModels, setOnboardingModels] = useState<OnboardingModelGroup | undefined>(undefined)
 
+	const [clineModels, setClineModels] = useState<Record<string, ModelInfo> | null>(null)
 	const [openRouterModels, setOpenRouterModels] = useState<Record<string, ModelInfo>>({
 		[openRouterDefaultModelId]: openRouterDefaultModelInfo,
 	})
@@ -343,76 +313,20 @@ export const ExtensionStateContextProvider: React.FC<{
 	const [requestyModels, setRequestyModels] = useState<Record<string, ModelInfo>>({
 		[requestyDefaultModelId]: requestyDefaultModelInfo,
 	})
-	// Groq and Baseten model lists start empty. The pickers populate them
-	// from two sources: the SDK catalog over gRPC (`useProviderModels`)
-	// for the curated set, and the host-side refresh RPCs
-	// (`ModelsServiceClient.refreshGroqModelsRpc`,
-	// `ModelsServiceClient.refreshBasetenModels`) for any models the
-	// live API exposes on top of the SDK catalog.
-	const [groqModelsState, setGroqModels] = useState<Record<string, ModelInfo>>({})
-	const [basetenModelsState, setBasetenModels] = useState<Record<string, ModelInfo>>({})
+	const [groqModelsState, setGroqModels] = useState<Record<string, ModelInfo>>({
+		[groqDefaultModelId]: groqModels[groqDefaultModelId],
+	})
+	const [basetenModelsState, setBasetenModels] = useState<Record<string, ModelInfo>>({
+		...basetenModels,
+		[basetenDefaultModelId]: basetenModels[basetenDefaultModelId],
+	})
 	const [huggingFaceModels, setHuggingFaceModels] = useState<Record<string, ModelInfo>>({})
-	const [providerModelsByProvider, setProviderModelsByProvider] = useState<Partial<Record<ProviderId, ProviderModelsState>>>({})
-	const [latestModelRequestIdByProvider, setLatestModelRequestIdByProvider] = useState<Partial<Record<ProviderId, string>>>({})
-	const latestModelRequestIdByProviderRef = useRef<Partial<Record<ProviderId, string>>>({})
 	const [mcpServers, setMcpServers] = useState<McpServer[]>([])
-
-	const startProviderModelsRequest = useCallback((providerId: ProviderId, requestId: string) => {
-		latestModelRequestIdByProviderRef.current = { ...latestModelRequestIdByProviderRef.current, [providerId]: requestId }
-		setLatestModelRequestIdByProvider((prev) => ({ ...prev, [providerId]: requestId }))
-		setProviderModelsByProvider((prev) => ({
-			...prev,
-			[providerId]: {
-				...(prev[providerId] ?? {
-					providerId,
-					models: {},
-					defaultModelId: "",
-					configFingerprint: "",
-					fetchedAt: 0,
-					isStale: false,
-				}),
-				providerId,
-				requestId,
-				isLoading: true,
-				error: undefined,
-			},
-		}))
-	}, [])
-
-	const applyProviderModelsResponse = useCallback((response: ProviderModelsResponse) => {
-		setProviderModelsByProvider((prevModels) => {
-			const latestRequestId = latestModelRequestIdByProviderRef.current[response.providerId]
-			if (latestRequestId !== response.requestId) {
-				console.debug("Dropping stale provider models response", {
-					providerId: response.providerId,
-					requestId: response.requestId,
-					latestRequestId,
-				})
-				return prevModels
-			}
-
-			return {
-				...prevModels,
-				[response.providerId]: {
-					providerId: response.providerId,
-					models: response.ok ? fromProtobufModels(response.models) : {},
-					defaultModelId: response.defaultModelId ?? "",
-					configFingerprint: response.configFingerprint,
-					requestId: response.requestId,
-					source: response.source,
-					fetchedAt: response.fetchedAt,
-					isLoading: false,
-					isStale: false,
-					error: response.ok ? undefined : response.error?.message,
-				},
-			}
-		})
-	}, [])
+	const [mcpMarketplaceCatalog, setMcpMarketplaceCatalog] = useState<McpMarketplaceCatalog>({ items: [] })
 
 	// References to store subscription cancellation functions
 	const stateSubscriptionRef = useRef<(() => void) | null>(null)
 
-	const marketplaceButtonUnsubscribeRef = useRef<(() => void) | null>(null)
 	const mcpButtonUnsubscribeRef = useRef<(() => void) | null>(null)
 	const historyButtonClickedSubscriptionRef = useRef<(() => void) | null>(null)
 	const chatButtonUnsubscribeRef = useRef<(() => void) | null>(null)
@@ -420,6 +334,7 @@ export const ExtensionStateContextProvider: React.FC<{
 	const settingsButtonClickedSubscriptionRef = useRef<(() => void) | null>(null)
 	const worktreesButtonClickedSubscriptionRef = useRef<(() => void) | null>(null)
 	const partialMessageUnsubscribeRef = useRef<(() => void) | null>(null)
+	const mcpMarketplaceUnsubscribeRef = useRef<(() => void) | null>(null)
 	const openRouterModelsUnsubscribeRef = useRef<(() => void) | null>(null)
 	const liteLlmModelsUnsubscribeRef = useRef<(() => void) | null>(null)
 	const workspaceUpdatesUnsubscribeRef = useRef<(() => void) | null>(null)
@@ -436,16 +351,12 @@ export const ExtensionStateContextProvider: React.FC<{
 		}
 	}, [])
 	const mcpServersSubscriptionRef = useRef<(() => void) | null>(null)
-	// Convergent-replica state for clineMessages. The partial-message stream and the full state
-	// snapshots both feed this reducer so the transcript converges correctly regardless of
-	// arrival order, duplication, or loss. See messageReducer.ts.
-	const replicaRef = useRef<ReplicaState>(createReplicaState())
 
 	// Subscribe to state updates and UI events using the gRPC streaming API
 	useEffect(() => {
 		// Set up state subscription
 		stateSubscriptionRef.current = StateServiceClient.subscribeToState(EmptyRequest.create({}), {
-			onResponse: (response: any) => {
+			onResponse: (response) => {
 				if (response.stateJson) {
 					try {
 						const stateData = JSON.parse(response.stateJson) as ExtensionState
@@ -454,24 +365,12 @@ export const ExtensionStateContextProvider: React.FC<{
 							const incomingVersion = stateData.autoApprovalSettings?.version ?? 1
 							const currentVersion = prevState.autoApprovalSettings?.version ?? 1
 							const shouldUpdateAutoApproval = incomingVersion > currentVersion
-
-							// Route the snapshot's transcript through the convergent-replica reducer:
-							// merge by ts/seq within the same epoch (never truncate), replace on a
-							// newer epoch, ignore stale/older snapshots. Unstamped (classic/legacy)
-							// state defaults to epoch 0 / version 0, which merges.
-							replicaRef.current = reducerApplyStateSnapshot(
-								replicaRef.current,
-								stateData.clineMessages ?? [],
-								stateData.epoch ?? 0,
-								stateData.stateVersion ?? 0,
-								stateData.turnState,
-							)
-							stateData.clineMessages = replicaRef.current.messages
-							// Use the seq-gated turnState from the replica, NOT the raw snapshot's, so a
-							// late/stale snapshot carrying an older phase (e.g. "idle") cannot revert a
-							// newer phase (e.g. "streaming") and hide the Cancel button. Falls back to
-							// undefined for classic/legacy state.
-							stateData.turnState = replicaRef.current.turnState
+							// HACK: Preserve clineMessages if currentTaskItem is the same
+							if (stateData.currentTaskItem?.id === prevState.currentTaskItem?.id) {
+								stateData.clineMessages = stateData.clineMessages?.length
+									? stateData.clineMessages
+									: prevState.clineMessages
+							}
 
 							const newState = {
 								...stateData,
@@ -500,7 +399,7 @@ export const ExtensionStateContextProvider: React.FC<{
 				}
 				console.log('[DEBUG] ended "got subscribed state"')
 			},
-			onError: (error: any) => {
+			onError: (error) => {
 				console.error("Error in state subscription:", error)
 			},
 			onComplete: () => {
@@ -514,9 +413,9 @@ export const ExtensionStateContextProvider: React.FC<{
 			{
 				onResponse: () => {
 					console.log("[DEBUG] Received mcpButtonClicked event from gRPC stream")
-					navigateToMarketplace()
+					navigateToMcp()
 				},
-				onError: (error: any) => {
+				onError: (error) => {
 					console.error("Error in mcpButtonClicked subscription:", error)
 				},
 				onComplete: () => {
@@ -524,19 +423,6 @@ export const ExtensionStateContextProvider: React.FC<{
 				},
 			},
 		)
-
-		marketplaceButtonUnsubscribeRef.current = UiServiceClient.subscribeToMarketplaceButtonClicked(EmptyRequest.create({}), {
-			onResponse: () => {
-				console.log("[DEBUG] Received marketplaceButtonClicked event from gRPC stream")
-				navigateToMarketplace()
-			},
-			onError: (error: any) => {
-				console.error("Error in marketplaceButtonClicked subscription:", error)
-			},
-			onComplete: () => {
-				console.log("marketplaceButtonClicked subscription completed")
-			},
-		})
 
 		// Set up history button clicked subscription with webview type
 		historyButtonClickedSubscriptionRef.current = UiServiceClient.subscribeToHistoryButtonClicked(
@@ -547,7 +433,7 @@ export const ExtensionStateContextProvider: React.FC<{
 					console.log("[DEBUG] Received history button clicked event from gRPC stream")
 					navigateToHistory()
 				},
-				onError: (error: any) => {
+				onError: (error) => {
 					console.error("Error in history button clicked subscription:", error)
 				},
 				onComplete: () => {
@@ -565,7 +451,7 @@ export const ExtensionStateContextProvider: React.FC<{
 					console.log("[DEBUG] Received chat button clicked event from gRPC stream")
 					navigateToChat()
 				},
-				onError: (error: any) => {
+				onError: (error) => {
 					console.error("Error in chat button subscription:", error)
 				},
 				onComplete: () => {},
@@ -574,13 +460,13 @@ export const ExtensionStateContextProvider: React.FC<{
 
 		// Subscribe to MCP servers updates
 		mcpServersSubscriptionRef.current = McpServiceClient.subscribeToMcpServers(EmptyRequest.create(), {
-			onResponse: (response: any) => {
+			onResponse: (response) => {
 				console.log("[DEBUG] Received MCP servers update from gRPC stream")
 				if (response.mcpServers) {
 					setMcpServers(convertProtoMcpServersToMcpServers(response.mcpServers))
 				}
 			},
-			onError: (error: any) => {
+			onError: (error) => {
 				console.error("Error in MCP servers subscription:", error)
 			},
 			onComplete: () => {
@@ -594,7 +480,7 @@ export const ExtensionStateContextProvider: React.FC<{
 				// When settings button is clicked, navigate to settings
 				navigateToSettings()
 			},
-			onError: (error: any) => {
+			onError: (error) => {
 				console.error("Error in settings button clicked subscription:", error)
 			},
 			onComplete: () => {
@@ -610,7 +496,7 @@ export const ExtensionStateContextProvider: React.FC<{
 					// When worktrees button is clicked, navigate to worktrees
 					navigateToWorktrees()
 				},
-				onError: (error: any) => {
+				onError: (error) => {
 					console.error("Error in worktrees button clicked subscription:", error)
 				},
 				onComplete: () => {
@@ -621,7 +507,7 @@ export const ExtensionStateContextProvider: React.FC<{
 
 		// Subscribe to partial message events
 		partialMessageUnsubscribeRef.current = UiServiceClient.subscribeToPartialMessage(EmptyRequest.create({}), {
-			onResponse: (protoMessage: any) => {
+			onResponse: (protoMessage) => {
 				try {
 					// Validate critical fields
 					if (!protoMessage.ts || protoMessage.ts <= 0) {
@@ -631,27 +517,38 @@ export const ExtensionStateContextProvider: React.FC<{
 
 					const partialMessage = convertProtoToClineMessage(protoMessage)
 					setState((prevState) => {
-						// Route through the convergent-replica reducer: merge by ts keeping the
-						// higher seq, fence stale epochs, never let an out-of-order or duplicate
-						// delivery corrupt the transcript. Unstamped (classic/legacy) messages
-						// default to epoch 0 and merge by ts as before.
-						const before = replicaRef.current
-						replicaRef.current = reducerApplyMessage(before, partialMessage)
-						if (replicaRef.current === before) {
-							// Stale/ignored — no change.
-							return prevState
+						// worth noting it will never be possible for a more up-to-date message to be sent here or in normal messages post since the presentAssistantContent function uses lock
+						const lastIndex = findLastIndex(prevState.clineMessages, (msg) => msg.ts === partialMessage.ts)
+						if (lastIndex !== -1) {
+							const newClineMessages = [...prevState.clineMessages]
+							newClineMessages[lastIndex] = partialMessage
+							return { ...prevState, clineMessages: newClineMessages }
 						}
-						return { ...prevState, clineMessages: replicaRef.current.messages }
+						return prevState
 					})
 				} catch (error) {
 					console.error("Failed to process partial message:", error, protoMessage)
 				}
 			},
-			onError: (error: any) => {
+			onError: (error) => {
 				console.error("Error in partialMessage subscription:", error)
 			},
 			onComplete: () => {
 				console.log("[DEBUG] partialMessage subscription completed")
+			},
+		})
+
+		// Subscribe to MCP marketplace catalog updates
+		mcpMarketplaceUnsubscribeRef.current = McpServiceClient.subscribeToMcpMarketplaceCatalog(EmptyRequest.create({}), {
+			onResponse: (catalog) => {
+				console.log("[DEBUG] Received MCP marketplace catalog update from gRPC stream")
+				setMcpMarketplaceCatalog(catalog)
+			},
+			onError: (error) => {
+				console.error("Error in MCP marketplace catalog subscription:", error)
+			},
+			onComplete: () => {
+				console.log("MCP marketplace catalog subscription completed")
 			},
 		})
 
@@ -664,7 +561,7 @@ export const ExtensionStateContextProvider: React.FC<{
 					...models,
 				})
 			},
-			onError: (error: any) => {
+			onError: (error) => {
 				console.error("Error in OpenRouter models subscription:", error)
 			},
 			onComplete: () => {
@@ -678,7 +575,7 @@ export const ExtensionStateContextProvider: React.FC<{
 				const models = fromProtobufModels(response.models)
 				setLiteLlmModels(models)
 			},
-			onError: (error: any) => {
+			onError: (error) => {
 				console.error("Error in LiteLLM models subscription:", error)
 			},
 			onComplete: () => {
@@ -702,7 +599,7 @@ export const ExtensionStateContextProvider: React.FC<{
 				console.log("[DEBUG] Received account button clicked event from gRPC stream")
 				navigateToAccount()
 			},
-			onError: (error: any) => {
+			onError: (error) => {
 				console.error("Error in account button clicked subscription:", error)
 			},
 			onComplete: () => {
@@ -727,7 +624,7 @@ export const ExtensionStateContextProvider: React.FC<{
 					callback()
 				})
 			},
-			onError: (error: any) => {
+			onError: (error) => {
 				console.error("Error in relinquishControl subscription:", error)
 			},
 			onComplete: () => {},
@@ -742,10 +639,6 @@ export const ExtensionStateContextProvider: React.FC<{
 			if (mcpButtonUnsubscribeRef.current) {
 				mcpButtonUnsubscribeRef.current()
 				mcpButtonUnsubscribeRef.current = null
-			}
-			if (marketplaceButtonUnsubscribeRef.current) {
-				marketplaceButtonUnsubscribeRef.current()
-				marketplaceButtonUnsubscribeRef.current = null
 			}
 			if (historyButtonClickedSubscriptionRef.current) {
 				historyButtonClickedSubscriptionRef.current()
@@ -770,6 +663,10 @@ export const ExtensionStateContextProvider: React.FC<{
 			if (partialMessageUnsubscribeRef.current) {
 				partialMessageUnsubscribeRef.current()
 				partialMessageUnsubscribeRef.current = null
+			}
+			if (mcpMarketplaceUnsubscribeRef.current) {
+				mcpMarketplaceUnsubscribeRef.current()
+				mcpMarketplaceUnsubscribeRef.current = null
 			}
 			if (openRouterModelsUnsubscribeRef.current) {
 				openRouterModelsUnsubscribeRef.current()
@@ -829,11 +726,10 @@ export const ExtensionStateContextProvider: React.FC<{
 	const refreshBasetenModels = useCallback(() => {
 		ModelsServiceClient.refreshBasetenModelsRpc(EmptyRequest.create({}))
 			.then((response) => {
-				// Live-fetched Baseten models. The SDK-curated catalog is
-				// pulled separately by BasetenModelPicker via
-				// `useProviderModels("baseten")` and merged on top of this
-				// dynamic slice at render time.
-				setBasetenModels(fromProtobufModels(response.models))
+				setBasetenModels({
+					[basetenDefaultModelId]: basetenModels[basetenDefaultModelId],
+					...fromProtobufModels(response.models),
+				})
 			})
 			.catch((err) => console.error("Failed to refresh Baseten models:", err))
 	}, [])
@@ -849,16 +745,16 @@ export const ExtensionStateContextProvider: React.FC<{
 
 	// Auto-refresh model lists on API key availability
 	useEffect(() => {
-		if (!openRouterModels || Object.keys(openRouterModels).length <= 1) {
+		if (!state.offlineModeEnabled && (!openRouterModels || Object.keys(openRouterModels).length <= 1)) {
 			refreshOpenRouterModels()
 		}
-		if (!vercelAiGatewayModels || Object.keys(vercelAiGatewayModels).length === 0) {
+		if (!state.offlineModeEnabled && (!vercelAiGatewayModels || Object.keys(vercelAiGatewayModels).length === 0)) {
 			refreshVercelAiGatewayModels()
 		}
-		if (state.apiConfiguration?.basetenApiKey) {
+		if (!state.offlineModeEnabled && state.apiConfiguration?.basetenApiKey) {
 			refreshBasetenModels()
 		}
-		if (state.apiConfiguration?.liteLlmApiKey) {
+		if (!state.offlineModeEnabled && state.apiConfiguration?.liteLlmApiKey) {
 			refreshLiteLlmModels()
 		}
 	}, [
@@ -868,13 +764,35 @@ export const ExtensionStateContextProvider: React.FC<{
 		refreshBasetenModels,
 		state?.apiConfiguration?.liteLlmApiKey,
 		refreshLiteLlmModels,
+		state.offlineModeEnabled,
 	])
+
+	// Refresh Cline models function
+	const refreshClineModels = useCallback(() => {
+		ModelsServiceClient.refreshClineModelsRpc(EmptyRequest.create({}))
+			.then((response: OpenRouterCompatibleModelInfo) => {
+				const models = fromProtobufModels(response.models)
+				setClineModels((prev) => (Object.keys(models).length > 0 ? models : (prev ?? null)))
+			})
+			.catch((error: Error) => console.error("Failed to refresh Cline models:", error))
+	}, [])
+
+	// Auto-refresh Cline models when provider is cline
+	useEffect(() => {
+		const hasClineProvider =
+			isClineProvider(state.apiConfiguration?.actModeApiProvider) ||
+			isClineProvider(state.apiConfiguration?.planModeApiProvider)
+		if (hasClineProvider && clineModels === null) {
+			refreshClineModels()
+		}
+	}, [state.apiConfiguration?.actModeApiProvider, state.apiConfiguration?.planModeApiProvider, clineModels, refreshClineModels])
 
 	const contextValue: ExtensionStateContextType = {
 		...state,
 		didHydrateState,
 		showWelcome,
 		onboardingModels,
+		clineModels,
 		openRouterModels,
 		vercelAiGatewayModels,
 		hicapModels,
@@ -884,12 +802,10 @@ export const ExtensionStateContextProvider: React.FC<{
 		groqModels: groqModelsState,
 		basetenModels: basetenModelsState,
 		huggingFaceModels,
-		providerModelsByProvider,
-		latestModelRequestIdByProvider,
 		mcpServers,
+		mcpMarketplaceCatalog,
 		totalTasksSize,
 		availableTerminalProfiles,
-		showMarketplace,
 		showMcp,
 		mcpTab,
 		showSettings,
@@ -909,9 +825,9 @@ export const ExtensionStateContextProvider: React.FC<{
 		remoteRulesToggles: state.remoteRulesToggles || {},
 		remoteWorkflowToggles: state.remoteWorkflowToggles || {},
 		enableCheckpointsSetting: state.enableCheckpointsSetting,
+		currentFocusChainChecklist: state.currentFocusChainChecklist,
 
 		// Navigation functions
-		navigateToMarketplace,
 		navigateToMcp,
 		navigateToSettings,
 		navigateToSettingsModelPicker,
@@ -926,12 +842,9 @@ export const ExtensionStateContextProvider: React.FC<{
 		hideAccount,
 		hideWorktrees,
 		hideAnnouncement,
-		closeMarketplaceView,
 		setShowAnnouncement,
 		setShowWelcome,
 		setOnboardingModels,
-		startProviderModelsRequest,
-		applyProviderModelsResponse,
 		setShouldShowAnnouncement: (value) =>
 			setState((prevState) => ({
 				...prevState,
@@ -942,7 +855,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		setGroqModels,
 		setBasetenModels,
 		setHuggingFaceModels,
-		setShowMarketplace,
+		setMcpMarketplaceCatalog,
 		setShowMcp,
 		closeMcpView,
 		setGlobalClineRulesToggles: (toggles) =>
@@ -1002,6 +915,7 @@ export const ExtensionStateContextProvider: React.FC<{
 			})),
 		setMcpTab,
 		setTotalTasksSize,
+		refreshClineModels,
 		refreshOpenRouterModels,
 		refreshVercelAiGatewayModels,
 		refreshHicapModels,

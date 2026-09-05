@@ -128,25 +128,14 @@ export {
 	sanitizeSurrogates,
 	toAiSdkToolResultOutput,
 } from "./llms/ai-sdk-format";
-export * from "./llms/gateway";
+export type * from "./llms/gateway";
 export {
-	type Base64MediaValidationFailure,
-	type Base64MediaValidationResult,
-	type Base64MediaValidationSuccess,
 	createMediaBudgetState,
 	DEFAULT_MAX_IMAGE_BASE64_BYTES,
 	DEFAULT_MAX_IMAGE_DECODED_BYTES,
 	DEFAULT_MAX_IMAGE_ENCODED_BYTES,
 	DEFAULT_MAX_TOTAL_MEDIA_BYTES,
-	type GeneratedMedia,
-	type GeneratedMediaModality,
-	GeneratedMediaModalitySchema,
-	GeneratedMediaSchema,
-	type GeneratedMediaSource,
-	GeneratedMediaSourceSchema,
-	generatedMediaModalityFromMediaType,
 	IMAGE_OMITTED_PLACEHOLDER,
-	IMAGE_UNSUPPORTED_PLACEHOLDER,
 	type ImageMediaLimits,
 	type ImageMediaValidationFailure,
 	type ImageMediaValidationResult,
@@ -157,14 +146,12 @@ export {
 	imageFileMaxDecodedBytesForBase64Limit,
 	isBase64Char,
 	isCanonicalBase64,
-	isGeneratedMedia,
 	type MediaBudgetOptions,
 	type MediaBudgetState,
 	type ResolvedMediaBudget,
 	reserveImageMediaBytes,
 	resolveMediaBudget,
 	SUPPORTED_IMAGE_MEDIA_TYPES,
-	validateAndReserveBase64Media,
 	validateAndReserveImageMedia,
 	validateImageMedia,
 } from "./llms/media";
@@ -172,7 +159,6 @@ export type {
 	ContentBlock,
 	FileContent,
 	ImageContent,
-	MediaContent,
 	Message,
 	MessageRole,
 	MessageWithMetadata,
@@ -186,37 +172,20 @@ export type {
 export {
 	ApiFormat,
 	ApiFormatSchema,
-	type ChatCompatibleModelDescriptor,
-	type ChatModelModalities,
-	isChatCompatibleModel,
 	type ModelCapability,
 	ModelCapabilitySchema,
 	type ModelInfo,
 	ModelInfoSchema,
 	type ModelMetadata,
 	ModelMetadataSchema,
-	type ModelModalities,
-	ModelModalitiesSchema,
-	type ModelModality,
-	ModelModalitySchema,
-	type ModelOperation,
-	type ModelOperationMode,
-	ModelOperationModeSchema,
-	ModelOperationSchema,
 	type ModelPricing,
 	ModelPricingSchema,
 	type ModelStatus,
 	ModelStatusSchema,
-	modelHasCapability,
-	modelProducesImages,
-	modelSupportsToolCalling,
-	supportsChatModalities,
 	type ThinkingConfig,
 	ThinkingConfigSchema,
-	usesImageGenerationOperation,
 } from "./llms/model-info";
 export { mergeModelOptions } from "./llms/model-options";
-export * from "./llms/model-tools";
 export {
 	DEFAULT_REASONING_EFFORT,
 	REASONING_EFFORT_RATIOS,
@@ -224,22 +193,8 @@ export {
 	resolveReasoningBudgetFromRatio,
 	resolveReasoningEffortRatio,
 } from "./llms/reasoning-effort";
-export {
-	type ModelReasoningOption,
-	ModelReasoningOptionSchema,
-	REASONING_LEVELS,
-	type ReasoningEffort,
-	ReasoningEffortSchema,
-	type ReasoningLevel,
-	ReasoningLevelSchema,
-} from "./llms/reasoning-options";
-export { serializeAbortReason } from "./llms/requests";
-export {
-	CHARS_PER_TOKEN,
-	estimateRequestInputTokens,
-	estimateTokens,
-	type TokenEstimatedRequest,
-} from "./llms/tokens";
+export { DEFAULT_REQUEST_HEADERS, serializeAbortReason } from "./llms/requests";
+export { estimateTokens } from "./llms/tokens";
 export type {
 	ToolApprovalRequest,
 	ToolApprovalResult,
@@ -252,28 +207,16 @@ export {
 	type BasicLogMetadata,
 	noopBasicLogger,
 } from "./logging/logger";
-export * from "./mcp";
-export { getErrorCode, getErrorMessage } from "./parse/error";
 export {
-	normalizeJsonLikeStringsForSchema,
 	parseJsonStream,
 	safeJsonParse,
 	safeJsonStringify,
 } from "./parse/json";
-export { decodeJwtPayload } from "./parse/jwt";
-export { type OmitUndefinedValues, omitUndefinedValues } from "./parse/object";
-export {
-	getDefaultShell,
-	getShellArgs,
-	getShellInvocation,
-	getShellKind,
-	type ShellInvocation,
-	type ShellKind,
-} from "./parse/shell";
+export { omitUndefinedValues, type OmitUndefinedValues } from "./parse/object";
+export { getDefaultShell, getShellArgs } from "./parse/shell";
 export {
 	maskSecret,
 	sanitizeFileName,
-	stripUtf8Bom,
 	trimNonEmpty,
 	truncateSplit,
 	truncateStr,
@@ -281,29 +224,16 @@ export {
 export { formatHumanReadableDate, formatUptime } from "./parse/time";
 export { validateWithZod, zodToJsonSchema } from "./parse/zod";
 export type { ClineSystemPromptOptions } from "./prompt/cline";
+export { buildClineSystemPrompt } from "./prompt/cline";
 export {
-	buildClineSystemPrompt,
-	MODE_TAG_INSTRUCTIONS,
-	PLAN_MODE_INSTRUCTIONS,
-	PLAN_MODE_INSTRUCTIONS_MANUAL_SWITCH,
-} from "./prompt/cline";
-export type {
-	ModeSwitchNotice,
-	ModeSwitchNoticeTracker,
-} from "./prompt/format";
-export {
-	createModeSwitchNoticeTracker,
 	formatDisplayUserInput,
 	formatFileContentBlock,
-	formatModeSwitchNotice,
 	formatUserCommandBlock,
 	formatUserInputBlock,
 	normalizeUserInput,
 	parseUserCommandEnvelope,
-	stripModeNotices,
 	xmlTagsRemoval,
 } from "./prompt/format";
-export { CLINE_DEFAULT_MODEL_ID } from "./providers/defaults";
 export { isClineProvider } from "./providers/utils";
 export { REMOTE_URI_SCHEME } from "./remote-config/constants";
 export type {
@@ -382,15 +312,12 @@ export type {
 	ProviderConfigFieldType,
 	ProviderListItem,
 	ProviderModel,
-	ProviderModelFeatured,
-	ProviderModelFeaturedTier,
 	ProviderModelsResponse,
 	ProviderOAuthLoginResponse,
 	ProviderProtocol,
 	ProviderSettingsActionRequest,
 	RuntimeLoggerConfig,
 	SaveProviderSettingsActionRequest,
-	VoiceInputSelection,
 } from "./rpc/runtime";
 export {
 	ProviderCapabilitySchema,
@@ -427,9 +354,7 @@ export {
 	resolveClineEnvironment,
 } from "./runtime/cline-environment";
 export type {
-	CaptureAgentUnexpectedReasoningTokensInput,
 	CaptureSdkErrorInput,
-	CaptureTaskLifecycleEventInput,
 	ITelemetryService,
 	OpenTelemetryClientConfig,
 	SdkTelemetryErrorComponent,
@@ -442,19 +367,10 @@ export type {
 	TelemetryValue,
 } from "./services/telemetry";
 export {
-	AGENT_UNEXPECTED_REASONING_TOKENS_EVENT,
 	buildSdkErrorProperties,
-	captureAgentUnexpectedReasoningTokens,
 	captureSdkError,
-	captureTaskLifecycleEvent,
 	normalizeSdkError,
-	resetSdkErrorRateLimiterForTests,
 	SDK_ERROR_TELEMETRY_EVENT,
-	TASK_CANCELLED_EVENT,
-	TASK_FIRST_CHUNK_RECEIVED_EVENT,
-	TASK_PROVIDER_REQUEST_STARTED_EVENT,
-	TASK_PROVIDER_STREAM_FAILED_EVENT,
-	TASK_PROVIDER_STREAM_STARTED_EVENT,
 } from "./services/telemetry";
 export type { ClineTelemetryServiceConfig } from "./services/telemetry-config";
 export {
@@ -493,12 +409,6 @@ export {
 } from "./session/runtime-config";
 export type { RuntimeEnv } from "./session/runtime-env";
 export * from "./session/workspace";
-export {
-	CLINE_CHAT_WORKSPACE_DIRECTORY_NAME,
-	CLINE_WORKSPACES_DIRECTORY_NAME,
-	isChatWorkspacePath,
-} from "./storage/chat-workspace-paths";
-export * from "./tasks";
 export * from "./team";
 export { createTool } from "./tools/create";
 export { AUTH_ERROR_PATTERNS, isLikelyAuthError } from "./types/auth";

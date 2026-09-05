@@ -37,10 +37,8 @@ export const ToolPresets = {
 	},
 
 	/**
-	 * Plan mode (read-only)
-	 * Good for analysis and documentation agents. Shell access stays enabled
-	 * for read-only investigation; file-editing commands are hard-blocked by
-	 * the plan-mode command-guard hook the runtime builder registers.
+	 * Plan mode (read-only, no shell access)
+	 * Good for analysis and documentation agents
 	 */
 	plan: {
 		enableReadFiles: true,

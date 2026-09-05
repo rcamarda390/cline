@@ -1,3 +1,3 @@
-export function isClineManagedProvider(provider: string | undefined) {
+export function isClineProvider(provider: string | undefined) {
 	return provider === "cline" || provider === "cline-pass"
 }

@@ -9,13 +9,7 @@ import { McpServiceClient } from "@/services/grpc-client"
 
 type TransportType = "streamableHttp" | "sse"
 
-type AddRemoteServerFormProps = {
-	onServerAdded: () => void
-	onCancel?: () => void
-	showEditConfiguration?: boolean
-}
-
-const AddRemoteServerForm = ({ onCancel, onServerAdded, showEditConfiguration = true }: AddRemoteServerFormProps) => {
+const AddRemoteServerForm = ({ onServerAdded }: { onServerAdded: () => void }) => {
 	const [serverName, setServerName] = useState("")
 	const [serverUrl, setServerUrl] = useState("")
 	const [transportType, setTransportType] = useState<TransportType>("streamableHttp")
@@ -131,30 +125,16 @@ const AddRemoteServerForm = ({ onCancel, onServerAdded, showEditConfiguration = 
 					{isSubmitting ? "Connecting..." : "Add Server"}
 				</VSCodeButton>
 
-				{onCancel && (
-					<VSCodeButton
-						appearance="secondary"
-						className="w-full"
-						disabled={isSubmitting}
-						onClick={onCancel}
-						style={{ marginTop: "8px" }}
-						type="button">
-						Cancel
-					</VSCodeButton>
-				)}
-
-				{showEditConfiguration && (
-					<VSCodeButton
-						appearance="secondary"
-						onClick={() => {
-							McpServiceClient.openMcpSettings(EmptyRequest.create({})).catch((error) => {
-								console.error("Error opening MCP settings:", error)
-							})
-						}}
-						style={{ width: "100%", marginBottom: "5px", marginTop: 15 }}>
-						Edit Configuration
-					</VSCodeButton>
-				)}
+				<VSCodeButton
+					appearance="secondary"
+					onClick={() => {
+						McpServiceClient.openMcpSettings(EmptyRequest.create({})).catch((error) => {
+							console.error("Error opening MCP settings:", error)
+						})
+					}}
+					style={{ width: "100%", marginBottom: "5px", marginTop: 15 }}>
+					Edit Configuration
+				</VSCodeButton>
 			</form>
 		</div>
 	)

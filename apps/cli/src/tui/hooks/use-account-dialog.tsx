@@ -1,16 +1,13 @@
 import type { ChoiceContext } from "@opentui-ui/dialog";
 import type { DialogActions } from "@opentui-ui/dialog/react";
+import open from "open";
 import { useCallback } from "react";
-import open from "../../utils/open";
 import type { ClineAccountSnapshot } from "../cline-account";
 import {
 	type AccountDialogAction,
 	AccountDialogContent,
 } from "../components/dialogs/account-dialog";
-import {
-	OAuthLoginContent,
-	type OAuthLoginResult,
-} from "../components/dialogs/provider-picker";
+import { OAuthLoginContent } from "../components/dialogs/provider-picker";
 import type { OpenModelSelectorOptions } from "./use-model-selector";
 
 export function useAccountDialog(opts: {
@@ -63,14 +60,14 @@ export function useAccountDialog(opts: {
 			return;
 		}
 		if (action === "login") {
-			const saved = await dialog.choice<OAuthLoginResult>({
+			const saved = await dialog.choice<boolean>({
 				style: { maxHeight: termHeight - 2 },
 				closeOnEscape: false,
-				content: (ctx: ChoiceContext<OAuthLoginResult>) => (
+				content: (ctx: ChoiceContext<boolean>) => (
 					<OAuthLoginContent {...ctx} providerId="cline" providerName="Cline" />
 				),
 			});
-			if (saved === true) {
+			if (saved) {
 				await onAccountChange?.();
 				await openAccountDialog();
 				return;

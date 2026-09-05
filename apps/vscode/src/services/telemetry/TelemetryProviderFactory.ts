@@ -13,6 +13,11 @@ import { PostHogClientProvider } from "./providers/posthog/PostHogClientProvider
 import { PostHogTelemetryProvider } from "./providers/posthog/PostHogTelemetryProvider"
 
 /**
+ * Supported telemetry provider types
+ */
+export type TelemetryProviderType = "posthog" | "no-op" | "opentelemetry"
+
+/**
  * Configuration for telemetry providers
  */
 export type TelemetryProviderConfig =
@@ -36,8 +41,8 @@ export class TelemetryProviderFactory {
 	 * Creates multiple telemetry providers based on configuration
 	 * Supports dual tracking during transition period
 	 */
-	public static async createProviders(): Promise<ITelemetryProvider[]> {
-		const configs = TelemetryProviderFactory.getDefaultConfigs()
+	public static async createProviders(offlineMode = false): Promise<ITelemetryProvider[]> {
+		const configs = TelemetryProviderFactory.getDefaultConfigs(offlineMode)
 		const providers: ITelemetryProvider[] = []
 
 		for (const config of configs) {
@@ -98,7 +103,10 @@ export class TelemetryProviderFactory {
 	 * Gets the default telemetry provider configuration
 	 * @returns Default configuration using available providers
 	 */
-	public static getDefaultConfigs(): TelemetryProviderConfig[] {
+	public static getDefaultConfigs(offlineMode = false): TelemetryProviderConfig[] {
+		if (offlineMode) {
+			return [{ type: "no-op" }]
+		}
 		const configs: TelemetryProviderConfig[] = []
 
 		// Skip PostHog in selfHosted mode - enterprise customers should not send telemetry to PostHog

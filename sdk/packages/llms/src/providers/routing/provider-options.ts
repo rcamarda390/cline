@@ -2,9 +2,12 @@ import type {
 	GatewayProviderContext,
 	GatewayStreamRequest,
 } from "@cline/shared";
-import { buildAnthropicProviderOptions } from "./anthropic-compatible";
+import { isAnthropicCompatibleModel, resolveModelFamily } from "../model-facts";
+import {
+	buildAnthropicProviderOptions,
+	resolveAnthropicReasoningRequestPolicy,
+} from "./anthropic-compatible";
 import { buildCompatibleProviderOptions } from "./generic-compatible";
-import { withoutPortableReasoning } from "./portable-reasoning";
 import {
 	buildProviderOptionRulePatches,
 	matchProviderOptionRules,
@@ -16,7 +19,6 @@ import {
 	inferProviderOptionsTarget,
 	type ProviderOptionMatchInput,
 } from "./provider-options-types";
-import { normalizeReasoningRequest } from "./reasoning-options";
 import { type ProviderOptionsPatch, toProviderOptionsKey } from "./utils";
 
 export type { AiSdkProviderOptionsTarget } from "./provider-options-types";
@@ -63,8 +65,9 @@ function buildBaseProviderOptionsPatch(
  * - Model metadata records stable known-model facts, such as
  *   `reasoningDefaultOn`.
  * - Provider metadata records stable provider policy, such as prompt caching.
- * - Provider-option rules encode only non-portable request intent into
- *   provider wire formats, such as exact budgets and native toggle objects.
+ * - Provider-option rules encode abstract request intent into provider wire
+ *   formats, such as `reasoning.exclude`, `thinking.type`, or
+ *   `reasoningEffort`.
  */
 export function composeAiSdkProviderOptions(
 	request: GatewayStreamRequest,
@@ -73,16 +76,22 @@ export function composeAiSdkProviderOptions(
 		request.providerId,
 	),
 ): Record<string, unknown> {
-	const normalizedRequest = normalizeReasoningRequest(
-		withoutPortableReasoning(request),
-		context,
-	);
-	const providerOptionsKey = toProviderOptionsKey(normalizedRequest.providerId);
+	const providerOptionsKey = toProviderOptionsKey(request.providerId);
+	const family = resolveModelFamily(context);
+	const isAnthropicCompatibleModelId = isAnthropicCompatibleModel({
+		modelId: request.modelId,
+		family,
+	});
+	const anthropicReasoningPolicy = isAnthropicCompatibleModelId
+		? resolveAnthropicReasoningRequestPolicy(request, context)
+		: undefined;
 	const matchInput: ProviderOptionMatchInput = {
-		request: normalizedRequest,
+		request,
 		context,
 		providerOptionsKey,
 		target,
+		isAnthropicCompatibleModelId,
+		anthropicReasoningPolicyKind: anthropicReasoningPolicy?.kind,
 	};
 	const matchedRules = matchProviderOptionRules(
 		PROVIDER_OPTION_RULES,
@@ -90,15 +99,12 @@ export function composeAiSdkProviderOptions(
 	);
 	const suppressions = resolveProviderOptionSuppressions(matchedRules);
 	const compatibleOptions = buildCompatibleProviderOptions({
-		request: normalizedRequest,
+		request,
 		context,
 		target,
 		suppressions,
 	});
-	const anthropicOptions = buildAnthropicProviderOptions(
-		normalizedRequest,
-		context,
-	);
+	const anthropicOptions = buildAnthropicProviderOptions(request, context);
 	const buildInput = {
 		...matchInput,
 		compatibleOptions,

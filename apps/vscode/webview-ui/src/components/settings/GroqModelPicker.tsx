@@ -1,4 +1,4 @@
-import type { ModelInfo } from "@shared/api"
+import { groqDefaultModelId, groqModels } from "@shared/api"
 import { EmptyRequest } from "@shared/proto/cline/common"
 import { fromProtobufModels } from "@shared/proto-conversions/models/typeConversion"
 import { Mode } from "@shared/storage/types"
@@ -6,16 +6,14 @@ import { VSCodeLink, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 import Fuse from "fuse.js"
 import React, { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useMount } from "react-use"
-import { useDynamicProviderSelection } from "@/hooks/useDynamicProviderSelection"
-import { useProviderModels } from "@/hooks/useProviderModels"
 import { useExtensionState } from "../../context/ExtensionStateContext"
 import { ModelsServiceClient } from "../../services/grpc-client"
 import { highlight } from "../history/HistoryView"
 import { ModelInfoView } from "./common/ModelInfoView"
-import { getModeSpecificFields } from "./utils/providerUtils"
+import { getModeSpecificFields, normalizeApiConfiguration } from "./utils/providerUtils"
 import { useApiConfigurationHandlers } from "./utils/useApiConfigurationHandlers"
 
-interface GroqModelPickerProps {
+export interface GroqModelPickerProps {
 	isPopup?: boolean
 	currentMode: Mode
 }
@@ -24,10 +22,6 @@ const GroqModelPicker: React.FC<GroqModelPickerProps> = ({ isPopup, currentMode 
 	const { apiConfiguration, groqModels: dynamicGroqModels, setGroqModels } = useExtensionState()
 	const { handleModeFieldsChange } = useApiConfigurationHandlers()
 	const modeFields = getModeSpecificFields(apiConfiguration, currentMode)
-	// Groq's curated catalog comes from the SDK over gRPC. The local
-	// `dynamicGroqModels` slice (populated by `refreshGroqModels` on
-	// the host) is merged on top so live API additions are visible too.
-	const { models: groqModels, defaultModelId: groqDefaultModelId } = useProviderModels("groq")
 	const [searchTerm, setSearchTerm] = useState(modeFields.groqModelId || groqDefaultModelId)
 	const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm)
 	const [isDropdownVisible, setIsDropdownVisible] = useState(false)
@@ -54,20 +48,15 @@ const GroqModelPicker: React.FC<GroqModelPickerProps> = ({ isPopup, currentMode 
 		setSearchTerm(newModelId)
 	}
 
-	const { selectedModelId, selectedModelInfo } = useDynamicProviderSelection("groq", apiConfiguration, currentMode)
+	const { selectedModelId, selectedModelInfo } = useMemo(() => {
+		return normalizeApiConfiguration(apiConfiguration, currentMode)
+	}, [apiConfiguration, currentMode])
 
 	useMount(() => {
 		ModelsServiceClient.refreshGroqModelsRpc(EmptyRequest.create({}))
 			.then((response) => {
-				// Seed with the SDK-known default (if loaded yet) so the
-				// picker always has at least one entry; then layer the
-				// live host-fetched models on top.
-				const seed: Record<string, ModelInfo> = {}
-				if (groqDefaultModelId && groqModels[groqDefaultModelId]) {
-					seed[groqDefaultModelId] = groqModels[groqDefaultModelId]
-				}
 				setGroqModels({
-					...seed,
+					[groqDefaultModelId]: groqModels[groqDefaultModelId],
 					...fromProtobufModels(response.models),
 				})
 			})
@@ -245,10 +234,8 @@ const GroqModelPicker: React.FC<GroqModelPickerProps> = ({ isPopup, currentMode 
 							}}>
 							{modelSearchResults.map((item, index) => (
 								<div
-									className={`px-2.5 py-1.5 cursor-pointer break-all whitespace-normal hover:bg-(--vscode-list-activeSelectionBackground) hover:text-(--vscode-list-activeSelectionForeground) ${
-										index === selectedIndex
-											? "bg-(--vscode-list-activeSelectionBackground) text-(--vscode-list-activeSelectionForeground)"
-											: ""
+									className={`px-2.5 py-1.5 cursor-pointer break-all whitespace-normal hover:bg-(--vscode-list-activeSelectionBackground) ${
+										index === selectedIndex ? "bg-(--vscode-list-activeSelectionBackground)" : ""
 									}`}
 									dangerouslySetInnerHTML={{
 										__html: item.html,
@@ -276,13 +263,16 @@ const GroqModelPicker: React.FC<GroqModelPickerProps> = ({ isPopup, currentMode 
 					<VSCodeLink className="inline text-inherit" href="https://console.groq.com/docs/models">
 						Groq.
 					</VSCodeLink>
-					If you're unsure which model to choose, compare available models by context window, pricing, and capabilities.
+					If you're unsure which model to choose, Cline works best with{" "}
+					<VSCodeLink className="inline text-inherit" onClick={() => handleModelChange("llama-3.3-70b-versatile")}>
+						llama-3.3-70b-versatile.
+					</VSCodeLink>
 				</p>
 			)}
 		</div>
 	)
 }
 
-const GROQ_MODEL_PICKER_Z_INDEX = 1_000
+export const GROQ_MODEL_PICKER_Z_INDEX = 1_000
 
 export default GroqModelPicker

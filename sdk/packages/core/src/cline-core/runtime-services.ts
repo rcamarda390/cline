@@ -2,7 +2,6 @@ import type {
 	PendingPromptsRuntimeService,
 	PendingPromptsServiceApi,
 	RuntimeHost,
-	SessionConnectionRuntimeService,
 	SessionModelRuntimeService,
 	SessionUsageRuntimeService,
 } from "../runtime/host/runtime-host";
@@ -28,7 +27,6 @@ export type RuntimeHostServiceExtensions = RuntimeHost &
 	Partial<
 		PendingPromptsRuntimeService &
 			SessionUsageRuntimeService &
-			SessionConnectionRuntimeService &
 			SessionModelRuntimeService
 	>;
 

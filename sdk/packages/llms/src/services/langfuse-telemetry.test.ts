@@ -1,29 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { registerDisposableSpy, registerTelemetrySpy, telemetryStartSpy } =
-	vi.hoisted(() => ({
-		registerDisposableSpy: vi.fn(),
-		registerTelemetrySpy: vi.fn(),
-		telemetryStartSpy: vi.fn(),
-	}));
-
-vi.mock("ai", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("ai")>();
-	return {
-		...actual,
-		registerTelemetry: (
-			...integrations: Parameters<typeof actual.registerTelemetry>
-		) => {
-			registerTelemetrySpy(...integrations);
-			actual.registerTelemetry(...integrations);
-		},
-	};
-});
-
-vi.mock("@langfuse/vercel-ai-sdk", () => ({
-	LangfuseVercelAiSdkIntegration: class MockLangfuseVercelAiSdkIntegration {
-		onStart = telemetryStartSpy;
-	},
+const { registerDisposableSpy } = vi.hoisted(() => ({
+	registerDisposableSpy: vi.fn(),
 }));
 
 const { addSpanProcessorSpy, forceFlushSpy, shutdownSpy, getDelegateSpy } =
@@ -59,8 +37,6 @@ vi.mock("@opentelemetry/sdk-trace-node", () => ({
 	NodeTracerProvider: MockNodeTracerProvider,
 }));
 
-import { generateText } from "ai";
-import { MockLanguageModelV4 } from "ai/test";
 import {
 	disposeLangfuseTelemetry,
 	ensureLangfuseTelemetry,
@@ -71,8 +47,6 @@ describe("langfuse telemetry", () => {
 	beforeEach(() => {
 		resetLangfuseTelemetryForTests();
 		registerDisposableSpy.mockReset();
-		registerTelemetrySpy.mockReset();
-		telemetryStartSpy.mockReset();
 		addSpanProcessorSpy.mockReset();
 		forceFlushSpy.mockReset();
 		forceFlushSpy.mockResolvedValue(undefined);
@@ -102,8 +76,6 @@ describe("langfuse telemetry", () => {
 
 		expect(registerDisposableSpy).toHaveBeenCalledTimes(1);
 		expect(addSpanProcessorSpy).toHaveBeenCalledTimes(1);
-		expect(registerTelemetrySpy).toHaveBeenCalledTimes(1);
-		expect(registerTelemetrySpy).toHaveBeenCalledWith(expect.any(Object));
 	});
 
 	it("flushes before shutdown during disposal", async () => {
@@ -114,32 +86,5 @@ describe("langfuse telemetry", () => {
 		expect(forceFlushSpy.mock.invocationCallOrder[0]).toBeLessThan(
 			shutdownSpy.mock.invocationCallOrder[0],
 		);
-	});
-
-	it("connects an AI SDK call to the registered telemetry integration", async () => {
-		await expect(ensureLangfuseTelemetry("openrouter")).resolves.toBe(true);
-
-		await generateText({
-			model: new MockLanguageModelV4({
-				doGenerate: {
-					content: [{ type: "text", text: "hello" }],
-					finishReason: { unified: "stop", raw: "stop" },
-					usage: {
-						inputTokens: {
-							total: 1,
-							noCache: 1,
-							cacheRead: 0,
-							cacheWrite: 0,
-						},
-						outputTokens: { total: 1, text: 1, reasoning: 0 },
-					},
-					warnings: [],
-				},
-			}),
-			prompt: "say hello",
-			experimental_telemetry: { isEnabled: true },
-		});
-
-		expect(telemetryStartSpy).toHaveBeenCalled();
 	});
 });

@@ -9,7 +9,7 @@ export type { BlobStoreSettings } from "./types"
  * S3/R2/Azure blob storage implementation of ClineStorage.
  * Uses AWS S3, Cloudflare R2, or Azure Blob Storage as the backend storage.
  */
-class ClineBlobStorage extends ClineStorage {
+export class ClineBlobStorage extends ClineStorage {
 	override name = "ClineBlobStorage"
 
 	private static store: ClineBlobStorage | null = null

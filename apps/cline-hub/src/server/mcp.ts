@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { updateMcpSettingsFileSync } from "@cline/core";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { resolveMcpSettingsPath } from "@cline/shared/storage";
 import type { JsonRecord } from "./types";
 
@@ -65,9 +65,9 @@ export function readMcpServersResponse(): JsonRecord {
 }
 
 export function writeMcpServersMap(servers: JsonRecord): void {
-	updateMcpSettingsFileSync(resolveMcpSettingsPath(), (settings) => {
-		settings.mcpServers = servers;
-	});
+	const path = resolveMcpSettingsPath();
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`);
 }
 
 export function ensureMcpSettingsFile(): string {
@@ -78,22 +78,23 @@ export function ensureMcpSettingsFile(): string {
 	return path;
 }
 
+function readServersMap(): { path: string; servers: JsonRecord } {
+	const path = ensureMcpSettingsFile();
+	const parsed = JSON.parse(readFileSync(path, "utf8")) as JsonRecord;
+	return { path, servers: (parsed.mcpServers as JsonRecord | undefined) ?? {} };
+}
+
 export function setMcpServerDisabled(
 	name: string,
 	disabled: boolean,
 ): JsonRecord {
-	// Hold the cross-process lock across read-modify-write so a concurrent writer
-	// (the extension, the CLI) cannot clobber this change.
-	updateMcpSettingsFileSync(resolveMcpSettingsPath(), (settings) => {
-		const servers = ((settings.mcpServers as JsonRecord | undefined) ??
-			{}) as JsonRecord;
-		const current = servers[name];
-		if (!current || typeof current !== "object") {
-			throw new Error(`unknown MCP server: ${name}`);
-		}
-		servers[name] = { ...(current as JsonRecord), disabled };
-		settings.mcpServers = servers;
-	});
+	const { servers } = readServersMap();
+	const current = servers[name];
+	if (!current || typeof current !== "object") {
+		throw new Error(`unknown MCP server: ${name}`);
+	}
+	servers[name] = { ...(current as JsonRecord), disabled };
+	writeMcpServersMap(servers);
 	return readMcpServersResponse();
 }
 
@@ -126,29 +127,19 @@ export function upsertMcpServer(input: JsonRecord): JsonRecord {
 					},
 					disabled: input.disabled === true,
 				};
-	// Hold the cross-process lock across read-modify-write so a concurrent writer
-	// cannot clobber this upsert.
-	updateMcpSettingsFileSync(resolveMcpSettingsPath(), (settings) => {
-		const servers = ((settings.mcpServers as JsonRecord | undefined) ??
-			{}) as JsonRecord;
-		if (previousName && previousName !== name) {
-			delete servers[previousName];
-		}
-		servers[name] = next;
-		settings.mcpServers = servers;
-	});
+	const { servers } = readServersMap();
+	if (previousName && previousName !== name) {
+		delete servers[previousName];
+	}
+	servers[name] = next;
+	writeMcpServersMap(servers);
 	return readMcpServersResponse();
 }
 
 export function deleteMcpServer(name: string): JsonRecord {
 	if (!name) throw new Error("server name is required");
-	// Hold the cross-process lock across read-modify-write so a concurrent writer
-	// cannot resurrect the deleted server from a stale snapshot.
-	updateMcpSettingsFileSync(resolveMcpSettingsPath(), (settings) => {
-		const servers = ((settings.mcpServers as JsonRecord | undefined) ??
-			{}) as JsonRecord;
-		delete servers[name];
-		settings.mcpServers = servers;
-	});
+	const { servers } = readServersMap();
+	delete servers[name];
+	writeMcpServersMap(servers);
 	return readMcpServersResponse();
 }

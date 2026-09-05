@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	decodeJwtPayload,
 	isCredentialLikelyExpired,
 	parseAuthorizationInput,
 	parseOAuthError,
 	resolveAuthorizationCodeInput,
 	resolveUrl,
 } from "./utils";
+
+function toBase64Url(value: string): string {
+	return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function createJwt(payload: Record<string, unknown>): string {
+	return `${toBase64Url(JSON.stringify({ alg: "none", typ: "JWT" }))}.${toBase64Url(JSON.stringify(payload))}.sig`;
+}
 
 describe("auth/utils", () => {
 	it("parses auth input from full URL with provider", () => {
@@ -33,6 +42,15 @@ describe("auth/utils", () => {
 		expect(resolveUrl("https://example.com/", "/token")).toBe(
 			"https://example.com/token",
 		);
+	});
+
+	it("decodes JWT payload", () => {
+		const token = createJwt({ sub: "account-1", exp: 123 });
+		expect(decodeJwtPayload(token)).toMatchObject({
+			sub: "account-1",
+			exp: 123,
+		});
+		expect(decodeJwtPayload("invalid")).toBeNull();
 	});
 
 	it("parses OAuth error payloads from string and object forms", () => {

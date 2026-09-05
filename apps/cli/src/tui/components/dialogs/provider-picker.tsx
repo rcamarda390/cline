@@ -13,6 +13,7 @@ import {
 import { getClineEnvironmentConfig } from "@cline/shared";
 import type { ChoiceContext } from "@opentui-ui/dialog";
 import { useDialogKeyboard } from "@opentui-ui/dialog/react";
+import open from "open";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	CODEX_CLI_INSTALL_URL,
@@ -20,9 +21,8 @@ import {
 	checkCodexCliInstalled,
 	isOpenAICodexCliProvider,
 } from "../../../utils/codex-cli";
-import open from "../../../utils/open";
 import { listLocalProviders } from "../../../utils/provider-catalog";
-import { useDialogPalette } from "../../hooks/use-theme";
+import { palette } from "../../palette";
 import {
 	getDefaultAwsRegion,
 	type ProviderConfigValues,
@@ -37,11 +37,6 @@ import {
 	getSearchableListRowsWindow,
 	type SearchableItem,
 } from "../searchable-list";
-import {
-	buildClinePassSubscriptionPageUrl,
-	resolveOAuthWaitKeyAction,
-	saveManualProviderApiKey,
-} from "./provider-picker-helpers";
 
 interface ProviderItem {
 	id: string;
@@ -63,7 +58,6 @@ export function ProviderPickerContent(
 	props: ChoiceContext<string> & { currentProviderId: string },
 ) {
 	const { resolve, dismiss, dialogId, currentProviderId } = props;
-	const palette = useDialogPalette();
 	const [providers, setProviders] = useState<ProviderItem[]>([]);
 	const [search, setSearch] = useState("");
 	const [selected, setSelected] = useState(0);
@@ -254,34 +248,18 @@ export function ProviderPickerContent(
 	);
 }
 
-export type ExistingProviderAction =
-	| "use_existing"
-	| "reconfigure"
-	| "open_subscription_page"
-	| "open_usage_billing";
-
-export interface ExistingProviderOption {
-	value: ExistingProviderAction;
-	label: string;
-	onSelect?: () => Promise<void> | void;
-}
+export type ExistingProviderAction = "use_existing" | "reconfigure";
 
 export function UseExistingOrReconfigureContent(
-	props: ChoiceContext<ExistingProviderOption> & {
+	props: ChoiceContext<ExistingProviderAction> & {
 		providerName: string;
-		extraOptions?: ExistingProviderOption[];
 	},
 ) {
-	const { resolve, dismiss, dialogId, providerName, extraOptions } = props;
-	const palette = useDialogPalette();
-	const options: ExistingProviderOption[] = useMemo(
-		() => [
-			{ value: "use_existing", label: "Use existing configuration" },
-			{ value: "reconfigure", label: "Configure again" },
-			...(extraOptions ?? []),
-		],
-		[extraOptions],
-	);
+	const { resolve, dismiss, dialogId, providerName } = props;
+	const options: { value: ExistingProviderAction; label: string }[] = [
+		{ value: "use_existing", label: "Use existing configuration" },
+		{ value: "reconfigure", label: "Configure again" },
+	];
 	const [selected, setSelected] = useState(0);
 
 	useDialogKeyboard((key) => {
@@ -291,7 +269,7 @@ export function UseExistingOrReconfigureContent(
 		}
 		if (key.name === "return" || key.name === "enter") {
 			const opt = options[selected];
-			if (opt) resolve(opt);
+			if (opt) resolve(opt.value);
 			return;
 		}
 		if (key.name === "up" || (key.ctrl && key.name === "p")) {
@@ -333,87 +311,6 @@ export function UseExistingOrReconfigureContent(
 
 			<text fg="gray">↑/↓ navigate, Enter to select, Esc to go back</text>
 		</box>
-	);
-}
-
-function ClinePassBrowserPageContent(
-	props: ChoiceContext<boolean> & {
-		providerName: string;
-		pageLabel: string;
-		url: string;
-		openedStatus: string;
-	},
-) {
-	const {
-		resolve,
-		dismiss,
-		dialogId,
-		providerName,
-		pageLabel,
-		url,
-		openedStatus,
-	} = props;
-	const palette = useDialogPalette();
-	const [status, setStatus] = useState("Opening browser...");
-
-	useEffect(() => {
-		void open(url, { wait: false })
-			.then(() => {
-				setStatus(openedStatus);
-			})
-			.catch(() => {
-				setStatus("Could not open browser automatically. Open the URL below.");
-			});
-	}, [url, openedStatus]);
-
-	useDialogKeyboard((key) => {
-		if (key.name === "escape") {
-			dismiss();
-			return;
-		}
-		if (key.name === "return" || key.name === "enter") {
-			resolve(true);
-		}
-	}, dialogId);
-
-	return (
-		<box flexDirection="column" paddingX={1} gap={1}>
-			<text fg={palette.act}>
-				<strong>{providerName}</strong>
-			</text>
-
-			<text>{status}</text>
-
-			<text fg="gray">{pageLabel}:</text>
-			<text fg={palette.act} selectable>
-				<a href={url}>{url}</a>
-			</text>
-
-			<text fg="gray">
-				<em>Enter or Esc to go back</em>
-			</text>
-		</box>
-	);
-}
-
-export function ClinePassSubscriptionContent(
-	props: ChoiceContext<boolean> & {
-		providerName: string;
-	},
-) {
-	const subscriptionUrl = useMemo(
-		() =>
-			buildClinePassSubscriptionPageUrl(getClineEnvironmentConfig().appBaseUrl),
-		[],
-	);
-
-	return (
-		<ClinePassBrowserPageContent
-			{...props}
-			pageLabel="Subscription page"
-			url={subscriptionUrl}
-			openedStatus="Opened subscription page in your browser."
-		/>
 	);
 }
 
@@ -492,7 +389,6 @@ export function ProviderConfigInputContent(
 		providerName,
 		providerSettingsManager,
 	} = props;
-	const palette = useDialogPalette();
 
 	const config = useMemo(
 		() => getProviderConfigFields(providerId),
@@ -604,7 +500,7 @@ export function ProviderConfigInputContent(
 
 	return (
 		<box flexDirection="column" paddingX={1} gap={1}>
-			<text fg={palette.act}>
+			<text fg="cyan">
 				<strong>{providerName}</strong>
 			</text>
 
@@ -660,7 +556,6 @@ export function CodexCliStatusContent(
 	},
 ) {
 	const { resolve, dismiss, dialogId, providerName } = props;
-	const palette = useDialogPalette();
 	const [status, setStatus] = useState<CodexCliStatus | undefined>();
 	const [checking, setChecking] = useState(false);
 
@@ -698,7 +593,7 @@ export function CodexCliStatusContent(
 
 	return (
 		<box flexDirection="column" paddingX={1} gap={1}>
-			<text fg={palette.act}>
+			<text fg="cyan">
 				<strong>{providerName}</strong>
 			</text>
 
@@ -716,7 +611,7 @@ export function CodexCliStatusContent(
 					<text fg="yellow">Codex CLI was not found</text>
 					<text fg="gray">{status.reason}</text>
 					<text fg="gray">Install Codex CLI from:</text>
-					<text fg={palette.act} selectable>
+					<text fg="cyan" selectable>
 						{CODEX_CLI_INSTALL_URL}
 					</text>
 				</box>
@@ -733,28 +628,13 @@ export function CodexCliStatusContent(
 	);
 }
 
-/**
- * Resolves `true` on successful login, `"use_api_key"` when the user opts
- * into manual API key entry (only offered with `allowApiKeyFallback`).
- */
-export type OAuthLoginResult = boolean | "use_api_key";
-
 export function OAuthLoginContent(
-	props: ChoiceContext<OAuthLoginResult> & {
+	props: ChoiceContext<boolean> & {
 		providerId: string;
 		providerName: string;
-		allowApiKeyFallback?: boolean;
 	},
 ) {
-	const {
-		resolve,
-		dismiss,
-		dialogId,
-		providerId,
-		providerName,
-		allowApiKeyFallback,
-	} = props;
-	const palette = useDialogPalette();
+	const { resolve, dismiss, dialogId, providerId, providerName } = props;
 	const [mode, setMode] = useState<"browser" | "device">(
 		providerId === "cline" ? "device" : "browser",
 	);
@@ -884,25 +764,16 @@ export function OAuthLoginContent(
 	}, []);
 
 	useDialogKeyboard((key) => {
-		const action = resolveOAuthWaitKeyAction(key, allowApiKeyFallback);
-		if (action === "ignore") return;
-		cancelAuthAttempt();
-		if (action === "use_api_key") {
-			resolve("use_api_key");
-			return;
+		if (key.name === "escape") {
+			cancelAuthAttempt();
+			dismiss();
 		}
-		dismiss();
 	}, dialogId);
-
-	const cancelHint = allowApiKeyFallback
-		? "K to enter an API key instead, any other key to cancel"
-		: "Press any key to cancel";
-	const cancelHintColor = allowApiKeyFallback ? "white" : "gray";
 
 	if (mode === "device") {
 		return (
 			<box flexDirection="column" paddingX={1} gap={1}>
-				<text fg={palette.act}>
+				<text fg="cyan">
 					<strong>{providerName}</strong>
 				</text>
 
@@ -917,7 +788,7 @@ export function OAuthLoginContent(
 							<strong>{deviceUserCode}</strong>
 						</text>
 						<text fg="gray">Visit this URL and enter the code above:</text>
-						<text fg={palette.act} selectable>
+						<text fg="cyan" selectable>
 							<a href={deviceVerifyUrl}>{deviceVerifyUrl}</a>
 						</text>
 					</box>
@@ -925,8 +796,8 @@ export function OAuthLoginContent(
 
 				{deviceError && <text fg="red">{deviceError}</text>}
 
-				<text fg={cancelHintColor}>
-					<em>{cancelHint}</em>
+				<text fg="gray">
+					<em>Esc to cancel</em>
 				</text>
 			</box>
 		);
@@ -934,7 +805,7 @@ export function OAuthLoginContent(
 
 	return (
 		<box flexDirection="column" paddingX={1} gap={1}>
-			<text fg={palette.act}>
+			<text fg="cyan">
 				<strong>{providerName}</strong>
 			</text>
 
@@ -948,84 +819,8 @@ export function OAuthLoginContent(
 
 			{error && <text fg="red">{error}</text>}
 
-			<text fg={cancelHintColor}>
-				<em>{cancelHint}</em>
-			</text>
-		</box>
-	);
-}
-
-/**
- * Manual API key entry for OAuth-capable providers — the escape hatch for
- * when OAuth login isn't working. Saving clears any stored OAuth tokens so
- * the manual key takes effect (see saveManualProviderApiKey).
- */
-export function OAuthApiKeyInputContent(
-	props: ChoiceContext<boolean> & {
-		providerId: string;
-		providerName: string;
-		providerSettingsManager: ProviderSettingsManager;
-	},
-) {
-	const {
-		resolve,
-		dismiss,
-		dialogId,
-		providerId,
-		providerName,
-		providerSettingsManager,
-	} = props;
-	const palette = useDialogPalette();
-	const [value, setValue] = useState("");
-
-	const submit = () => {
-		const apiKey = value.trim();
-		if (!apiKey) return;
-		saveManualProviderApiKey(providerSettingsManager, providerId, apiKey);
-		resolve(true);
-	};
-
-	useDialogKeyboard((key) => {
-		if (key.name === "escape") {
-			dismiss();
-			return;
-		}
-		if (key.name === "return") {
-			submit();
-		}
-	}, dialogId);
-
-	return (
-		<box flexDirection="column" paddingX={1} gap={1}>
-			<text fg={palette.act}>
-				<strong>{providerName}</strong>
-			</text>
-
 			<text fg="gray">
-				Use an API key from your Cline dashboard instead of OAuth login. This
-				replaces any saved login tokens.
-			</text>
-
-			<box flexDirection="column">
-				<text fg="gray">API key</text>
-				<box
-					border
-					borderStyle="rounded"
-					borderColor={palette.act}
-					paddingX={1}
-				>
-					<input
-						value={value}
-						onInput={setValue}
-						placeholder="Paste your API key"
-						flexGrow={1}
-						focused
-					/>
-				</box>
-			</box>
-
-			<text fg="gray">
-				<em>Enter to save, Esc to go back</em>
+				<em>Esc to cancel</em>
 			</text>
 		</box>
 	);

@@ -1,6 +1,26 @@
+export type {
+	ITelemetryProvider,
+	TelemetrySettings,
+} from "./providers/ITelemetryProvider"
+export { PostHogTelemetryProvider } from "./providers/posthog/PostHogTelemetryProvider"
+export {
+	type TelemetryProviderConfig,
+	TelemetryProviderFactory,
+	type TelemetryProviderType,
+} from "./TelemetryProviderFactory"
 // Export terminal type definitions for type-safe telemetry
+export type {
+	StandaloneOutputMethod,
+	TerminalOutputMethod,
+	TerminalType,
+	VscodeOutputMethod,
+} from "./TelemetryService"
 // Export the enums and types for terminal telemetry
-export { TerminalHangStage, TerminalOutputFailureReason, TerminalUserInterventionAction } from "./TelemetryService"
+export {
+	TerminalHangStage,
+	TerminalOutputFailureReason,
+	TerminalUserInterventionAction,
+} from "./TelemetryService"
 
 // Create a singleton instance for easy access throughout the application
 import { TelemetryService } from "./TelemetryService"
@@ -13,7 +33,7 @@ let _initializationPromise: Promise<TelemetryService> | null = null
  * @param distinctId Optional distinct ID for the telemetry provider
  * @returns TelemetryService instance
  */
-async function getTelemetryService(): Promise<TelemetryService> {
+export async function getTelemetryService(offlineMode = false): Promise<TelemetryService> {
 	if (_telemetryServiceInstance) {
 		return _telemetryServiceInstance
 	}
@@ -25,7 +45,7 @@ async function getTelemetryService(): Promise<TelemetryService> {
 
 	// Start initialization and store the promise to prevent concurrent initialization.
 	// Ensure that on failure we reset the initialization promise so future calls can retry.
-	_initializationPromise = TelemetryService.create()
+	_initializationPromise = TelemetryService.create(offlineMode)
 		.then((service) => {
 			_telemetryServiceInstance = service
 			_initializationPromise = null
@@ -37,6 +57,14 @@ async function getTelemetryService(): Promise<TelemetryService> {
 		})
 
 	return _initializationPromise
+}
+
+/**
+ * Reset the telemetry service instance (useful for testing)
+ */
+export function resetTelemetryService(): void {
+	_telemetryServiceInstance = null
+	_initializationPromise = null
 }
 
 export const telemetryService = new Proxy({} as TelemetryService, {

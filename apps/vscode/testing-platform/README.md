@@ -24,13 +24,13 @@ testing-platform/
 
 ## Prerequisites
 
-- **Node.js** ≥ 18 (the runtime) and **bun** (package manager + task runner)  
+- **Node.js** ≥ 18 and **npm** ≥ 8  
 - **Protocol Buffers** (used for gRPC)  
 
 Generate proto files in the **root Cline project**:
 
 ```bash
-bun run protos
+npm run protos
 ```
 
 ## Setup
@@ -38,16 +38,16 @@ bun run protos
 From the root of the Cline project:
 
 ```bash
-bun run install:all
-bun run protos
+npm run install:all
+npm run protos
 ```
 
 Then install and build the testing platform:
 
 ```bash
 cd testing-platform
-bun install
-bun run build
+npm install
+npm run build
 ```
 
 ## Running Spec File Tests
@@ -55,11 +55,11 @@ bun run build
 Before running specs, make sure the standalone Cline Core gRPC server (that runs mocks and host gRPC as well) is running:
 
 ```bash
-bun run test:sca-server
+npm run test:sca-server
 ```
 
 Then finally you can run the cli as:
 
 ```bash
-bun run start:dev <spec-file-or-folder>
+npm run start:dev <spec-file-or-folder>
 ```bash

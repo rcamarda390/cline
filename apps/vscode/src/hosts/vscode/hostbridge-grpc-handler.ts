@@ -173,3 +173,11 @@ export interface HostServiceHandlerConfig {
 		requestId?: string,
 	) => Promise<void>
 }
+
+/**
+ * Get the request registry instance
+ * This allows other parts of the code to access the registry
+ */
+export function getRequestRegistry(): GrpcRequestRegistry {
+	return requestRegistry
+}

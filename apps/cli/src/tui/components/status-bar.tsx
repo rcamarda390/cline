@@ -1,16 +1,21 @@
 import type { AgentMode } from "@cline/core";
 import { useTerminalDimensions } from "@opentui/react";
+import { shouldShowCliUsageCost } from "../../utils/usage-cost-display";
 import {
-	shouldShowCliUsageCost,
-	shouldShowCliUsageCoveredBySubscription,
-} from "../../utils/usage-cost-display";
-import { useTheme } from "../hooks/use-theme";
+	useTerminalBackground,
+	useTerminalTheme,
+} from "../hooks/use-terminal-background";
+import {
+	getDefaultForeground,
+	getModeAccent,
+	getSuccessColor,
+} from "../palette";
 import { HOME_VIEW_MAX_WIDTH } from "../types";
 
 export function createContextBar(
 	used: number,
 	total?: number,
-	width = 6,
+	width = 8,
 ): { filled: string; empty: string } {
 	const normalizedWidth = Math.max(0, Math.floor(width));
 	const ratio = total && total > 0 ? Math.min(used / total, 1) : 0;
@@ -37,35 +42,18 @@ export function resolveContextBarFilledForeground(
 }
 
 function formatCost(cost: number): string {
+	if (cost < 0.01) return `$${cost.toFixed(4)}`;
 	return `$${cost.toFixed(2)}`;
-}
-
-function formatCostText(providerId: string, totalCost: number): string {
-	// Subscription providers (ClinePass) have no per-use cost worth surfacing.
-	if (shouldShowCliUsageCoveredBySubscription(providerId)) {
-		return "";
-	}
-
-	if (!shouldShowCliUsageCost(providerId)) {
-		return "";
-	}
-
-	return formatCost(totalCost);
 }
 
 export function formatStatusBarUsageText(input: {
 	totalTokens: number;
 	totalCost: number;
-	providerId: string;
+	showCost: boolean;
 }): string {
-	const tokens = `(${input.totalTokens.toLocaleString()})`;
-	const costText = formatCostText(input.providerId, input.totalCost);
-
-	if (!costText) {
-		return tokens;
-	}
-
-	return `${tokens} ${costText}`;
+	const tokens = `(${input.totalTokens.toLocaleString()} tokens)`;
+	if (!input.showCost) return tokens;
+	return `${tokens} ${formatCost(input.totalCost)}`;
 }
 
 // knownModels keys are bare IDs ("claude-sonnet-4-6") but config.modelId
@@ -86,22 +74,17 @@ function lookupModelInfo(
 }
 
 export function resolveModelDisplayName(config: {
-	providerId?: string;
 	modelId: string;
 	knownModels?: Record<string, unknown>;
 	thinking?: boolean;
 	reasoningEffort?: string;
 }): string {
 	const info = lookupModelInfo(config.modelId, config.knownModels);
-	const modelIdTail = config.modelId.split("/").pop() ?? config.modelId;
-	let displayName = info?.name ?? modelIdTail;
+	const name = info?.name ?? config.modelId.split("/").pop() ?? config.modelId;
 	if (config.thinking && config.reasoningEffort) {
-		displayName = `${displayName} (${config.reasoningEffort})`;
+		return `${name} (${config.reasoningEffort})`;
 	}
-	if (config.providerId === "cline-pass") {
-		displayName = `ClinePass: ${displayName}`;
-	}
-	return displayName;
+	return name;
 }
 
 export function resolveModelMaxInputTokens(config: {
@@ -155,12 +138,13 @@ export function StatusBar(props: StatusBarProps) {
 	} = props;
 
 	const { width } = useTerminalDimensions();
-	const theme = useTheme();
-	const defaultFg = theme.defaultForeground;
+	const terminalBg = useTerminalBackground();
+	const terminalTheme = useTerminalTheme();
+	const defaultFg = getDefaultForeground(terminalBg);
 	const contextBarFilledFg = resolveContextBarFilledForeground(defaultFg);
-	const actAccent = theme.accents.act;
-	const planAccent = theme.accents.plan;
-	const successColor = theme.accents.success;
+	const actAccent = getModeAccent("act", terminalTheme);
+	const planAccent = getModeAccent("plan", terminalTheme);
+	const successColor = getSuccessColor(terminalTheme);
 	const hasMaxInputTokens =
 		typeof maxInputTokens === "number" &&
 		Number.isFinite(maxInputTokens) &&
@@ -168,6 +152,7 @@ export function StatusBar(props: StatusBarProps) {
 	const bar = hasMaxInputTokens
 		? createContextBar(totalTokens, maxInputTokens)
 		: undefined;
+	const showUsageCost = shouldShowCliUsageCost(props.providerId);
 
 	// Available content width after accounting for padding.
 	// Home view: parent box is capped at 60 wide, status bar adds paddingX=1 (-2).
@@ -184,7 +169,7 @@ export function StatusBar(props: StatusBarProps) {
 	const usageText = formatStatusBarUsageText({
 		totalTokens,
 		totalCost,
-		providerId: props.providerId,
+		showCost: showUsageCost,
 	});
 	const contextText = bar
 		? ` ${bar.filled}${bar.empty} ${usageText}`

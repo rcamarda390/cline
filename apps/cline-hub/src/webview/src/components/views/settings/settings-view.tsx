@@ -258,8 +258,8 @@ export function SettingsView({
 		? (providers.find((p) => p.id === selectedProviderId) ?? null)
 		: null;
 
-	const usesOAuth = (provider: Provider) =>
-		provider.capabilities?.includes("oauth") ?? false;
+	const isOAuthProvider = (id: string) =>
+		id === "cline" || id === "oca" || id === "openai-codex";
 
 	const runOAuthProviderLogin = async (id: string) => {
 		setOauthSigningProviderId(id);
@@ -386,7 +386,7 @@ export function SettingsView({
 					onBack={backToProviderList}
 					onLoadModels={() => void loadProviderModels(selectedProvider.id)}
 					onOAuthLogin={
-						usesOAuth(selectedProvider)
+						isOAuthProvider(selectedProvider.id)
 							? () => void runOAuthProviderLogin(selectedProvider.id)
 							: undefined
 					}

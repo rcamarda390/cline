@@ -128,7 +128,7 @@ describe("runtime host resolution", () => {
 		});
 
 		expect(host).toBeInstanceOf(HubRuntimeHost);
-		expect(prewarmDetachedHubServerMock).not.toHaveBeenCalled();
+		expect(prewarmDetachedHubServerMock).toHaveBeenCalledWith(process.cwd());
 		expect(resolveCompatibleLocalHubUrlMock).toHaveBeenCalledWith({
 			endpoint: undefined,
 			strategy: "prefer-hub",
@@ -158,11 +158,6 @@ describe("runtime host resolution", () => {
 			endpoint: undefined,
 			strategy: "prefer-hub",
 		});
-		expect(
-			resolveCompatibleLocalHubUrlMock.mock.invocationCallOrder[0],
-		).toBeLessThan(
-			prewarmDetachedHubServerMock.mock.invocationCallOrder[0] ?? Infinity,
-		);
 		expect(ensureCompatibleLocalHubUrlMock).not.toHaveBeenCalled();
 		expect(logger.log).toHaveBeenCalledWith(
 			"Falling back to local runtime host",
@@ -211,7 +206,7 @@ describe("runtime host resolution", () => {
 		});
 
 		expect(host).toBeInstanceOf(HubRuntimeHost);
-		expect(prewarmDetachedHubServerMock).not.toHaveBeenCalled();
+		expect(prewarmDetachedHubServerMock).toHaveBeenCalledWith(process.cwd());
 		expect(ensureCompatibleLocalHubUrlMock).toHaveBeenCalledWith({
 			strategy: "require-hub",
 		});

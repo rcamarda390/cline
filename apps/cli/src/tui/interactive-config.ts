@@ -1,6 +1,7 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import {
 	basename,
+	dirname,
 	extname,
 	isAbsolute,
 	join,
@@ -9,9 +10,7 @@ import {
 } from "node:path";
 import {
 	type BuiltinToolAvailabilityContext,
-	DEFAULT_MCP_CONNECT_TIMEOUT_MS,
 	discoverPluginModulePaths,
-	getPluginDisplayName,
 	hasMcpSettingsFile,
 	listHookConfigFiles,
 	listPluginToolsWithDiagnostics,
@@ -28,11 +27,6 @@ import {
 	type UserInstructionConfigService,
 	type WorkflowConfig,
 } from "@cline/core";
-import {
-	isMcpTimeoutConfigured,
-	resolveMcpTimeoutSeconds,
-} from "@cline/shared";
-import { readFileSyncStrippingUtf8Bom } from "@cline/shared/node";
 import { getToolCatalog } from "../runtime/tools";
 import {
 	type InteractiveSlashCommand,
@@ -179,14 +173,8 @@ function getMcpAuthLabel(registration: McpServerRegistration): string {
 	return "no auth";
 }
 
-export function getMcpDescription(registration: McpServerRegistration): string {
-	const timeoutSeconds = resolveMcpTimeoutSeconds(registration.timeoutSeconds);
-	const timeoutDescription =
-		registration.transport.type === "stdio" &&
-		!isMcpTimeoutConfigured(registration.timeoutSeconds)
-			? `request timeout ${timeoutSeconds}s, initialize timeout ${DEFAULT_MCP_CONNECT_TIMEOUT_MS / 1000}s`
-			: `timeout ${timeoutSeconds}s`;
-	return `${registration.transport.type}, ${getMcpAuthLabel(registration)}, ${timeoutDescription}`;
+function getMcpDescription(registration: McpServerRegistration): string {
+	return `${registration.transport.type}, ${getMcpAuthLabel(registration)}`;
 }
 
 function loadAgentConfigItems(workspaceRoot: string): InteractiveConfigItem[] {
@@ -207,7 +195,7 @@ function loadAgentConfigItems(workspaceRoot: string): InteractiveConfigItem[] {
 					continue;
 				}
 				const filePath = join(directory, entry.name);
-				const raw = readFileSyncStrippingUtf8Bom(filePath);
+				const raw = readFileSync(filePath, "utf8");
 				const frontmatterMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
 				const frontmatter = frontmatterMatch?.[1] ?? "";
 				const nameMatch = frontmatter.match(/^\s*name:\s*(.+?)\s*$/m);
@@ -242,6 +230,40 @@ function loadAgentConfigItems(workspaceRoot: string): InteractiveConfigItem[] {
 	}
 
 	return [...agentsById.values()];
+}
+
+function readPackageName(packageJsonPath: string): string | undefined {
+	try {
+		const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+			name?: unknown;
+		};
+		return typeof packageJson.name === "string" && packageJson.name.trim()
+			? packageJson.name.trim()
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function getPluginDisplayName(filePath: string, searchRoot: string): string {
+	let current = dirname(filePath);
+	const root = resolve(searchRoot);
+	while (isPathWithin(root, current)) {
+		const packageJsonPath = join(current, "package.json");
+		if (existsSync(packageJsonPath)) {
+			const packageName = readPackageName(packageJsonPath);
+			if (packageName) {
+				return packageName;
+			}
+			break;
+		}
+		const parent = resolve(current, "..");
+		if (parent === current) {
+			break;
+		}
+		current = parent;
+	}
+	return basename(filePath, extname(filePath));
 }
 
 function isPathWithin(parentPath: string, childPath: string): boolean {

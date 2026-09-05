@@ -61,20 +61,16 @@ function cronExtensionEnabled(
 function buildToolPolicies(
 	spec: CronSpecRecord,
 	mode: "act" | "plan" | "yolo",
-): NonNullable<ChatStartSessionRequest["toolPolicies"]> {
-	const policies: NonNullable<ChatStartSessionRequest["toolPolicies"]> =
-		spec.tools === undefined
-			? { "*": { autoApprove: true } }
-			: { "*": { enabled: false, autoApprove: true } };
-	for (const tool of spec.tools ?? []) {
+): ChatStartSessionRequest["toolPolicies"] | undefined {
+	if (spec.tools === undefined) {
+		return { "*": { autoApprove: true } };
+	}
+	const policies: NonNullable<ChatStartSessionRequest["toolPolicies"]> = {
+		"*": { enabled: false, autoApprove: true },
+	};
+	for (const tool of spec.tools) {
 		policies[tool] = { enabled: true, autoApprove: true };
 	}
-	// Scheduled runs are headless, so they cannot wait for a human response.
-	policies[DefaultToolNames.ASK] = {
-		...policies[DefaultToolNames.ASK],
-		enabled: false,
-		autoApprove: true,
-	};
 	if (mode === "yolo") {
 		policies[DefaultToolNames.SUBMIT_AND_EXIT] = {
 			enabled: true,
@@ -300,11 +296,9 @@ export class CronRunner {
 			executionDeadlineMs = startMs + spec.timeoutSeconds * 1000;
 		}
 
-		let phase = "preparing the session request";
 		try {
 			releaseLeaseHeartbeat = this.startClaimLeaseHeartbeat(claim);
 			const startRequest = await this.buildStartRequest(spec);
-			phase = "starting the agent session";
 			const startResp =
 				await this.options.runtimeHandlers.startSession(startRequest);
 			sessionId = startResp.sessionId.trim();
@@ -315,7 +309,6 @@ export class CronRunner {
 			});
 			this.store.attachSessionIdToRun(run.runId, sessionId);
 
-			phase = "running the agent turn";
 			const turnRequest: ChatRunTurnRequest = {
 				config: startRequest,
 				prompt: this.buildPrompt(spec, triggerEvent),
@@ -367,20 +360,12 @@ export class CronRunner {
 			}
 			const message = err instanceof Error ? err.message : String(err);
 			const endMs = Date.now();
-			const errorContext = isTimeout
-				? `The run exceeded its ${spec.timeoutSeconds}s timeout while ${phase} and was aborted:`
-				: `The run failed while ${phase}:`;
 			const reportPath = writeCronRunReport({
 				specs: this.options.specs,
 				workspaceRoot: this.options.workspaceRoot,
 				run: { ...run, sessionId, status: "failed" },
 				spec,
-				data: {
-					error: message,
-					errorContext,
-					durationMs: endMs - startMs,
-					triggerEvent,
-				},
+				data: { error: message, durationMs: endMs - startMs, triggerEvent },
 			});
 			this.store.completeRun(run.runId, {
 				status: "failed",
@@ -395,9 +380,6 @@ export class CronRunner {
 				run.runId,
 			);
 		} finally {
-			if (run.triggerKind === "one_off") {
-				this.store.updateSpecNextRunAt(spec.specId, undefined);
-			}
 			releaseLeaseHeartbeat?.();
 			if (sessionId) {
 				try {

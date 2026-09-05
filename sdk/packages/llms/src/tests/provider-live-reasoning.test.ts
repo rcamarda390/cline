@@ -54,13 +54,12 @@ interface LiveReasoningExpectations {
 	requireReasoningSignal: boolean;
 	requireReasoningChunk: boolean;
 	requireNoReasoningChunk: boolean;
-	requireNoReasoningSignal: boolean;
 }
 
 interface LiveRunMetrics {
 	usageSeen: boolean;
 	reasoningChunkCount: number;
-	reasoningTokenCountMax: number;
+	thoughtsTokenCountMax: number;
 }
 
 function parseExpectations(input: unknown): LiveReasoningExpectations {
@@ -73,7 +72,6 @@ function parseExpectations(input: unknown): LiveReasoningExpectations {
 		requireReasoningSignal: value.requireReasoningSignal === true,
 		requireReasoningChunk: value.requireReasoningChunk === true,
 		requireNoReasoningChunk: value.requireNoReasoningChunk === true,
-		requireNoReasoningSignal: value.requireNoReasoningSignal === true,
 	};
 }
 
@@ -92,21 +90,11 @@ function toTarget(
 			: 1;
 	const expectations = parseExpectations(entry?.expectations);
 	if (
-		(expectations.requireReasoningChunk ||
-			expectations.requireReasoningSignal) &&
-		(expectations.requireNoReasoningChunk ||
-			expectations.requireNoReasoningSignal)
+		expectations.requireReasoningChunk &&
+		expectations.requireNoReasoningChunk
 	) {
 		throw new Error(
-			`${label}: positive and negative reasoning expectations are mutually exclusive`,
-		);
-	}
-	if (
-		expectations.requireNoReasoningChunk &&
-		expectations.requireNoReasoningSignal
-	) {
-		throw new Error(
-			`${label}: requireNoReasoningSignal already includes requireNoReasoningChunk`,
+			`${label}: requireReasoningChunk and requireNoReasoningChunk are mutually exclusive`,
 		);
 	}
 
@@ -200,10 +188,10 @@ function assertTargetExpectations(
 	if (
 		expectations.requireReasoningSignal &&
 		metrics.reasoningChunkCount <= 0 &&
-		metrics.reasoningTokenCountMax <= 0
+		metrics.thoughtsTokenCountMax <= 0
 	) {
 		errors.push(
-			"expected reasoning signal (reasoning chunk or reasoning tokens)",
+			"expected reasoning signal (reasoning chunk or thoughts tokens)",
 		);
 	}
 	if (expectations.requireReasoningChunk && metrics.reasoningChunkCount <= 0) {
@@ -212,14 +200,6 @@ function assertTargetExpectations(
 	if (expectations.requireNoReasoningChunk && metrics.reasoningChunkCount > 0) {
 		errors.push(
 			`expected no reasoning chunks, got ${metrics.reasoningChunkCount}`,
-		);
-	}
-	if (
-		expectations.requireNoReasoningSignal &&
-		(metrics.reasoningChunkCount > 0 || metrics.reasoningTokenCountMax > 0)
-	) {
-		errors.push(
-			`expected no reasoning signal, got ${metrics.reasoningChunkCount} reasoning chunks and ${metrics.reasoningTokenCountMax} reasoning tokens`,
 		);
 	}
 	if (errors.length > 0) {
@@ -232,7 +212,7 @@ async function runReasoningPrompt(target: ProviderTarget): Promise<void> {
 	const metrics: LiveRunMetrics = {
 		usageSeen: false,
 		reasoningChunkCount: 0,
-		reasoningTokenCountMax: 0,
+		thoughtsTokenCountMax: 0,
 	};
 
 	for (let run = 0; run < target.runs; run++) {
@@ -246,8 +226,8 @@ async function runReasoningPrompt(target: ProviderTarget): Promise<void> {
 			}
 			if (chunk.type === "usage") {
 				metrics.usageSeen = true;
-				metrics.reasoningTokenCountMax = Math.max(
-					metrics.reasoningTokenCountMax,
+				metrics.thoughtsTokenCountMax = Math.max(
+					metrics.thoughtsTokenCountMax,
 					chunk.thoughtsTokenCount ?? 0,
 				);
 				continue;

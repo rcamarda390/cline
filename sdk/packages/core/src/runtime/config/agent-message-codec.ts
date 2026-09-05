@@ -5,7 +5,6 @@ import type {
 	ContentBlock,
 	FileContent,
 	ImageContent,
-	MediaContent,
 	Message,
 	MessageWithMetadata,
 	RedactedThinkingContent,
@@ -15,7 +14,6 @@ import type {
 	ToolUseContent,
 } from "@cline/shared";
 import { EMPTY_CONTENT_TEXT } from "@cline/shared";
-import { toPersistedToolResultContent } from "../../session/persisted-tool-result-content";
 
 export function messageToAgentMessages(
 	message: MessageWithMetadata,
@@ -25,26 +23,6 @@ export function messageToAgentMessages(
 	const baseId = message.id ?? generateMessageId();
 	let nonToolSegmentCount = 0;
 	let nonToolBlocks: Exclude<ContentBlock, ToolResultContent>[] = [];
-	const storedUserRunSpan =
-		message.role === "user" &&
-		typeof message.metadata?.userRunSpan === "number" &&
-		Number.isInteger(message.metadata.userRunSpan) &&
-		message.metadata.userRunSpan >= 0
-			? message.metadata.userRunSpan
-			: undefined;
-	let userRunSpanAssigned = false;
-	const segmentMetadata = (
-		representsUserContent: boolean,
-	): MessageWithMetadata["metadata"] => {
-		if (storedUserRunSpan === undefined) {
-			return message.metadata;
-		}
-		if (representsUserContent && !userRunSpanAssigned) {
-			userRunSpanAssigned = true;
-			return message.metadata;
-		}
-		return { ...message.metadata, userRunSpan: 0 };
-	};
 
 	const flushNonToolBlocks = () => {
 		if (nonToolBlocks.length === 0) {
@@ -60,7 +38,7 @@ export function messageToAgentMessages(
 			role: message.role,
 			content: nonToolBlocks.map(contentBlockToAgentPart),
 			createdAt: message.ts ?? Date.now(),
-			metadata: segmentMetadata(true),
+			metadata: message.metadata,
 			modelInfo: message.modelInfo,
 			metrics: metricsToAgentMetrics(message.metrics),
 		});
@@ -80,31 +58,18 @@ export function messageToAgentMessages(
 		return out;
 	}
 
-	// A message that is already a single tool result needs no id
-	// disambiguation — the suffix only distinguishes the parts of a split
-	// message. Keeping the id verbatim makes restore/persist round-trips
-	// byte-stable; ids feed the compaction source-prefix hash, and a
-	// re-suffixed id silently invalidates saved compaction state (and grows
-	// without bound across restores).
-	const isPureToolResult =
-		blocks.length === 1 && blocks[0].type === "tool_result";
-
 	for (const block of blocks) {
 		if (block.type !== "tool_result") {
 			nonToolBlocks.push(block);
 			continue;
 		}
 		flushNonToolBlocks();
-		const toolIdSuffix = `_tool_${block.tool_use_id}`;
 		out.push({
-			id:
-				isPureToolResult || baseId.endsWith(toolIdSuffix)
-					? baseId
-					: `${baseId}${toolIdSuffix}`,
+			id: `${baseId}_tool_${block.tool_use_id}`,
 			role: "tool",
 			content: [toolResultContentToAgentPart(block)],
 			createdAt: message.ts ?? Date.now(),
-			metadata: segmentMetadata(false),
+			metadata: message.metadata,
 		});
 	}
 	flushNonToolBlocks();
@@ -199,8 +164,6 @@ function contentBlockToAgentPart(block: ContentBlock): AgentMessagePart {
 			};
 		case "image":
 			return { type: "image", image: block.data, mediaType: block.mediaType };
-		case "media":
-			return { type: "media", media: block.media };
 		case "file":
 			return { type: "file", path: block.path, content: block.content };
 		case "tool_use":
@@ -271,11 +234,6 @@ function agentPartToContentBlock(
 				path: part.path,
 				content: part.content,
 			} satisfies FileContent;
-		case "media":
-			return {
-				type: "media",
-				media: part.media,
-			} satisfies MediaContent;
 		case "tool-call": {
 			const metadata = part.metadata as
 				| {
@@ -292,11 +250,18 @@ function agentPartToContentBlock(
 			} satisfies ToolUseContent;
 		}
 		case "tool-result": {
+			const output = part.output;
+			const content =
+				typeof output === "string"
+					? output
+					: Array.isArray(output)
+						? (output as ToolResultContent["content"])
+						: JSON.stringify(output);
 			return {
 				type: "tool_result",
 				tool_use_id: part.toolCallId,
 				name: part.toolName,
-				content: toPersistedToolResultContent(part.output),
+				content,
 				is_error: part.isError,
 			} satisfies ToolResultContent;
 		}

@@ -1,5 +1,4 @@
 import type { ChatRunTurnRequest, HubSessionClient } from "@cline/core";
-import { type GeneratedMedia, isGeneratedMedia } from "@cline/shared";
 import type { CliLoggerAdapter } from "../logging/adapter";
 
 export type PendingConnectorApproval = {
@@ -142,7 +141,6 @@ export function createConnectorRuntimeTurnStream(input: {
 	conversationId: string;
 	onToolStatus?: (message: string) => Promise<void>;
 	onApprovalRequested?: (approval: PendingConnectorApproval) => Promise<void>;
-	onMedia?: (media: GeneratedMedia) => Promise<void> | void;
 	onCompleted?: (result: {
 		text: string;
 		finishReason?: string;
@@ -171,17 +169,7 @@ export function createConnectorRuntimeTurnStream(input: {
 					return;
 				}
 				lastStatusMessage = message;
-				try {
-					await input.onToolStatus?.(message);
-				} catch (error) {
-					input.logger.core.log("Connector tool status delivery failed", {
-						severity: "warn",
-						transport: input.transport,
-						conversationId: input.conversationId,
-						sessionId: input.sessionId,
-						error,
-					});
-				}
+				await input.onToolStatus?.(message);
 			};
 
 			const stopStreaming = input.client.streamEvents(
@@ -191,13 +179,6 @@ export function createConnectorRuntimeTurnStream(input: {
 				},
 				{
 					onEvent: (event) => {
-						if (event.eventType === "runtime.chat.media") {
-							const media = event.payload.media;
-							if (isGeneratedMedia(media)) {
-								void input.onMedia?.(media);
-							}
-							return;
-						}
 						if (event.eventType === "approval.requested") {
 							const approvalId =
 								typeof event.payload.approvalId === "string"

@@ -1,11 +1,5 @@
-// Side-effect import: in the standalone (JetBrains/CLI) build (IS_STANDALONE==="true"),
-// loading @/shared/net installs the undici EnvHttpProxyAgent as the global dispatcher
-// so all HTTP/inference honors proxy/CA configuration. It must run before any network
-// I/O, so KEEP IT FIRST: do not add an import above this line that performs network
-// work at module-eval time, or proxy support silently breaks on JetBrains/CLI.
-import "@/shared/net"
 import { ExternalCommentReviewController } from "@hosts/external/ExternalCommentReviewController"
-import { ExternalEditPreview } from "@hosts/external/ExternalEditPreview"
+import { ExternalDiffViewProvider } from "@hosts/external/ExternalDiffviewProvider"
 import { ExternalWebviewProvider } from "@hosts/external/ExternalWebviewProvider"
 import { ExternalHostBridgeClientManager } from "@hosts/external/host-bridge-client-manager"
 import { retryOperation } from "@utils/retry"
@@ -15,27 +9,20 @@ import { SqliteLockManager } from "@/core/locks/SqliteLockManager"
 import { WebviewProvider } from "@/core/webview"
 import { AuthHandler } from "@/hosts/external/AuthHandler"
 import { HostProvider } from "@/hosts/host-provider"
+import { DiffViewProvider } from "@/integrations/editor/DiffViewProvider"
+import { StandaloneTerminalManager } from "@/integrations/terminal"
 import { Logger } from "@/shared/services/Logger"
 import { createStorageContext } from "@/shared/storage/storage-context"
-import { type CoreConnection, connectCoreToHostBridge } from "./core-connection"
 import { HOSTBRIDGE_PORT, waitForHostBridgeReady } from "./hostbridge-client"
+import { setLockManager } from "./lock-manager"
 import { startMemoryMonitoring, stopMemoryMonitoring } from "./memory-monitor"
 import { PROTOBUS_PORT, startProtobusService } from "./protobus-service"
 import { log } from "./utils"
 import { initializeContext } from "./vscode-context"
 
 let globalLockManager: SqliteLockManager | undefined
-let globalCoreConnection: CoreConnection | undefined
-let shutdownPromise: Promise<void> | undefined
 
 async function main() {
-	// Remove the per-spawn secret before initialization can launch provider or
-	// MCP child processes. Descendants must never inherit the credential that
-	// authenticates this core connection.
-	const coreConnectionToken = process.env.CLINE_CORE_CONNECTION_TOKEN
-	const coreInstanceId = process.env.CLINE_CORE_INSTANCE_ID
-	delete process.env.CLINE_CORE_CONNECTION_TOKEN
-
 	log("\n\n\nStarting cline-core service...\n\n\n")
 	log(`Environment variables: ${JSON.stringify(process.env)}`)
 
@@ -87,49 +74,29 @@ async function main() {
 		// Enable the localhost HTTP server that handles auth redirects.
 		AuthHandler.getInstance().setEnabled(true)
 
-		let instanceOwner: string
-		if (coreConnectionToken) {
-			if (!coreInstanceId) {
-				throw new Error("CLINE_CORE_INSTANCE_ID is required with CLINE_CORE_CONNECTION_TOKEN")
-			}
-			instanceOwner = coreInstanceId
-		} else {
-			// The standalone CLI test harness still connects to the listener selected
-			// by --port. IntelliJ supplies a token and uses the Host Bridge instead.
-			instanceOwner = await startProtobusService(webviewProvider.controller)
-		}
+		// Now this will throw instead of exit if binding fails
+		const protobusAddress = await startProtobusService(webviewProvider.controller)
 
 		// Initialize SQLite lock manager for instance registration
 		const dbPath = `${DATA_DIR}/locks.db`
 		globalLockManager = new SqliteLockManager({
 			dbPath,
-			instanceOwner,
+			instanceAddress: protobusAddress,
 		})
+
+		// Make lock manager available to other modules
+		setLockManager(globalLockManager)
 
 		await globalLockManager.registerInstance({
 			hostAddress,
 		})
-		log(`Registered instance in SQLite locks: ${instanceOwner}`)
+		log(`Registered instance in SQLite locks: ${protobusAddress}`)
 
 		// Clean up any orphaned folder locks from dead instances
 		globalLockManager.cleanupOrphanedFolderLocks()
 
 		// Mark instance healthy after services are up
 		globalLockManager.touchInstance()
-
-		if (coreConnectionToken) {
-			globalCoreConnection = await connectCoreToHostBridge(
-				webviewProvider.controller,
-				{
-					token: coreConnectionToken,
-					instanceId: coreInstanceId!,
-				},
-				(error) => {
-					log(`Active core connection failed: ${error.message}`)
-					void shutdownGracefully(globalLockManager, 1)
-				},
-			)
-		}
 
 		log("All services started successfully")
 
@@ -138,7 +105,8 @@ async function main() {
 	} catch (err) {
 		log(`FATAL ERROR during startup: ${err}`)
 		log(`Cleaning up and shutting down...`)
-		await shutdownGracefully(globalLockManager, 1)
+		await shutdownGracefully(globalLockManager)
+		process.exit(1)
 	}
 }
 
@@ -146,8 +114,11 @@ function setupHostProvider(extensionContext: any, extensionDir: string, dataDir:
 	const createWebview = (): WebviewProvider => {
 		return new ExternalWebviewProvider(extensionContext)
 	}
-	const createEditPreview = () => new ExternalEditPreview()
+	const createDiffView = (): DiffViewProvider => {
+		return new ExternalDiffViewProvider()
+	}
 	const createCommentReview = () => new ExternalCommentReviewController()
+	const createTerminalManager = () => new StandaloneTerminalManager()
 	const getCallbackUrl = (path: string, preferredPort?: number): Promise<string> => {
 		return AuthHandler.getInstance().getCallbackUrl(path, preferredPort)
 	}
@@ -156,8 +127,9 @@ function setupHostProvider(extensionContext: any, extensionDir: string, dataDir:
 
 	HostProvider.initialize(
 		createWebview,
-		createEditPreview,
+		createDiffView,
 		createCommentReview,
+		createTerminalManager,
 		new ExternalHostBridgeClientManager(),
 		log,
 		getCallbackUrl,
@@ -260,16 +232,8 @@ async function requestHostBridgeShutdown(): Promise<void> {
  * 3. Tearing down services
  * 4. Exiting the process
  */
-function shutdownGracefully(lockManager?: SqliteLockManager, exitCode = 0): Promise<void> {
-	shutdownPromise ??= performShutdown(lockManager, exitCode)
-	return shutdownPromise
-}
-
-async function performShutdown(lockManager?: SqliteLockManager, exitCode = 0) {
+async function shutdownGracefully(lockManager?: SqliteLockManager) {
 	try {
-		globalCoreConnection?.close()
-		globalCoreConnection = undefined
-
 		// Step 1: Tell the paired host bridge to shut down
 		log("Requesting host bridge shutdown...")
 		if (HostProvider.isInitialized()) {
@@ -297,7 +261,7 @@ async function performShutdown(lockManager?: SqliteLockManager, exitCode = 0) {
 		// Step 3: Tear down services
 		log("Tearing down services...")
 		try {
-			await tearDown()
+			tearDown()
 			log("Services torn down successfully")
 		} catch (error) {
 			log(`Warning: Failed to tear down services: ${error}`)
@@ -308,7 +272,7 @@ async function performShutdown(lockManager?: SqliteLockManager, exitCode = 0) {
 		log(`Error during graceful shutdown: ${error}`)
 	} finally {
 		// Step 4: Exit the process
-		process.exit(exitCode)
+		process.exit(0)
 	}
 }
 

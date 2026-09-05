@@ -1,18 +1,11 @@
-import {
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	getClineCliMigrationNotice,
 	markClineCliMigrationNoticeShown,
 	resolveCliNoticeStatePath,
-	shouldSuppressClineCliMigrationNoticeForActiveProvider,
 } from "./notice";
 
 const tempDirs: string[] = [];
@@ -33,25 +26,8 @@ describe("migration notice", () => {
 	it("returns the notice for a fresh data dir", () => {
 		const dataDir = createTempDataDir();
 
-		expect(getClineCliMigrationNotice(dataDir)?.title).toBe("Try ClinePass");
-	});
-
-	it("shows when only the old Kanban notice was marked as shown", () => {
-		const dataDir = createTempDataDir();
-		const noticePath = resolveCliNoticeStatePath(dataDir);
-		mkdirSync(dirname(noticePath), { recursive: true, mode: 0o700 });
-		writeFileSync(
-			noticePath,
-			`${JSON.stringify(
-				{ shown: { "cline-cli-tui-default": true } },
-				null,
-				2,
-			)}\n`,
-			"utf8",
-		);
-
-		expect(getClineCliMigrationNotice(dataDir)?.id).toBe(
-			"cline-cli-cline-pass-intro",
+		expect(getClineCliMigrationNotice(dataDir)?.title).toBe(
+			"Welcome to the new Cline CLI",
 		);
 	});
 
@@ -70,7 +46,7 @@ describe("migration notice", () => {
 
 		expect(
 			getClineCliMigrationNotice(dataDir, {
-				CLINE_FORCE_CLINE_PASS_NOTICE: "1",
+				CLINE_FORCE_MIGRATION_NOTICE: "1",
 			}),
 		).toBeDefined();
 	});
@@ -80,47 +56,9 @@ describe("migration notice", () => {
 
 		expect(
 			getClineCliMigrationNotice(dataDir, {
-				CLINE_DISABLE_CLINE_PASS_NOTICE: "1",
+				CLINE_DISABLE_MIGRATION_NOTICE: "1",
 			}),
 		).toBeUndefined();
-	});
-
-	it("does not show when ClinePass is already the active provider", () => {
-		const dataDir = createTempDataDir();
-
-		expect(
-			getClineCliMigrationNotice(
-				dataDir,
-				{},
-				{ activeProviderId: "cline-pass" },
-			),
-		).toBeUndefined();
-	});
-
-	it("suppresses the active ClinePass provider even when the provider id has surrounding whitespace", () => {
-		expect(
-			shouldSuppressClineCliMigrationNoticeForActiveProvider(" cline-pass "),
-		).toBe(true);
-	});
-
-	it("does not suppress the active ClinePass provider when forced", () => {
-		expect(
-			shouldSuppressClineCliMigrationNoticeForActiveProvider("cline-pass", {
-				CLINE_FORCE_CLINE_PASS_NOTICE: "1",
-			}),
-		).toBe(false);
-	});
-
-	it("shows for the active ClinePass provider when forced", () => {
-		const dataDir = createTempDataDir();
-
-		expect(
-			getClineCliMigrationNotice(
-				dataDir,
-				{ CLINE_FORCE_CLINE_PASS_NOTICE: "1" },
-				{ activeProviderId: "cline-pass" },
-			),
-		).toBeDefined();
 	});
 
 	it("shows when forced even if disabled through the environment", () => {
@@ -128,8 +66,8 @@ describe("migration notice", () => {
 
 		expect(
 			getClineCliMigrationNotice(dataDir, {
-				CLINE_DISABLE_CLINE_PASS_NOTICE: "1",
-				CLINE_FORCE_CLINE_PASS_NOTICE: "1",
+				CLINE_DISABLE_MIGRATION_NOTICE: "1",
+				CLINE_FORCE_MIGRATION_NOTICE: "1",
 			}),
 		).toBeDefined();
 	});
@@ -140,7 +78,7 @@ describe("migration notice", () => {
 		markClineCliMigrationNoticeShown(dataDir);
 
 		const rawState = readFileSync(resolveCliNoticeStatePath(dataDir), "utf8");
-		expect(rawState).toContain("cline-cli-cline-pass-intro");
+		expect(rawState).toContain("cline-cli-tui-default");
 		expect(getClineCliMigrationNotice(dataDir)).toBeUndefined();
 	});
 });

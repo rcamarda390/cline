@@ -4,41 +4,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createScheduleCommand } from "./schedule";
 
-const mockHubClientCommand = vi.hoisted(() => vi.fn());
-const mockNodeHubClientCtor = vi.hoisted(() => vi.fn());
+const mockSendHubCommand = vi.hoisted(() => vi.fn());
 const mockEnsureCliHubServer = vi.hoisted(() => vi.fn());
-const mockProviderSettings = vi.hoisted(() => ({
-	lastUsed: undefined as { provider?: string; model?: string } | undefined,
-	providers: {} as Record<string, { provider?: string; model?: string }>,
+
+vi.mock("@cline/core", () => ({
+	sendHubCommand: mockSendHubCommand,
 }));
-
-vi.mock("@cline/core", async () => {
-	const actual =
-		await vi.importActual<typeof import("@cline/core")>("@cline/core");
-	return {
-		...actual,
-		NodeHubClient: class {
-			command = mockHubClientCommand;
-
-			constructor(options: Record<string, unknown>) {
-				mockNodeHubClientCtor(options);
-			}
-
-			async connect(): Promise<void> {}
-
-			close(): void {}
-		},
-		ProviderSettingsManager: class {
-			getLastUsedProviderSettings() {
-				return mockProviderSettings.lastUsed;
-			}
-
-			getProviderSettings(providerId: string) {
-				return mockProviderSettings.providers[providerId];
-			}
-		},
-	};
-});
 
 vi.mock("../utils/hub-runtime", () => ({
 	ensureCliHubServer: mockEnsureCliHubServer,
@@ -76,8 +47,6 @@ async function runScheduleCommand(
 describe("runScheduleCommand list output", () => {
 	afterEach(() => {
 		vi.clearAllMocks();
-		mockProviderSettings.lastUsed = undefined;
-		mockProviderSettings.providers = {};
 	});
 
 	it('prints "No schedules found." for empty non-json list output', async () => {
@@ -85,7 +54,7 @@ describe("runScheduleCommand list output", () => {
 			url: "ws://127.0.0.1:25463/hub",
 			authToken: "test-token",
 		});
-		mockHubClientCommand.mockResolvedValue({
+		mockSendHubCommand.mockResolvedValue({
 			ok: true,
 			payload: { schedules: [] },
 		});
@@ -107,21 +76,18 @@ describe("runScheduleCommand list output", () => {
 		expect(code).toBe(0);
 		expect(errors).toEqual([]);
 		expect(output).toEqual(["No schedules found."]);
-		// Schedule commands are workspace-scoped: the hub client must register
-		// with a workspace context (and the hub auth token) before commanding.
-		expect(mockNodeHubClientCtor).toHaveBeenCalledWith(
-			expect.objectContaining({
-				url: "ws://127.0.0.1:25463/hub",
-				workspaceRoot: process.cwd(),
-				cwd: process.cwd(),
-				authToken: "test-token",
-			}),
+		expect(mockSendHubCommand).toHaveBeenCalledWith(
+			{ host: "127.0.0.1", port: 25463, pathname: "/hub" },
+			{
+				clientId: "cline-schedule",
+				command: "schedule.list",
+				payload: {
+					limit: 100,
+					enabled: undefined,
+					tags: undefined,
+				},
+			},
 		);
-		expect(mockHubClientCommand).toHaveBeenCalledWith("schedule.list", {
-			limit: 100,
-			enabled: undefined,
-			tags: undefined,
-		});
 	});
 
 	it("keeps JSON list output unchanged when --json is provided", async () => {
@@ -129,7 +95,7 @@ describe("runScheduleCommand list output", () => {
 			url: "ws://127.0.0.1:25463/hub",
 			authToken: "test-token",
 		});
-		mockHubClientCommand.mockResolvedValue({
+		mockSendHubCommand.mockResolvedValue({
 			ok: true,
 			payload: { schedules: [] },
 		});
@@ -151,163 +117,13 @@ describe("runScheduleCommand list output", () => {
 		expect(code).toBe(0);
 		expect(errors).toEqual([]);
 		expect(output).toEqual(["[]"]);
-		expect(mockHubClientCommand).toHaveBeenCalled();
+		expect(mockSendHubCommand).toHaveBeenCalled();
 	});
 });
 
-describe("runScheduleCommand create", () => {
+describe("runScheduleCommand create delivery metadata", () => {
 	afterEach(() => {
 		vi.clearAllMocks();
-		mockProviderSettings.lastUsed = undefined;
-		mockProviderSettings.providers = {};
-	});
-
-	it("uses the last used provider and model when both flags are omitted", async () => {
-		mockProviderSettings.lastUsed = {
-			provider: "anthropic",
-			model: "claude-sonnet-4-6",
-		};
-		mockEnsureCliHubServer.mockResolvedValue({
-			url: "ws://127.0.0.1:25463/hub",
-			authToken: "test-token",
-		});
-		mockHubClientCommand.mockResolvedValue({
-			ok: true,
-			payload: { schedule: { scheduleId: "sched_123" } },
-		});
-
-		const output: string[] = [];
-		const errors: string[] = [];
-		const code = await runScheduleCommand(
-			[
-				"create",
-				"Health check",
-				"--cron",
-				"0 */6 * * *",
-				"--prompt",
-				"Run tests",
-				"--workspace",
-				"/tmp/workspace",
-				"--address",
-				"127.0.0.1:25463",
-			],
-			{
-				writeln: (text?: string) => {
-					output.push(text ?? "");
-				},
-				writeErr: (text: string) => {
-					errors.push(text);
-				},
-			},
-		);
-
-		expect(code).toBe(0);
-		expect(errors).toEqual([]);
-		expect(mockNodeHubClientCtor).toHaveBeenCalledWith(
-			expect.objectContaining({
-				url: "ws://127.0.0.1:25463/hub",
-				workspaceRoot: "/tmp/workspace",
-				cwd: "/tmp/workspace",
-				authToken: "test-token",
-			}),
-		);
-		expect(mockHubClientCommand).toHaveBeenCalledWith(
-			"schedule.create",
-			expect.objectContaining({
-				provider: "anthropic",
-				model: "claude-sonnet-4-6",
-			}),
-		);
-	});
-
-	it("uses an explicit provider with that provider's configured model", async () => {
-		mockProviderSettings.lastUsed = {
-			provider: "cline",
-			model: "openai/gpt-5.3-codex",
-		};
-		mockProviderSettings.providers.anthropic = {
-			provider: "anthropic",
-			model: "claude-sonnet-4-6",
-		};
-		mockEnsureCliHubServer.mockResolvedValue({
-			url: "ws://127.0.0.1:25463/hub",
-			authToken: "test-token",
-		});
-		mockHubClientCommand.mockResolvedValue({
-			ok: true,
-			payload: { schedule: { scheduleId: "sched_123" } },
-		});
-
-		const errors: string[] = [];
-		const code = await runScheduleCommand(
-			[
-				"create",
-				"Health check",
-				"--cron",
-				"0 */6 * * *",
-				"--prompt",
-				"Run tests",
-				"--workspace",
-				"/tmp/workspace",
-				"--provider",
-				"anthropic",
-				"--address",
-				"127.0.0.1:25463",
-			],
-			{
-				writeln: () => {},
-				writeErr: (text: string) => {
-					errors.push(text);
-				},
-			},
-		);
-
-		expect(code).toBe(0);
-		expect(errors).toEqual([]);
-		expect(mockHubClientCommand).toHaveBeenCalledWith(
-			"schedule.create",
-			expect.objectContaining({
-				provider: "anthropic",
-				model: "claude-sonnet-4-6",
-			}),
-		);
-	});
-
-	it("fails when an explicit provider has no configured model and no model flag", async () => {
-		mockEnsureCliHubServer.mockResolvedValue({
-			url: "ws://127.0.0.1:25463/hub",
-			authToken: "test-token",
-		});
-
-		const errors: string[] = [];
-		const code = await runScheduleCommand(
-			[
-				"create",
-				"Health check",
-				"--cron",
-				"0 */6 * * *",
-				"--prompt",
-				"Run tests",
-				"--workspace",
-				"/tmp/workspace",
-				"--provider",
-				"anthropic",
-				"--address",
-				"127.0.0.1:25463",
-			],
-			{
-				writeln: () => {},
-				writeErr: (text: string) => {
-					errors.push(text);
-				},
-			},
-		);
-
-		expect(code).toBe(1);
-		expect(errors).toEqual([
-			'No model is configured for provider "anthropic". Pass --model or save a model for that provider before creating the schedule.',
-		]);
-		expect(mockHubClientCommand).not.toHaveBeenCalled();
 	});
 
 	it("maps --delivery-bot to delivery.userName", async () => {
@@ -315,7 +131,7 @@ describe("runScheduleCommand create", () => {
 			url: "ws://127.0.0.1:25463/hub",
 			authToken: "test-token",
 		});
-		mockHubClientCommand.mockResolvedValue({
+		mockSendHubCommand.mockResolvedValue({
 			ok: true,
 			payload: { schedule: { scheduleId: "sched_delivery" } },
 		});
@@ -354,17 +170,21 @@ describe("runScheduleCommand create", () => {
 		expect(code).toBe(0);
 		expect(errors).toEqual([]);
 		expect(output).toEqual(['{\n  "scheduleId": "sched_delivery"\n}']);
-		expect(mockHubClientCommand).toHaveBeenCalledWith(
-			"schedule.create",
-			expect.objectContaining({
-				metadata: {
-					delivery: {
-						adapter: "telegram",
-						threadId: "telegram:123456789",
-						userName: "my_bot",
+		expect(mockSendHubCommand).toHaveBeenCalledWith(
+			{ host: "127.0.0.1", port: 25463, pathname: "/hub" },
+			{
+				clientId: "cline-schedule",
+				command: "schedule.create",
+				payload: expect.objectContaining({
+					metadata: {
+						delivery: {
+							adapter: "telegram",
+							threadId: "telegram:123456789",
+							userName: "my_bot",
+						},
 					},
-				},
-			}),
+				}),
+			},
 		);
 	});
 });
@@ -372,8 +192,6 @@ describe("runScheduleCommand create", () => {
 describe("runScheduleCommand import", () => {
 	afterEach(() => {
 		vi.clearAllMocks();
-		mockProviderSettings.lastUsed = undefined;
-		mockProviderSettings.providers = {};
 	});
 
 	it("preserves exported modelSelection providerId/modelId values", async () => {
@@ -381,7 +199,7 @@ describe("runScheduleCommand import", () => {
 			url: "ws://127.0.0.1:25463/hub",
 			authToken: "test-token",
 		});
-		mockHubClientCommand.mockResolvedValue({
+		mockSendHubCommand.mockResolvedValue({
 			ok: true,
 			payload: { schedule: { scheduleId: "sched_123" } },
 		});
@@ -422,12 +240,16 @@ describe("runScheduleCommand import", () => {
 		expect(code).toBe(0);
 		expect(errors).toEqual([]);
 		expect(output).toEqual(['{\n  "scheduleId": "sched_123"\n}']);
-		expect(mockHubClientCommand).toHaveBeenCalledWith(
-			"schedule.create",
-			expect.objectContaining({
-				provider: "anthropic",
-				model: "claude-sonnet-4-6",
-			}),
+		expect(mockSendHubCommand).toHaveBeenCalledWith(
+			{ host: "127.0.0.1", port: 25463, pathname: "/hub" },
+			{
+				clientId: "cline-schedule",
+				command: "schedule.create",
+				payload: expect.objectContaining({
+					provider: "anthropic",
+					model: "claude-sonnet-4-6",
+				}),
+			},
 		);
 	});
 });
@@ -435,8 +257,6 @@ describe("runScheduleCommand import", () => {
 describe("runScheduleCommand export", () => {
 	afterEach(() => {
 		vi.clearAllMocks();
-		mockProviderSettings.lastUsed = undefined;
-		mockProviderSettings.providers = {};
 	});
 
 	it("writes JSON content to the --to file path", async () => {
@@ -451,7 +271,7 @@ describe("runScheduleCommand export", () => {
 			prompt: "review status",
 			workspaceRoot: "/tmp/workspace",
 		};
-		mockHubClientCommand.mockResolvedValue({
+		mockSendHubCommand.mockResolvedValue({
 			ok: true,
 			payload: { schedule: scheduleRecord },
 		});
@@ -491,9 +311,14 @@ describe("runScheduleCommand export", () => {
 
 			const written = await readFile(targetPath, "utf8");
 			expect(written).toBe(JSON.stringify(scheduleRecord, null, 2));
-			expect(mockHubClientCommand).toHaveBeenCalledWith("schedule.get", {
-				scheduleId: "sched_abc",
-			});
+			expect(mockSendHubCommand).toHaveBeenCalledWith(
+				{ host: "127.0.0.1", port: 25463, pathname: "/hub" },
+				{
+					clientId: "cline-schedule",
+					command: "schedule.get",
+					payload: { scheduleId: "sched_abc" },
+				},
+			);
 		} finally {
 			await rm(targetPath, { force: true });
 		}
@@ -509,7 +334,7 @@ describe("runScheduleCommand export", () => {
 			name: "Weekly Sync",
 			cronPattern: "0 9 * * 1",
 		};
-		mockHubClientCommand.mockResolvedValue({
+		mockSendHubCommand.mockResolvedValue({
 			ok: true,
 			payload: { schedule: scheduleRecord },
 		});

@@ -20,19 +20,13 @@ export type ClientName =
 	| (string & {});
 
 /**
- * Identity of the calling client and host surface.
+ * Identity of the calling client (surface + version).
  */
 export interface ClientContext {
-	/** Client type emitted to Cline request headers, e.g. "VSCode Extension", "cline-cli", "cline-sdk" */
+	/** e.g. "cline-vscode", "cline-cli", "cline-sdk" */
 	name: ClientName;
-	/** Cline client/extension semver string, e.g. "3.12.0" */
+	/** Semver string, e.g. "3.12.0" */
 	version?: string;
-	/** Host platform display name, e.g. "Visual Studio Code", "Cursor", "cli" */
-	platform?: string;
-	/** Host platform version, e.g. vscode.version or the CLI version */
-	platformVersion?: string;
-	/** Whether the host workspace currently has multiple roots. */
-	isMultiRoot?: boolean;
 }
 
 /**

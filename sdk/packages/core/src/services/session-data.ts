@@ -2,9 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type * as LlmsProviders from "@cline/llms";
 import type { AgentConfig, AgentEvent, AgentResult } from "@cline/shared";
-import { normalizeUserInput, stripModeNotices } from "@cline/shared";
+import { normalizeUserInput } from "@cline/shared";
 import { nanoid } from "nanoid";
-import { readSessionHistoryOriginMetadata } from "../session/history-origin";
 import {
 	parseSubSessionId,
 	parseTeamTaskSubSessionId,
@@ -232,11 +231,7 @@ export function normalizeTitle(title?: string | null): string | undefined {
 export function deriveTitleFromPrompt(
 	prompt?: string | null,
 ): string | undefined {
-	// Titles are display-only, so runtime-generated notice elements are
-	// stripped here rather than inside normalizeUserInput -- that function also
-	// sanitizes model-bound prompts (prepareTurnInput), where the notice must
-	// survive to reach the model.
-	const normalized = stripModeNotices(normalizeUserInput(prompt ?? "")).trim();
+	const normalized = normalizeUserInput(prompt ?? "").trim();
 	if (!normalized) return undefined;
 	return normalizeTitle(normalized.split("\n")[0]?.trim());
 }
@@ -275,52 +270,30 @@ export type MessagesFileContext = {
 	agent: "lead" | "subagent" | "teammate";
 	sessionId: string;
 	taskType?: string;
-	origin: {
-		source: string;
-		mode: string;
-		sessionId: string;
-		parentThreadId?: string;
-		subagent?: string;
-		version?: string;
-		trigger?: string;
-	};
 };
 
 export function resolveMessagesFileContext(
-	row: SessionRow,
+	sessionId: string,
 ): MessagesFileContext {
-	const historyOrigin = readSessionHistoryOriginMetadata(row.metadata);
-	const origin = {
-		source: row.source,
-		mode: historyOrigin?.mode ?? "user",
-		sessionId: row.sessionId,
-		...(row.parentSessionId ? { parentThreadId: row.parentSessionId } : {}),
-		...(row.agentId ? { subagent: row.agentId } : {}),
-		...(historyOrigin?.version ? { version: historyOrigin.version } : {}),
-		...(historyOrigin?.trigger ? { trigger: historyOrigin.trigger } : {}),
-	};
-	const teamTaskMatch = parseTeamTaskSubSessionId(row.sessionId);
+	const teamTaskMatch = parseTeamTaskSubSessionId(sessionId);
 	if (teamTaskMatch) {
 		return {
 			agent: "teammate",
-			sessionId: row.sessionId,
+			sessionId: teamTaskMatch.rootSessionId,
 			taskType: "team",
-			origin,
 		};
 	}
-	const subSessionMatch = parseSubSessionId(row.sessionId);
+	const subSessionMatch = parseSubSessionId(sessionId);
 	if (subSessionMatch) {
 		return {
 			agent: "subagent",
-			sessionId: row.sessionId,
+			sessionId: subSessionMatch.rootSessionId,
 			taskType: "subagent_task",
-			origin,
 		};
 	}
 	return {
 		agent: "lead",
-		sessionId: row.sessionId,
-		origin,
+		sessionId,
 	};
 }
 
@@ -335,7 +308,6 @@ export function buildMessagesFilePayload(input: {
 	agent: "lead" | "subagent" | "teammate";
 	sessionId: string;
 	taskType?: string;
-	origin: MessagesFileContext["origin"];
 	messages: StoredMessageWithMetadata[];
 	system_prompt?: string;
 } {
@@ -345,7 +317,6 @@ export function buildMessagesFilePayload(input: {
 		agent: input.context.agent,
 		sessionId: input.context.sessionId,
 		...(input.context.taskType ? { taskType: input.context.taskType } : {}),
-		origin: input.context.origin,
 		messages: normalizeStoredMessagesForPersistence(input.messages),
 		...(input.systemPrompt ? { system_prompt: input.systemPrompt } : {}),
 	};
