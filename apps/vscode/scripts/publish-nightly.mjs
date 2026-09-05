@@ -35,9 +35,9 @@
  *   least as often as the scheduled release nightly runs.
  *
  * Usage:
- *   bun run publish:marketplace:nightly                    # release channel
- *   bun run publish:marketplace:nightly -- --pre-release   # pre-release channel
- *   bun run publish:marketplace:nightly -- --dry-run       # package only
+ *   npm run publish:marketplace:nightly                    # release channel
+ *   npm run publish:marketplace:nightly -- --pre-release   # pre-release channel
+ *   npm run publish:marketplace:nightly -- --dry-run       # package only
  *
  * Environment variables:
  *   VSCE_PAT  - Personal Access Token for VS Code Marketplace
@@ -388,9 +388,6 @@ class NightlyPublisher {
 		const args = [
 			"package",
 			...(isPreRelease ? ["--pre-release"] : []),
-			// The extension is fully esbuild-bundled, so vsce must not walk node_modules
-			// (the @cline/* workspace symlinks point outside the package).
-			"--no-dependencies",
 			"--no-update-package-json",
 			"--no-git-tag-version",
 			"--allow-package-secrets",
@@ -582,7 +579,7 @@ if (showHelp) {
 Nightly publish script for VS Code extension
 
 Usage:
-  bun run publish:marketplace:nightly [options]
+  npm run publish:marketplace:nightly [options]
 
 Options:
   --pre-release    Publish to the pre-release channel of cline-nightly.
@@ -596,10 +593,10 @@ Environment variables:
   OVSX_PAT         Personal Access Token for OpenVSX Registry
 
 Examples:
-  bun run publish:marketplace:nightly                      # Release channel publish
-  bun run publish:marketplace:nightly -- --pre-release     # Pre-release channel publish
-  bun run publish:marketplace:nightly -- --dry-run         # Package only
-  VSCE_PAT="token" bun run publish:marketplace:nightly     # Publish to VS Code only
+  npm run publish:marketplace:nightly                      # Release channel publish
+  npm run publish:marketplace:nightly -- --pre-release     # Pre-release channel publish
+  npm run publish:marketplace:nightly -- --dry-run         # Package only
+  VSCE_PAT="token" npm run publish:marketplace:nightly     # Publish to VS Code only
 `)
 	process.exit(0)
 }

@@ -4,4 +4,6 @@ export * from "./onboarding"
 
 export enum ClineClient {
 	VSCode = "VSCode Extension",
+	JetBrains = "JetBrains",
+	Cli = "CLI",
 }

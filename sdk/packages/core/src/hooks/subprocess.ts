@@ -41,28 +41,7 @@ import {
 
 type AgentHookControl = Omit<HookControl, "appendMessages"> & {
 	appendMessages?: unknown[];
-	/**
-	 * Error message accompanying `cancel: true`. Kept separate from `context`
-	 * so injectable context from one hook never leaks into another hook's
-	 * cancellation reason when controls are merged.
-	 */
-	cancelReason?: string;
 };
-
-/**
- * Maximum size for a hook's injected context (`contextModification`), matching
- * the legacy extension's cap. Prevents a hook from overflowing the prompt.
- */
-export const MAX_HOOK_CONTEXT_SIZE = 50_000;
-
-export function truncateHookContext(
-	context: string | undefined,
-): string | undefined {
-	if (context === undefined || context.length <= MAX_HOOK_CONTEXT_SIZE) {
-		return context;
-	}
-	return `${context.slice(0, MAX_HOOK_CONTEXT_SIZE)}\n[hook context truncated: exceeded ${MAX_HOOK_CONTEXT_SIZE} characters]`;
-}
 
 export interface HookOutput {
 	contextModification: string;
@@ -123,12 +102,6 @@ export interface RunHookOptions {
 export type RunHookResult = RunSubprocessEventResult;
 
 const DEFAULT_HOOK_COMMAND = ["agent", "hook"];
-
-/**
- * Default timeout for blocking tool hooks (tool_call/tool_result). Without a
- * bound, a hook command that never exits would block the agent indefinitely.
- */
-const DEFAULT_TOOL_HOOK_TIMEOUT_MS = 120_000;
 
 export async function runHook(
 	payload: HookEventPayload,
@@ -204,29 +177,19 @@ function toHookControl(value: unknown): AgentHookControl | undefined {
 	if (!hasControlKey) {
 		return undefined;
 	}
-	const injectableContext =
+	const contextFromHook =
 		typeof maybe.context === "string"
 			? maybe.context
 			: typeof maybe.contextModification === "string"
 				? maybe.contextModification
-				: undefined;
-	const errorMessage =
-		typeof maybe.errorMessage === "string" &&
-		maybe.errorMessage.trim().length > 0
-			? maybe.errorMessage
-			: undefined;
-	const cancel = typeof maybe.cancel === "boolean" ? maybe.cancel : undefined;
+				: typeof maybe.errorMessage === "string" &&
+						maybe.errorMessage.length > 0
+					? maybe.errorMessage
+					: undefined;
 	return {
-		cancel,
+		cancel: typeof maybe.cancel === "boolean" ? maybe.cancel : undefined,
 		review: typeof maybe.review === "boolean" ? maybe.review : undefined,
-		// A cancelling hook's message is its error/reason, not injectable
-		// conversation context; errorMessage takes precedence there.
-		context:
-			cancel === true
-				? undefined
-				: truncateHookContext(injectableContext ?? errorMessage),
-		cancelReason:
-			cancel === true ? (errorMessage ?? injectableContext) : undefined,
+		context: contextFromHook,
 		overrideInput: Object.hasOwn(maybe, "overrideInput")
 			? maybe.overrideInput
 			: undefined,
@@ -335,42 +298,11 @@ function runtimeToolRecord(
 
 function beforeToolResultFromControl(
 	control: AgentHookControl | undefined,
-):
-	| { stop?: boolean; reason?: string; input?: unknown; appendContext?: string }
-	| undefined {
+): { stop?: boolean; input?: unknown } | undefined {
 	if (!control) return undefined;
-	const result: {
-		stop?: boolean;
-		reason?: string;
-		input?: unknown;
-		appendContext?: string;
-	} = {};
-	if (control.cancel === true) {
-		result.stop = true;
-		if (control.cancelReason?.trim()) {
-			result.reason = control.cancelReason;
-		}
-	} else if (control.context?.trim()) {
-		result.appendContext = control.context;
-	}
+	const result: { stop?: boolean; input?: unknown } = {};
+	if (control.cancel === true) result.stop = true;
 	if (control.overrideInput !== undefined) result.input = control.overrideInput;
-	return Object.keys(result).length > 0 ? result : undefined;
-}
-
-function afterToolResultFromControl(
-	control: AgentHookControl | undefined,
-): { stop?: boolean; reason?: string; appendContext?: string } | undefined {
-	if (!control) return undefined;
-	const result: { stop?: boolean; reason?: string; appendContext?: string } =
-		{};
-	if (control.cancel === true) {
-		result.stop = true;
-		if (control.cancelReason?.trim()) {
-			result.reason = control.cancelReason;
-		}
-	} else if (control.context?.trim()) {
-		result.appendContext = control.context;
-	}
 	return Object.keys(result).length > 0 ? result : undefined;
 }
 
@@ -477,7 +409,7 @@ export function createSubprocessHooks(
 				cwd: options.cwd,
 				env: options.env,
 				detached: false,
-				timeoutMs: options.timeoutMs ?? DEFAULT_TOOL_HOOK_TIMEOUT_MS,
+				timeoutMs: options.timeoutMs,
 				onSpawn: options.onSpawn,
 			});
 			options.onDispatch?.({ payload, result, detached: false });
@@ -496,11 +428,7 @@ export function createSubprocessHooks(
 		}
 	};
 
-	const afterTool = async (
-		ctx: AgentAfterToolContext,
-	): Promise<
-		{ stop?: boolean; reason?: string; appendContext?: string } | undefined
-	> => {
+	const afterTool = async (ctx: AgentAfterToolContext): Promise<undefined> => {
 		const record = runtimeToolRecord(ctx);
 		const base = {
 			agentId: ctx.snapshot.agentId,
@@ -526,30 +454,8 @@ export function createSubprocessHooks(
 				executionTimeMs: record.durationMs,
 			},
 		};
-
-		try {
-			const result = await runHook(payload, {
-				command: options.command,
-				cwd: options.cwd,
-				env: options.env,
-				detached: false,
-				timeoutMs: options.timeoutMs ?? DEFAULT_TOOL_HOOK_TIMEOUT_MS,
-				onSpawn: options.onSpawn,
-			});
-			options.onDispatch?.({ payload, result, detached: false });
-			if (result?.timedOut) {
-				throw new Error("tool_result hook command timed out");
-			}
-			if (result?.parseError) {
-				throw new Error(
-					`tool_result hook produced invalid control JSON: ${result.parseError}`,
-				);
-			}
-			return afterToolResultFromControl(toHookControl(result?.parsedJson));
-		} catch (error) {
-			options.onDispatchError?.(toError(error), payload);
-			return;
-		}
+		await dispatchDetached(payload, options);
+		return undefined;
 	};
 
 	const afterRun: NonNullable<AgentHooks["afterRun"]> = async ({

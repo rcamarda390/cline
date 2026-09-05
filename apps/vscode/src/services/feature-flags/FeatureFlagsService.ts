@@ -54,7 +54,6 @@ export class FeatureFlagsService {
 				flagKeys: FEATURE_FLAGS,
 			})
 			this.cacheInfo.flagsPayload = values
-			Logger.log("Fetched Feature Flag values + " + JSON.stringify(values))
 
 			for (const flag of FEATURE_FLAGS) {
 				const payload = await this.getFeatureFlag(flag).catch(() => false)
@@ -85,10 +84,6 @@ export class FeatureFlagsService {
 				})
 			}
 
-			Logger.info(
-				`[FeatureFlagsService] resolving ${flagName}: payload=${JSON.stringify(payload)} flagValue=${JSON.stringify(flagValue)} default=${JSON.stringify(FeatureFlagDefaultValue[flagName])} final=${JSON.stringify(value)} type=${typeof value}`,
-			)
-
 			return value
 		} catch (error) {
 			Logger.error(`Error checking if feature flag ${flagName} is enabled:`, error)
@@ -112,6 +107,10 @@ export class FeatureFlagsService {
 	 */
 	public getFlagPayload(flagName: FeatureFlag): FeatureFlagPayload | undefined {
 		return this.cache.get(flagName) ?? FeatureFlagDefaultValue[flagName]
+	}
+
+	public getWebtoolsEnabled(): boolean {
+		return this.getBooleanFlagEnabled(FeatureFlag.WEBTOOLS)
 	}
 
 	public getWorktreesEnabled(): boolean {

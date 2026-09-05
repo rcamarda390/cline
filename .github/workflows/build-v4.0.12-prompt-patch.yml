@@ -1,0 +1,57 @@
+name: Build Cline 4.0.12 Prompt Patch
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - v4.0.12-airgapped
+      - main
+      - fix/v4.0.12-consolidated
+concurrency:
+  group: cline-v4.0.12-prompt-patch-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PATCH_VERSION: 4.0.12-prompt-patch.9
+jobs:
+  build-vsix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce 4.0.12 deployment line
+        run: node -e 'const p=require("./apps/vscode/package.json"); if (!/^4\.0\.12-prompt-patch\.[0-9]+$/.test(p.version) || p.version !== process.env.PATCH_VERSION || p.engines.vscode !== "^1.84.0") throw new Error("Only the Cline 4.0.12 / VS Code 1.98.2 deployment line may be built")'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/vscode/package-lock.json
+      - name: Install extension dependencies
+        working-directory: apps/vscode
+        run: npm ci
+      - name: Install webview dependencies
+        working-directory: apps/vscode/webview-ui
+        run: npm ci --ignore-scripts
+      - name: Check types and lint
+        working-directory: apps/vscode
+        run: npm run check-types && npm run lint
+      - name: Run webview tests
+        working-directory: apps/vscode
+        run: npm run test:webview
+      - name: Run hook, prompt, Bedrock and marketplace regressions
+        working-directory: apps/vscode
+        run: npx cross-env TS_NODE_PROJECT=./tsconfig.unit-test.json mocha --no-config --require ts-node/register --require tsconfig-paths/register --require ./src/test/requires.ts --timeout 20000 --exit src/test/hook-executor.test.ts 'src/core/hooks/__tests__/*.test.ts' 'src/core/prompts/system-prompt/__tests__/*.test.ts' src/core/api/providers/__tests__/bedrock.test.ts src/utils/__tests__/model-utils.test.ts src/test/core/controller/marketplace-filtering.test.ts
+      - name: Build VSIX
+        working-directory: apps/vscode
+        run: npx vsce package --allow-package-secrets sendgrid --out "cline-${PATCH_VERSION}.vsix"
+      - name: Validate package and checksum
+        working-directory: apps/vscode
+        run: |
+          VSIX_NAME="cline-${PATCH_VERSION}.vsix"
+          unzip -t "$VSIX_NAME"
+          unzip -p "$VSIX_NAME" extension/package.json | PATCH_VERSION="$PATCH_VERSION" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s); if(p.version !== process.env.PATCH_VERSION) process.exit(1); console.log(JSON.stringify({name:p.name,version:p.version,engines:p.engines}))})'
+          sha256sum "$VSIX_NAME" > "$VSIX_NAME.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cline-${{ env.PATCH_VERSION }}
+          path: |
+            apps/vscode/cline-${{ env.PATCH_VERSION }}.vsix
+            apps/vscode/cline-${{ env.PATCH_VERSION }}.vsix.sha256

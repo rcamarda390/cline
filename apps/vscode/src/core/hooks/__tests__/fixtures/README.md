@@ -26,21 +26,18 @@ fixtures/
 The `loadFixture()` helper function copies a fixture to your test environment:
 
 ```typescript
-import { createHookTestEnv, loadFixture } from '../test-utils'
+import { loadFixture } from '../test-utils'
 
 it("should work with real hook", async () => {
-  const env = await createHookTestEnv()
-  try {
-    await loadFixture("hooks/pretooluse/success", env.tempDir)
-
-    const factory = new HookFactory()
-    const runner = await factory.create("PreToolUse")
-    const result = await runner.run(buildPreToolUseInput({ toolName: "test_tool" }))
-
-    result.cancel.should.be.false()
-  } finally {
-    await env.cleanup()
-  }
+  const { getEnv } = setupHookTests()
+  
+  await loadFixture("hooks/pretooluse/success", getEnv().tempDir)
+  
+  const factory = new HookFactory()
+  const runner = await factory.create("PreToolUse")
+  const result = await runner.run(buildPreToolUseInput({ toolName: "test_tool" }))
+  
+  result.cancel.should.be.false()
 })
 ```
 

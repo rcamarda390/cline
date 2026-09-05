@@ -51,14 +51,9 @@ describe("createVertexProviderModule", () => {
 				project: "test-project",
 				location: "global",
 				apiKey: undefined,
-				googleAuthOptions: expect.objectContaining({
+				googleAuthOptions: {
 					projectId: "test-project",
-					clientOptions: {
-						transporterOptions: {
-							fetchImplementation: globalThis.fetch,
-						},
-					},
-				}),
+				},
 				fetch: expect.any(Function),
 			}),
 		);
@@ -82,9 +77,9 @@ describe("createVertexProviderModule", () => {
 			expect.objectContaining({
 				project: "nested-project",
 				location: "europe-west4",
-				googleAuthOptions: expect.objectContaining({
+				googleAuthOptions: {
 					projectId: "nested-project",
-				}),
+				},
 			}),
 		);
 	});
@@ -121,60 +116,9 @@ describe("createVertexProviderModule", () => {
 			expect.objectContaining({
 				project: "test-project",
 				location: "us-east5",
-				googleAuthOptions: expect.objectContaining({
-					projectId: "test-project",
-					clientOptions: {
-						transporterOptions: {
-							fetchImplementation: globalThis.fetch,
-						},
-					},
-				}),
 			}),
 		);
 		expect(createVertexMock).not.toHaveBeenCalled();
-	});
-
-	it("passes a configured fetch to Vertex requests and the ADC refresh transport", async () => {
-		const customFetch = vi.fn() as unknown as typeof fetch;
-
-		await createVertexProviderModule(
-			config({
-				fetch: customFetch,
-				options: {
-					project: "test-project",
-					location: "global",
-				},
-			}),
-			context("claude-sonnet-4-5@20250929"),
-		);
-
-		expect(createVertexAnthropicMock).toHaveBeenCalledWith(
-			expect.objectContaining({
-				fetch: customFetch,
-				googleAuthOptions: expect.objectContaining({
-					clientOptions: {
-						transporterOptions: {
-							fetchImplementation: customFetch,
-						},
-					},
-				}),
-			}),
-		);
-	});
-
-	it.each([
-		["my-private-claude-model", "vertex-anthropic"],
-		["my-private-gemini-model", "vertex"],
-	] as const)("passes the custom model id %s unchanged", async (modelId, expectedProvider) => {
-		const result = await createVertexProviderModule(
-			config({}),
-			context(modelId),
-		);
-
-		expect(result.operations.language(modelId)).toEqual({
-			provider: expectedProvider,
-			modelId,
-		});
 	});
 });
 

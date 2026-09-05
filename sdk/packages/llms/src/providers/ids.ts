@@ -5,15 +5,12 @@
  * Use BUILT_IN_PROVIDER_IDS for runtime operations (validation, iteration)
  * Use BuiltInProviderId type for compile-time type safety
  */
-import { GENERATED_PROVIDER_IDS } from "./provider-ids.generated";
-
 export enum BUILT_IN_PROVIDER {
 	// First-party
 	ANTHROPIC = "anthropic",
 	CLAUDE_CODE = "claude-code",
 	CLINE = "cline",
 	CLINE_PASS = "cline-pass",
-	ELEVENLABS = "elevenlabs",
 	// OpenAI variants
 	OPENAI_COMPATIBLE = "openai-compatible",
 	OPENAI_NATIVE = "openai-native",
@@ -50,7 +47,6 @@ export enum BUILT_IN_PROVIDER {
 	HUAWEI_CLOUD_MAAS = "huawei-cloud-maas",
 	WANDB = "wandb",
 	XIAOMI = "xiaomi",
-	TENCENT_TOKENHUB = "tencent-tokenhub",
 	KILO = "kilo",
 	ZAI = "zai",
 	ZAI_CODING_PLAN = "zai-coding-plan",
@@ -74,20 +70,19 @@ export enum BUILT_IN_PROVIDER {
  *
  * Keep this map as the single source of truth for alias handling.
  */
-export type GeneratedBuiltInProviderId =
-	(typeof GENERATED_PROVIDER_IDS)[number];
-
-export type BuiltInProviderId = BUILT_IN_PROVIDER | GeneratedBuiltInProviderId;
-
-export const PROVIDER_ID_ALIASES: Record<string, BuiltInProviderId> = {
+export const PROVIDER_ID_ALIASES: Record<string, BUILT_IN_PROVIDER> = {
 	openai: BUILT_IN_PROVIDER.OPENAI_COMPATIBLE,
 	togetherai: BUILT_IN_PROVIDER.TOGETHER,
 	"sap-ai-core": BUILT_IN_PROVIDER.SAPAICORE,
 };
 
-export const BUILT_IN_PROVIDER_IDS = [
-	...new Set([...Object.values(BUILT_IN_PROVIDER), ...GENERATED_PROVIDER_IDS]),
-] as readonly BuiltInProviderId[];
+export const BUILT_IN_PROVIDER_IDS = Object.values(BUILT_IN_PROVIDER) as [
+	BUILT_IN_PROVIDER,
+	...BUILT_IN_PROVIDER[],
+];
+
+/** Type derived from the array - use for type annotations */
+export type BuiltInProviderId = (typeof BUILT_IN_PROVIDER_IDS)[number];
 
 /** Check if a string is a valid built-in provider ID */
 export function isBuiltInProviderId(id: string): id is BuiltInProviderId {

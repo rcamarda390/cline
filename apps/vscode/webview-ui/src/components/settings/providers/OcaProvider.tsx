@@ -202,8 +202,9 @@ function useOcaModels({
 				if (!retry) {
 					await login() // prompt login
 					return tryRefresh(true) // retry once
+				} else {
+					setHasError(true)
 				}
-				setHasError(true)
 				return false
 			} finally {
 				setLoading(false)
@@ -247,6 +248,19 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 	const handleRefresh = useCallback(async () => {
 		await refreshModels()
 	}, [refreshModels])
+
+	// On first subscription result: if user exists, refresh models once.
+	const didInitialAuthCheckRef = useRef(false)
+	useEffect(() => {
+		if (!ready || didInitialAuthCheckRef.current) {
+			return
+		}
+		didInitialAuthCheckRef.current = true
+		if (isAuthenticated) {
+			void refreshModels()
+		}
+		// If user empty, do nothing (no auto login, no refresh)
+	}, [ready, isAuthenticated, refreshModels])
 
 	return (
 		<div>
@@ -462,3 +476,5 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 		</div>
 	)
 }
+
+export default OcaProvider

@@ -1,5 +1,4 @@
 import type { ITelemetryService } from "@cline/shared";
-import { hashSecret, sdkDebug } from "../../logging/early-logger";
 import {
 	getProviderAuthHandler,
 	getProviderOAuthCredentialsFromSettings,
@@ -114,9 +113,6 @@ export class RuntimeOAuthTokenManager {
 		const settings =
 			this.providerSettingsManager.getProviderSettings(storageProviderId);
 		if (!settings) {
-			sdkDebug(
-				`oauth.resolve providerId=${providerId} storageProviderId=${storageProviderId} outcome=no_settings`,
-			);
 			return null;
 		}
 
@@ -125,15 +121,8 @@ export class RuntimeOAuthTokenManager {
 			settings,
 		);
 		if (!currentCredentials) {
-			sdkDebug(
-				`oauth.resolve providerId=${providerId} storageProviderId=${storageProviderId} outcome=no_credentials`,
-			);
 			return null;
 		}
-
-		sdkDebug(
-			`oauth.resolve.start providerId=${providerId} storageProviderId=${storageProviderId} forceRefresh=${forceRefresh} accessTokenHash=${hashSecret(currentCredentials.access)} refreshTokenHash=${hashSecret(currentCredentials.refresh)}`,
-		);
 
 		const nextCredentials = await handler.refresh({
 			settings,
@@ -142,9 +131,6 @@ export class RuntimeOAuthTokenManager {
 			telemetry: this.telemetry,
 		});
 		if (!nextCredentials) {
-			sdkDebug(
-				`oauth.resolve providerId=${providerId} outcome=refresh_returned_null`,
-			);
 			throw new OAuthReauthRequiredError(providerId);
 		}
 
@@ -158,15 +144,10 @@ export class RuntimeOAuthTokenManager {
 		});
 		const wasRefreshed = !authSettingsEqual(settings.auth, nextSettings.auth);
 		if (wasRefreshed) {
-			sdkDebug(
-				`oauth.resolve.refreshed providerId=${providerId} newAccessTokenHash=${hashSecret(nextCredentials.access)} newRefreshTokenHash=${hashSecret(nextCredentials.refresh)} savingToDisk=true`,
-			);
 			this.providerSettingsManager.saveProviderSettings(nextSettings, {
 				setLastUsed: false,
 				tokenSource: "oauth",
 			});
-		} else {
-			sdkDebug(`oauth.resolve providerId=${providerId} outcome=not_refreshed`);
 		}
 
 		return {

@@ -43,8 +43,6 @@ export interface SessionPendingPrompt {
 	prompt: string;
 	delivery: "queue" | "steer";
 	attachmentCount: number;
-	userImages?: string[];
-	userFiles?: string[];
 }
 
 export interface SessionPendingPromptsEvent {
@@ -58,8 +56,6 @@ export interface SessionPendingPromptSubmittedEvent {
 	prompt: string;
 	delivery: "queue" | "steer";
 	attachmentCount: number;
-	userImages?: string[];
-	userFiles?: string[];
 }
 
 export interface SessionSnapshotEvent {

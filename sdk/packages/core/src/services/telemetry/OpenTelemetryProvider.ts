@@ -135,14 +135,6 @@ export interface CreateOpenTelemetryTelemetryServiceOptions
 		> {
 	metadata: TelemetryMetadata;
 	logger?: BasicLogger;
-	/**
-	 * Skip the automatic `telemetry.provider_created` event during construction
-	 * and expose it as {@link ConfiguredTelemetryHandle.emitProviderCreated}
-	 * instead. Metadata is stamped onto events at capture time, so hosts that
-	 * resolve identity metadata asynchronously (e.g. over the host bridge) defer
-	 * the event until that metadata is applied.
-	 */
-	deferProviderCreatedEvent?: boolean;
 }
 
 export class OpenTelemetryProvider {
@@ -338,39 +330,29 @@ export class OpenTelemetryProvider {
 
 export function createOpenTelemetryTelemetryService(
 	options: CreateOpenTelemetryTelemetryServiceOptions,
-): {
-	provider: OpenTelemetryProvider;
-	telemetry: ITelemetryService;
-	emitProviderCreated: () => void;
-} {
+): { provider: OpenTelemetryProvider; telemetry: ITelemetryService } {
 	const provider = new OpenTelemetryProvider(options);
 	const telemetry = provider.createTelemetryService(options);
-	const emitProviderCreated = () => {
-		telemetry.captureRequired("telemetry.provider_created", {
-			provider: "opentelemetry",
-			enabled: options.enabled ?? true,
-			logsExporter: Array.isArray(options.logsExporter)
-				? options.logsExporter.join(",")
-				: options.logsExporter,
-			metricsExporter: Array.isArray(options.metricsExporter)
-				? options.metricsExporter.join(",")
-				: options.metricsExporter,
-			tracesExporter: Array.isArray(options.tracesExporter)
-				? options.tracesExporter.join(",")
-				: options.tracesExporter,
-			otlpProtocol: options.otlpProtocol,
-			hasOtlpEndpoint: Boolean(options.otlpEndpoint),
-			serviceName: options.serviceName,
-			serviceVersion: options.serviceVersion,
-		});
-	};
-	if (!options.deferProviderCreatedEvent) {
-		emitProviderCreated();
-	}
+	telemetry.captureRequired("telemetry.provider_created", {
+		provider: "opentelemetry",
+		enabled: options.enabled ?? true,
+		logsExporter: Array.isArray(options.logsExporter)
+			? options.logsExporter.join(",")
+			: options.logsExporter,
+		metricsExporter: Array.isArray(options.metricsExporter)
+			? options.metricsExporter.join(",")
+			: options.metricsExporter,
+		tracesExporter: Array.isArray(options.tracesExporter)
+			? options.tracesExporter.join(",")
+			: options.tracesExporter,
+		otlpProtocol: options.otlpProtocol,
+		hasOtlpEndpoint: Boolean(options.otlpEndpoint),
+		serviceName: options.serviceName,
+		serviceVersion: options.serviceVersion,
+	});
 	return {
 		provider,
 		telemetry,
-		emitProviderCreated,
 	};
 }
 
@@ -379,7 +361,6 @@ export function createConfiguredTelemetryService(
 ): {
 	provider?: OpenTelemetryProvider;
 	telemetry: ITelemetryService;
-	emitProviderCreated?: () => void;
 } {
 	if (isTelemetryOptedOutGlobally()) {
 		return {
@@ -423,12 +404,6 @@ export interface ConfiguredTelemetryHandle {
 	flush: () => Promise<void>;
 	/** Disposes the telemetry service and its provider concurrently. */
 	dispose: () => Promise<void>;
-	/**
-	 * Emits the `telemetry.provider_created` event. Only present when the
-	 * handle was created with `deferProviderCreatedEvent: true` and telemetry
-	 * is enabled; the host must call it once its identity metadata is applied.
-	 */
-	emitProviderCreated?: () => void;
 }
 
 /**
@@ -440,8 +415,7 @@ export interface ConfiguredTelemetryHandle {
 export function createConfiguredTelemetryHandle(
 	options: CreateOpenTelemetryTelemetryServiceOptions,
 ): ConfiguredTelemetryHandle {
-	const { telemetry, provider, emitProviderCreated } =
-		createConfiguredTelemetryService(options);
+	const { telemetry, provider } = createConfiguredTelemetryService(options);
 
 	const flush = async (): Promise<void> => {
 		const candidate = provider as
@@ -460,15 +434,7 @@ export function createConfiguredTelemetryHandle(
 		await Promise.allSettled([telemetry.dispose(), provider?.dispose()]);
 	};
 
-	return {
-		telemetry,
-		provider,
-		flush,
-		dispose,
-		...(options.deferProviderCreatedEvent && emitProviderCreated
-			? { emitProviderCreated }
-			: {}),
-	};
+	return { telemetry, provider, flush, dispose };
 }
 
 function normalizeExporters(

@@ -9,6 +9,12 @@ Cline configuration lives in two scopes:
 - **Global configuration** in `~/.cline/` (applies globally across all Cline applications, including IDE, CLI, and SDK)
 - **Project configuration** in `.cline/` (applies only to the current workspace)
 
+## Air-gapped and offline deployments
+
+Set `cline.offlineMode` to `true` in VS Code settings when the extension must run without automatic network activity. Offline mode is local to the extension and does not require remote configuration or DNS access; it skips startup authentication checks, remote configuration refreshes, model catalog refreshes, marketplace refreshes, and telemetry provider initialization. Cline can still use locally configured or reachable provider endpoints when you explicitly use them.
+
+Offline mode defaults to `false`.
+
 ## Configuration Directory Layout
 
 Cline stores shared configuration across a few well-known locations. The primary root is `~/.cline/`, with structured app state under `~/.cline/data/`:
@@ -154,7 +160,7 @@ Rules:
 - [Skills](/customization/skills)
 - [Hooks](/customization/hooks)
 - [Plugins](/customization/plugins)
-- [.clineignore](/customization/clineignore) (deprecated)
+- [.clineignore](/customization/clineignore)
 
 ## Security Notes
 

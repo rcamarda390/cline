@@ -15,14 +15,16 @@ import {
 	StatusBar,
 } from "../components/status-bar";
 import { useSession } from "../contexts/session-context";
-import { useTheme } from "../hooks/use-theme";
 import {
-	getInputRuleColor,
+	useTerminalBackground,
+	useTerminalTheme,
+} from "../hooks/use-terminal-background";
+import {
+	getModeAccent,
 	getModeInputBackground,
 	getModeInputForeground,
 	getModeInputPlaceholder,
 } from "../palette";
-import { getThemeModeAccent } from "../themes";
 import type {
 	QueuedPromptItem,
 	RuntimeToolInteraction,
@@ -48,7 +50,6 @@ export function ChatView(props: {
 	};
 	textareaRef?: React.MutableRefObject<TextareaHandle | null>;
 	transcriptScrollRef?: React.Ref<TranscriptScrollHandle>;
-	loadIndividualSubscriptionPlans?: TuiProps["loadIndividualSubscriptionPlans"];
 	autocomplete?: AutocompleteDropdownProps;
 	queuedPrompts?: QueuedPromptItem[];
 	selectedQueuedPromptId?: string | null;
@@ -70,11 +71,10 @@ export function ChatView(props: {
 		repoStatus,
 	} = props;
 	const session = useSession();
-	const theme = useTheme();
-	const terminalBg = theme.background;
-	const accent = getThemeModeAccent(theme, session.uiMode);
+	const terminalBg = useTerminalBackground();
+	const terminalTheme = useTerminalTheme();
+	const accent = getModeAccent(session.uiMode, terminalTheme);
 	const inputBackground = getModeInputBackground(session.uiMode, terminalBg);
-	const inputRuleColor = getInputRuleColor(terminalBg);
 	const inputForeground = getModeInputForeground(session.uiMode, terminalBg);
 	const inputPlaceholder = getModeInputPlaceholder(session.uiMode, terminalBg);
 	const placeholder =
@@ -89,7 +89,6 @@ export function ChatView(props: {
 				ref={props.transcriptScrollRef}
 				entries={session.entries}
 				isStreaming={session.isStreaming}
-				loadIndividualSubscriptionPlans={props.loadIndividualSubscriptionPlans}
 				uiMode={session.uiMode}
 			/>
 
@@ -122,10 +121,10 @@ export function ChatView(props: {
 							/>
 						)}
 
-						<box>
+						<box marginBottom={1}>
 							<InputBar
 								accent={accent}
-								ruleColor={inputRuleColor}
+								inputBackground={inputBackground}
 								inputForeground={inputForeground}
 								inputPlaceholder={inputPlaceholder}
 								placeholder={placeholder}

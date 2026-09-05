@@ -11,7 +11,7 @@ import {
 	type ApplyPatchExecutorOptions,
 	createApplyPatchExecutor,
 } from "./apply-patch";
-import { createShellExecutor, type ShellExecutorOptions } from "./bash";
+import { type BashExecutorOptions, createBashExecutor } from "./bash";
 import { createEditorExecutor, type EditorExecutorOptions } from "./editor";
 import {
 	createFileReadExecutor,
@@ -26,25 +26,17 @@ import {
 // Re-export individual executors and their options types
 export {
 	type ApplyPatchExecutorOptions,
-	computePatchChanges,
 	createApplyPatchExecutor,
-	type PatchFileChange,
 } from "./apply-patch";
-export { PATCH_MARKERS, PatchActionType } from "./apply-patch-parser";
 export {
-	CommandExitError,
-	createShellExecutor,
-	type ShellExecutorOptions,
+	type BashExecutorOptions,
+	createBashExecutor,
 } from "./bash";
 export { createEditorExecutor, type EditorExecutorOptions } from "./editor";
 export {
 	createFileReadExecutor,
 	type FileReadExecutorOptions,
 } from "./file-read";
-export {
-	RunCommandExecutionController,
-	type RunningCommandRegistration,
-} from "./run-command-execution-controller";
 export { createSearchExecutor, type SearchExecutorOptions } from "./search";
 export {
 	createWebFetchExecutor,
@@ -57,21 +49,10 @@ export {
 export interface DefaultExecutorsOptions {
 	fileRead?: FileReadExecutorOptions;
 	search?: SearchExecutorOptions;
-	bash?: ShellExecutorOptions;
+	bash?: BashExecutorOptions;
 	webFetch?: WebFetchExecutorOptions;
 	applyPatch?: ApplyPatchExecutorOptions;
 	editor?: EditorExecutorOptions;
-}
-
-/**
- * Create the default shell executor for the current platform.
- *
- * This is factored out from {@link createDefaultExecutors} so host integrations
- * can reuse the SDK's cross-platform shell selection while supplying their own
- * tool wrapper.
- */
-export function createDefaultShellExecutor(options: ShellExecutorOptions = {}) {
-	return createShellExecutor(options);
 }
 
 /**
@@ -98,7 +79,7 @@ export function createDefaultExecutors(
 	return {
 		readFile: createFileReadExecutor(options.fileRead),
 		search: createSearchExecutor(options.search),
-		bash: createDefaultShellExecutor(options.bash),
+		bash: createBashExecutor(options.bash),
 		webFetch: createWebFetchExecutor(options.webFetch),
 		applyPatch: createApplyPatchExecutor(options.applyPatch),
 		editor: createEditorExecutor(options.editor),

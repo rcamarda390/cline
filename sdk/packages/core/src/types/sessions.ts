@@ -22,10 +22,6 @@ export interface SessionRecord
 
 export interface SessionHistoryMetadata extends Record<string, unknown> {
 	title?: string;
-	git?: {
-		url?: string;
-		branch?: string;
-	};
 	totalCost?: number;
 	aggregatedAgentsCost?: number;
 	usage?: SessionUsageMetadata;

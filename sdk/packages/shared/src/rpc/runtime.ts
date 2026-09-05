@@ -1,12 +1,6 @@
 import z from "zod";
 import type { HubToolExecutorName } from "../hub";
 import type {
-	ModelModality,
-	ModelOperation,
-	ModelOperationMode,
-} from "../llms/model-info";
-import type { ReasoningLevel } from "../llms/reasoning-options";
-import type {
 	RuntimeConfigExtensionKind,
 	SessionExecutionConfig,
 	SessionPromptConfig,
@@ -147,35 +141,12 @@ export interface EnterpriseStatusRequest {
 
 export type EnterpriseStatusResponse = EnterpriseSyncResponse;
 
-/** Which tier of the Cline recommended-models feed featured a model. */
-export type ProviderModelFeaturedTier = "recommended" | "free" | "subscribed";
-
-export interface ProviderModelFeatured {
-	tier: ProviderModelFeaturedTier;
-	/** Position within the tier, preserving the feed's intentional order. */
-	rank: number;
-	/** Feed marketing tags, e.g. "NEW" or "BEST". */
-	tags: string[];
-}
-
 export interface ProviderModel {
 	id: string;
 	name: string;
-	description?: string;
-	/**
-	 * Present when the Cline recommended-models feed features this model
-	 * (cline / cline-pass providers only), so pickers can lead with the
-	 * feed's tiers without fetching and joining the feed themselves.
-	 */
-	featured?: ProviderModelFeatured;
-	operation?: ModelOperation;
-	contextWindow?: number;
 	supportsAttachments?: boolean;
 	supportsVision?: boolean;
 	supportsReasoning?: boolean;
-	operationModes?: ModelOperationMode[];
-	inputModalities?: ModelModality[];
-	outputModalities?: ModelModality[];
 }
 
 export type ProviderConfigFieldType =
@@ -227,15 +198,9 @@ export interface ProviderListItem {
 	family?: string;
 }
 
-export interface VoiceInputSelection {
-	providerId: string;
-	modelId: string;
-}
-
 export interface ProviderCatalogResponse {
 	providers: ProviderListItem[];
 	settingsPath: string;
-	voiceInput?: VoiceInputSelection;
 }
 
 export interface ProviderModelsResponse {
@@ -327,7 +292,7 @@ export interface SaveProviderSettingsActionRequest {
 	// Reasoning/thinking configuration
 	reasoning?: {
 		enabled?: boolean;
-		effort?: ReasoningLevel;
+		effort?: "none" | "low" | "medium" | "high" | "xhigh";
 		budgetTokens?: number;
 	};
 	// AWS/Bedrock configuration

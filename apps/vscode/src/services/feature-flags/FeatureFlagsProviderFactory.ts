@@ -8,7 +8,7 @@ import { PostHogFeatureFlagsProvider } from "./providers/PostHogFeatureFlagsProv
 /**
  * Supported feature flags provider types
  */
-type FeatureFlagsProviderType = "posthog" | "no-op"
+export type FeatureFlagsProviderType = "posthog" | "no-op"
 
 /**
  * Configuration for feature flags providers

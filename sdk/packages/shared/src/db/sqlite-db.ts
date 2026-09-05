@@ -4,10 +4,7 @@ import { dirname } from "node:path";
 import { getErrorCode, getErrorMessage } from "../parse/error";
 
 export type SqliteStatement = {
-	run: (...params: unknown[]) => {
-		changes?: number;
-		lastInsertRowid?: number | bigint;
-	};
+	run: (...params: unknown[]) => { changes?: number };
 	get: (...params: unknown[]) => Record<string, unknown> | null;
 	all: (...params: unknown[]) => Record<string, unknown>[];
 };

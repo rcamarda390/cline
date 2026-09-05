@@ -12,25 +12,6 @@ import {
 	resolveCompactionProviderConfig,
 } from "./compaction";
 
-const createHandlerMock = vi.fn();
-
-// Core defaults to the agentic compaction strategy, which summarizes via a
-// real LLM handler. Stub only `createHandlerAsync` so no network call (or API
-// key) is needed; every other `@cline/llms` export stays real because
-// `@cline/core` re-exports them.
-vi.mock("@cline/llms", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@cline/llms")>()),
-	createHandlerAsync: (config: unknown) => createHandlerMock(config),
-}));
-
-async function* streamChunks(
-	chunks: Array<Record<string, unknown>>,
-): AsyncGenerator<Record<string, unknown>> {
-	for (const chunk of chunks) {
-		yield chunk;
-	}
-}
-
 function createConfig(): Config {
 	return {
 		providerId: "anthropic",
@@ -65,7 +46,6 @@ function createProviderSettingsManager(): ProviderSettingsManager {
 }
 
 afterEach(() => {
-	createHandlerMock.mockReset();
 	for (const tempDir of providerSettingsTempDirs.splice(0)) {
 		rmSync(tempDir, { force: true, recursive: true });
 	}
@@ -126,7 +106,7 @@ describe("compactInteractiveMessages", () => {
 		}));
 		const config = createConfig();
 		const compact = vi.fn((context: CoreCompactionContext) => {
-			expect(context.budget.request.maxInputTokens).toBe(400_000);
+			expect(context.maxInputTokens).toBe(400_000);
 			return { messages: [messages[0]] };
 		});
 		config.knownModels = {
@@ -146,11 +126,10 @@ describe("compactInteractiveMessages", () => {
 
 		expect(compact).toHaveBeenCalledTimes(1);
 		expect(result.compacted).toBe(true);
-		expect(result.canonicalMessages).toEqual(messages);
-		expect(result.compactionState?.messages).toEqual([messages[0]]);
+		expect(result.messages).toEqual([messages[0]]);
 	});
 
-	it("uses 90 percent of legacy contextWindow for manual compaction", async () => {
+	it("falls back to legacy contextWindow for manual compaction", async () => {
 		const longText = "x".repeat(16_000);
 		const messages = Array.from({ length: 10 }, (_, index) => ({
 			role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
@@ -158,7 +137,7 @@ describe("compactInteractiveMessages", () => {
 		}));
 		const config = createConfig();
 		const compact = vi.fn((context: CoreCompactionContext) => {
-			expect(context.budget.request.maxInputTokens).toBe(360_000);
+			expect(context.maxInputTokens).toBe(400_000);
 			return { messages: [messages[0]] };
 		});
 		config.knownModels = {
@@ -178,20 +157,10 @@ describe("compactInteractiveMessages", () => {
 
 		expect(compact).toHaveBeenCalledTimes(1);
 		expect(result.compacted).toBe(true);
-		expect(result.canonicalMessages).toEqual(messages);
-		expect(result.compactionState?.messages).toEqual([messages[0]]);
+		expect(result.messages).toEqual([messages[0]]);
 	});
 
 	it("uses a useful target budget for manual compaction", async () => {
-		const mockSummary = "## Goal\nMocked agentic compaction summary";
-		createHandlerMock.mockReturnValue({
-			createMessage: vi.fn(() =>
-				streamChunks([
-					{ type: "text", id: "summary-1", text: mockSummary },
-					{ type: "done", id: "summary-1", success: true },
-				]),
-			),
-		});
 		const longText = "x".repeat(16_000);
 		const messages = Array.from({ length: 10 }, (_, index) => ({
 			role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
@@ -205,8 +174,7 @@ describe("compactInteractiveMessages", () => {
 			messages,
 		});
 
-		const compactedMessages = result.compactionState?.messages ?? [];
-		const compactedTextLength = compactedMessages.reduce(
+		const compactedTextLength = result.messages.reduce(
 			(total, message) =>
 				total +
 				(typeof message.content === "string" ? message.content.length : 0),
@@ -214,21 +182,9 @@ describe("compactInteractiveMessages", () => {
 		);
 
 		expect(result.compacted).toBe(true);
-		expect(result.canonicalMessages).toEqual(messages);
-		expect(compactedMessages.length).toBeGreaterThan(1);
-		expect(compactedMessages.length).toBeLessThan(messages.length);
+		expect(result.messages.length).toBeGreaterThan(1);
+		expect(result.messages.length).toBeLessThan(messages.length);
 		expect(compactedTextLength).toBeGreaterThan(1_000);
-
-		// The agentic strategy folds older messages into a summary message
-		// built from the (mocked) summarizer output.
-		expect(createHandlerMock).toHaveBeenCalledTimes(1);
-		const [summaryMessage] = compactedMessages;
-		const summaryText = Array.isArray(summaryMessage?.content)
-			? summaryMessage.content
-					.map((block) => ("text" in block ? block.text : ""))
-					.join("\n")
-			: String(summaryMessage?.content ?? "");
-		expect(summaryText).toContain(mockSummary);
 	});
 
 	it("reports compaction when core returns changed messages with the same count", async () => {
@@ -258,9 +214,8 @@ describe("compactInteractiveMessages", () => {
 		});
 
 		expect(result.compacted).toBe(true);
-		expect(result.canonicalMessages).toEqual(messages);
-		expect(result.compactionState?.messages).toHaveLength(messages.length);
-		expect(result.compactionState?.messages[0]?.content).toBe(
+		expect(result.messages).toHaveLength(messages.length);
+		expect(result.messages[0]?.content).toBe(
 			"same count but content should be trimmed",
 		);
 	});

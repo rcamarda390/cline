@@ -58,7 +58,6 @@ export function discoverChatSessions(
 			prompt,
 			messages: session.messages,
 		});
-		const persistedMetadata = store.get(sessionId)?.metadata;
 		out.push({
 			sessionId,
 			status: session.status,
@@ -69,10 +68,7 @@ export function discoverChatSessions(
 			prompt,
 			startedAt: String(session.startedAt),
 			endedAt: session.endedAt ? String(session.endedAt) : undefined,
-			metadata: {
-				...(persistedMetadata ?? {}),
-				title: resolvedTitle,
-			},
+			metadata: { title: resolvedTitle },
 		});
 	}
 

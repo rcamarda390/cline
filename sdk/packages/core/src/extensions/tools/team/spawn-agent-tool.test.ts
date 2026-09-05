@@ -340,7 +340,6 @@ describe("createSpawnAgentTool", () => {
 			providerId: "cline",
 			modelId: "stale-model",
 			apiKey: "oauth-access-old",
-			temperature: 0.3,
 		});
 		const updateConnectionDefaults = vi.spyOn(
 			configProvider,
@@ -373,7 +372,6 @@ describe("createSpawnAgentTool", () => {
 			expect.objectContaining({
 				apiKey: "oauth-access-new",
 				modelId: "updated-model",
-				temperature: 0.3,
 			}),
 		);
 	});

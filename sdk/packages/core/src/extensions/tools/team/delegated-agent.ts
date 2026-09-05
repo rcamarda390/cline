@@ -24,14 +24,9 @@ export type DelegatedAgentConnectionConfig = Pick<
 	| "apiKey"
 	| "baseUrl"
 	| "headers"
-	| "onAuthError"
 	| "providerConfig"
 	| "knownModels"
 	| "thinking"
-	| "reasoningEffort"
-	| "thinkingBudgetTokens"
-	| "maxTokensPerTurn"
-	| "temperature"
 >;
 
 export interface DelegatedAgentRuntimeConfig
@@ -46,16 +41,6 @@ export interface DelegatedAgentRuntimeConfig
 	logger?: BasicLogger;
 	telemetry?: ITelemetryService;
 	workspaceMetadata?: string;
-	/**
-	 * Stable end-user identity inherited from the parent session so
-	 * delegated-agent telemetry (Langfuse `userId`) groups with the user.
-	 */
-	distinctId?: string;
-	/**
-	 * Root core session id inherited from the parent session so
-	 * delegated-agent telemetry (Langfuse `sessionId`) groups with it.
-	 */
-	sessionId?: string;
 }
 
 export interface DelegatedAgentConfigProvider {
@@ -99,14 +84,9 @@ export function createDelegatedAgentConfigProvider(
 			apiKey: runtimeConfig.apiKey,
 			baseUrl: runtimeConfig.baseUrl,
 			headers: runtimeConfig.headers,
-			onAuthError: runtimeConfig.onAuthError,
 			providerConfig: runtimeConfig.providerConfig,
 			knownModels: runtimeConfig.knownModels,
 			thinking: runtimeConfig.thinking,
-			reasoningEffort: runtimeConfig.reasoningEffort,
-			thinkingBudgetTokens: runtimeConfig.thinkingBudgetTokens,
-			maxTokensPerTurn: runtimeConfig.maxTokensPerTurn,
-			temperature: runtimeConfig.temperature,
 		}),
 		updateConnectionDefaults: (overrides) => {
 			runtimeConfig = {
@@ -128,8 +108,6 @@ export function buildDelegatedAgentConfig(
 
 	return {
 		...options.configProvider.getConnectionConfig(),
-		distinctId: runtimeConfig.distinctId,
-		sessionId: runtimeConfig.sessionId,
 		systemPrompt,
 		tools: options.tools,
 		maxIterations: options.maxIterations ?? runtimeConfig.maxIterations,

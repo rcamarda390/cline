@@ -1,50 +1,37 @@
-import { afterEach, beforeEach, describe, it, mock } from "bun:test"
-import * as actualDiskStorage from "@core/storage/disk"
-import * as actualRemoteConfigUtils from "@core/storage/remote-config/utils"
+import * as diskStorage from "@core/storage/disk"
+import * as remoteConfigFetch from "@core/storage/remote-config/fetch"
+import * as remoteConfigUtils from "@core/storage/remote-config/utils"
 import * as assert from "assert"
+import { afterEach, beforeEach, describe, it } from "mocha"
 import sinon from "sinon"
+import type { Controller } from "@/core/controller"
 import { ClineAccountService } from "@/services/account/ClineAccountService"
 import { AuthService } from "@/services/auth/AuthService"
-
-// bun loads real ESM, so sinon cannot stub the `@core/storage/disk` and
-// `@core/storage/remote-config/utils` namespace exports ("ES Modules cannot be
-// stubbed"). Inject module-level sinon stubs via mock.module so the full sinon
-// stub API keeps working. `AuthService`/`ClineAccountService` statics and the
-// `accountService` instance method are still sinon-stubbed directly below.
-const isRemoteConfigEnabledStub: sinon.SinonStub = sinon.stub()
-const applyRemoteConfigStub: sinon.SinonStub = sinon.stub()
-const clearRemoteConfigStub: sinon.SinonStub = sinon.stub()
-const writeRemoteConfigToCacheStub: sinon.SinonStub = sinon.stub()
-const readRemoteConfigFromCacheStub: sinon.SinonStub = sinon.stub()
-const deleteRemoteConfigFromCacheStub: sinon.SinonStub = sinon.stub()
-const diskMock = () => ({
-	...actualDiskStorage,
-	writeRemoteConfigToCache: writeRemoteConfigToCacheStub,
-	readRemoteConfigFromCache: readRemoteConfigFromCacheStub,
-	deleteRemoteConfigFromCache: deleteRemoteConfigFromCacheStub,
-})
-const utilsMock = () => ({
-	...actualRemoteConfigUtils,
-	isRemoteConfigEnabled: isRemoteConfigEnabledStub,
-	applyRemoteConfig: applyRemoteConfigStub,
-	clearRemoteConfig: clearRemoteConfigStub,
-})
-// Register both the alias form (this test's imports) and the relative form the
-// SUT (remote-config/fetch.ts) uses, since bun's mock.module matches specifiers.
-mock.module("@core/storage/disk", diskMock)
-mock.module("@/core/storage/disk", diskMock)
-mock.module("../disk", diskMock)
-mock.module("@core/storage/remote-config/utils", utilsMock)
-mock.module("@/core/storage/remote-config/utils", utilsMock)
-mock.module("./utils", utilsMock)
-
-import * as remoteConfigFetch from "@core/storage/remote-config/fetch"
 
 describe("fetchRemoteConfig", () => {
 	let sandbox: sinon.SinonSandbox
 	let accountService: ClineAccountService
 	let authServiceStub: Partial<AuthService>
 	let fetchUserRemoteConfigStub: sinon.SinonStub
+	let isRemoteConfigEnabledStub: sinon.SinonStub
+
+	function createController(overrides: Record<string, unknown> = {}) {
+		return {
+			accountService: { switchAccount: sandbox.stub().resolves() },
+			stateManager: {
+				getGlobalStateKey: sandbox.stub().returns(false),
+				getApiConfiguration: sandbox.stub().returns({
+					planModeApiProvider: "cline",
+					actModeApiProvider: "cline",
+				}),
+				getGlobalSettingsKey: sandbox.stub().withArgs("mode").returns("act"),
+				setSecret: sandbox.stub(),
+			},
+			mcpHub: {},
+			postStateToWebview: sandbox.stub(),
+			...overrides,
+		}
+	}
 
 	beforeEach(() => {
 		sandbox = sinon.createSandbox()
@@ -53,23 +40,46 @@ describe("fetchRemoteConfig", () => {
 		accountService = new ClineAccountService()
 		sandbox.stub(ClineAccountService, "getInstance").returns(accountService)
 		fetchUserRemoteConfigStub = sandbox.stub(accountService, "fetchUserRemoteConfig")
-
-		// Reset and (re)configure the module-level sinon stubs injected above.
-		isRemoteConfigEnabledStub.reset()
-		applyRemoteConfigStub.reset()
-		clearRemoteConfigStub.reset()
-		writeRemoteConfigToCacheStub.reset()
-		readRemoteConfigFromCacheStub.reset()
-		deleteRemoteConfigFromCacheStub.reset()
-		isRemoteConfigEnabledStub.returns(true)
-		applyRemoteConfigStub.resolves()
-		writeRemoteConfigToCacheStub.resolves()
-		readRemoteConfigFromCacheStub.resolves({ version: "v1" })
-		deleteRemoteConfigFromCacheStub.resolves()
+		isRemoteConfigEnabledStub = sandbox.stub(remoteConfigUtils, "isRemoteConfigEnabled").returns(true)
+		sandbox.stub(remoteConfigUtils, "applyRemoteConfig").resolves()
+		sandbox.stub(remoteConfigUtils, "clearRemoteConfig")
+		sandbox.stub(diskStorage, "writeRemoteConfigToCache").resolves()
+		sandbox.stub(diskStorage, "readRemoteConfigFromCache").resolves({ version: "v1" })
+		sandbox.stub(diskStorage, "deleteRemoteConfigFromCache").resolves()
 	})
 
 	afterEach(() => {
 		sandbox.restore()
+	})
+
+	it("skips remote configuration discovery in offline mode", async () => {
+		const controller = createController()
+		controller.stateManager.getGlobalStateKey.returns(true)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
+		sinon.assert.notCalled(fetchUserRemoteConfigStub)
+		sinon.assert.notCalled(controller.accountService.switchAccount)
+	})
+
+	it("clears remote config and skips discovery when ClinePass is selected", async () => {
+		const controller = createController({
+			stateManager: {
+				getGlobalStateKey: sandbox.stub().returns(false),
+				getApiConfiguration: sandbox.stub().returns({
+					planModeApiProvider: "cline",
+					actModeApiProvider: "cline-pass",
+				}),
+				getGlobalSettingsKey: sandbox.stub().withArgs("mode").returns("act"),
+				setSecret: sandbox.stub(),
+			},
+		})
+
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
+
+		assert.ok((remoteConfigUtils.clearRemoteConfig as sinon.SinonStub).calledOnce)
+		assert.strictEqual(fetchUserRemoteConfigStub.callCount, 0)
+		assert.strictEqual(controller.accountService.switchAccount.callCount, 0)
+		assert.strictEqual((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).callCount, 0)
+		assert.strictEqual(controller.postStateToWebview.callCount, 1)
 	})
 
 	it("switches org when not in the chosen org", async () => {
@@ -83,21 +93,15 @@ describe("fetchRemoteConfig", () => {
 			organizations: [{ organizationId: "org-target", name: "Target Org" }],
 		})
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub().resolves() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
 		assert.strictEqual(controller.accountService.switchAccount.callCount, 1)
 		assert.strictEqual(controller.accountService.switchAccount.firstCall.args[0], "org-target")
-		assert.ok(applyRemoteConfigStub.calledOnce)
+		assert.ok((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).calledOnce)
 	})
 
 	it("skips switchAccount when already in the chosen org", async () => {
@@ -111,20 +115,14 @@ describe("fetchRemoteConfig", () => {
 			organizations: [{ organizationId: "org-target", name: "Target Org" }],
 		})
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
 		assert.strictEqual(controller.accountService.switchAccount.callCount, 0)
-		assert.ok(applyRemoteConfigStub.calledOnce)
+		assert.ok((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).calledOnce)
 	})
 
 	it("uses discoveredValue inline and skips org-level config fetch", async () => {
@@ -139,23 +137,17 @@ describe("fetchRemoteConfig", () => {
 			organizations: [{ organizationId: "org-target", name: "Target Org" }],
 		})
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
-		assert.ok(applyRemoteConfigStub.calledOnce)
+		assert.ok((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).calledOnce)
 		// writeRemoteConfigToCache is called with the parsed config, proving inline parse succeeded.
 		// If it had fallen through to fetchRemoteConfigForOrganization, it would need getAuthToken
 		// and make an HTTP call — but no axios stub is set up, so the test would fail.
-		assert.ok(writeRemoteConfigToCacheStub.calledOnce)
+		assert.ok((diskStorage.writeRemoteConfigToCache as sinon.SinonStub).calledOnce)
 	})
 
 	it("falls back to org-level fetch when discoveredValue fails to parse", async () => {
@@ -170,21 +162,15 @@ describe("fetchRemoteConfig", () => {
 			organizations: [{ organizationId: "org-target", name: "Target Org" }],
 		})
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
 		// Parse failed → fetchRemoteConfigForOrganization → no auth → cache fallback
-		assert.ok(readRemoteConfigFromCacheStub.called)
-		assert.ok(applyRemoteConfigStub.calledOnce)
+		assert.ok((diskStorage.readRemoteConfigFromCache as sinon.SinonStub).called)
+		assert.ok((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).calledOnce)
 	})
 
 	it("does not switch org when resolve fails", async () => {
@@ -200,24 +186,18 @@ describe("fetchRemoteConfig", () => {
 		})
 
 		// Both inline parse and org-level fetch fail (no auth → no fetch), cache is empty
-		readRemoteConfigFromCacheStub.resolves(undefined)
+		;(diskStorage.readRemoteConfigFromCache as sinon.SinonStub).resolves(undefined)
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
 		// Config resolution failed — user should stay in their current org
 		assert.strictEqual(controller.accountService.switchAccount.callCount, 0)
-		assert.ok(clearRemoteConfigStub.called)
-		assert.strictEqual(applyRemoteConfigStub.callCount, 0)
+		assert.ok((remoteConfigUtils.clearRemoteConfig as sinon.SinonStub).called)
+		assert.strictEqual((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).callCount, 0)
 	})
 
 	it("falls back to next locally-allowed org when backend org is opted-out", async () => {
@@ -241,21 +221,17 @@ describe("fetchRemoteConfig", () => {
 		isRemoteConfigEnabledStub.withArgs("org-3").returns(true)
 		// Fallback org has no discoveredValue, so it will go through fetchRemoteConfigForOrganization
 		// which needs auth → will fall back to cache
-		readRemoteConfigFromCacheStub.resolves({ version: "v1" })
+		;(diskStorage.readRemoteConfigFromCache as sinon.SinonStub).resolves({
+			version: "v1",
+		})
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub().resolves() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
-		assert.ok(applyRemoteConfigStub.calledOnce)
+		assert.ok((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).calledOnce)
 	})
 
 	it("clears remote config when all orgs are locally opted-out", async () => {
@@ -270,41 +246,29 @@ describe("fetchRemoteConfig", () => {
 		isRemoteConfigEnabledStub.reset()
 		isRemoteConfigEnabledStub.returns(false)
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
-		assert.ok(clearRemoteConfigStub.called)
+		assert.ok((remoteConfigUtils.clearRemoteConfig as sinon.SinonStub).called)
 		assert.strictEqual(controller.accountService.switchAccount.callCount, 0)
-		assert.strictEqual(applyRemoteConfigStub.callCount, 0)
+		assert.strictEqual((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).callCount, 0)
 	})
 
 	it("calls clearRemoteConfig when discovery returns no qualifying org", async () => {
 		fetchUserRemoteConfigStub.resolves(undefined)
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
-		assert.ok(clearRemoteConfigStub.called)
+		assert.ok((remoteConfigUtils.clearRemoteConfig as sinon.SinonStub).called)
 		assert.strictEqual(controller.accountService.switchAccount.callCount, 0)
-		assert.strictEqual(applyRemoteConfigStub.callCount, 0)
+		assert.strictEqual((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).callCount, 0)
 	})
 
 	it("clears remote config when isRemoteConfigEnabled toggled off mid-flight", async () => {
@@ -322,40 +286,28 @@ describe("fetchRemoteConfig", () => {
 		isRemoteConfigEnabledStub.onFirstCall().returns(true)
 		isRemoteConfigEnabledStub.onSecondCall().returns(false)
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
-		assert.ok(writeRemoteConfigToCacheStub.calledOnce)
-		assert.ok(clearRemoteConfigStub.called)
-		assert.strictEqual(applyRemoteConfigStub.callCount, 0)
+		assert.ok((diskStorage.writeRemoteConfigToCache as sinon.SinonStub).calledOnce)
+		assert.ok((remoteConfigUtils.clearRemoteConfig as sinon.SinonStub).called)
+		assert.strictEqual((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).callCount, 0)
 	})
 
 	it("preserves existing config on unexpected network error", async () => {
 		fetchUserRemoteConfigStub.rejects(new Error("network failure"))
 
-		const controller = {
+		const controller = createController({
 			accountService: { switchAccount: sandbox.stub() },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
-			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
 		// Transient errors should NOT clear existing remote config
-		assert.strictEqual(clearRemoteConfigStub.callCount, 0)
+		assert.strictEqual((remoteConfigUtils.clearRemoteConfig as sinon.SinonStub).callCount, 0)
 		assert.strictEqual(controller.postStateToWebview.callCount, 0)
 	})
 
@@ -370,20 +322,16 @@ describe("fetchRemoteConfig", () => {
 			organizations: [{ organizationId: "org-target", name: "Target Org" }],
 		})
 
-		const controller = {
-			accountService: { switchAccount: sandbox.stub().rejects(new Error("switch failed")) },
-			stateManager: {
-				getApiConfiguration: sandbox.stub().returns({ planModeApiProvider: "cline", actModeApiProvider: "cline" }),
-				setSecret: sandbox.stub(),
+		const controller = createController({
+			accountService: {
+				switchAccount: sandbox.stub().rejects(new Error("switch failed")),
 			},
-			mcpHub: {},
-			postStateToWebview: sandbox.stub(),
-		}
+		})
 
-		await remoteConfigFetch.fetchRemoteConfig(controller as any)
+		await remoteConfigFetch.fetchRemoteConfig(controller as unknown as Controller)
 
 		// switchAccount failure should NOT clear existing remote config
-		assert.strictEqual(clearRemoteConfigStub.callCount, 0)
-		assert.strictEqual(applyRemoteConfigStub.callCount, 0)
+		assert.strictEqual((remoteConfigUtils.clearRemoteConfig as sinon.SinonStub).callCount, 0)
+		assert.strictEqual((remoteConfigUtils.applyRemoteConfig as sinon.SinonStub).callCount, 0)
 	})
 })

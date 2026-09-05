@@ -4,7 +4,6 @@ import {
 	type HubScheduleClient,
 } from "../../commands/schedule/client";
 import { resolveAddress } from "../../commands/schedule/common";
-import { resolveScheduleModelSelection } from "../../commands/schedule/model-selection";
 import { CRON_PRESETS } from "./cron-presets";
 
 function isCancel(value: unknown): value is symbol {
@@ -136,11 +135,10 @@ async function actionCreate(client: HubScheduleClient): Promise<void> {
 	const mode = await p.select({
 		message: "Agent mode",
 		options: [
-			{ value: "yolo", label: "Yolo", hint: "execute without approvals" },
 			{ value: "act", label: "Act", hint: "execute tasks" },
 			{ value: "plan", label: "Plan", hint: "plan only" },
 		],
-		initialValue: "yolo",
+		initialValue: "act",
 	});
 	if (isCancel(mode)) return;
 
@@ -211,14 +209,13 @@ async function actionCreate(client: HubScheduleClient): Promise<void> {
 		}
 	}
 
-	const modelSelection = resolveScheduleModelSelection({ provider, model });
 	const created = (await client.createSchedule({
 		name: (name as string).trim(),
 		cronPattern,
 		prompt: (prompt as string).trim(),
-		provider: modelSelection.provider,
-		model: modelSelection.model,
-		mode: mode as "act" | "plan" | "yolo",
+		provider: provider ?? "cline",
+		model: model ?? "openai/gpt-5.3-codex",
+		mode: (mode as string) === "plan" ? "plan" : "act",
 		workspaceRoot: (workspace as string).trim(),
 		systemPrompt,
 		maxIterations,

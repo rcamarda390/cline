@@ -3,7 +3,7 @@ import { useTerminalDimensions } from "@opentui/react";
 import type { ChoiceContext } from "@opentui-ui/dialog";
 import { useDialogKeyboard } from "@opentui-ui/dialog/react";
 import { useMemo, useRef, useState } from "react";
-import { useDialogPalette } from "../../hooks/use-theme";
+import { palette } from "../../palette";
 import {
 	buildCommandPaletteItems,
 	type CommandPaletteResult,
@@ -32,7 +32,6 @@ export function CommandPaletteContent(
 	},
 ) {
 	const { resolve, dismiss, dialogId, canForkSession, contentWidth } = props;
-	const palette = useDialogPalette();
 	const { height } = useTerminalDimensions();
 	const [query, setQuery] = useState("");
 	const [selected, setSelected] = useState(0);
@@ -192,7 +191,7 @@ export function CommandPaletteContent(
 											{" "}
 										</text>
 										<text
-											fg={isSelected ? palette.textOnSelection : palette.act}
+											fg={isSelected ? palette.textOnSelection : "cyan"}
 											width={shortcutWidth}
 											flexShrink={0}
 										>

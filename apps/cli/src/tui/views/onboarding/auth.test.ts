@@ -21,7 +21,7 @@ vi.mock("@cline/shared", () => ({
 	getClineEnvironmentConfig: () => ({ apiBaseUrl: "https://api.example" }),
 }));
 
-vi.mock("../../../utils/open", () => ({ default: hoisted.openMock }));
+vi.mock("open", () => ({ default: hoisted.openMock }));
 
 vi.mock("../../../utils/feature-flags", () => ({
 	identifyFeatureFlagsAccount: hoisted.identifyFeatureFlagsAccount,

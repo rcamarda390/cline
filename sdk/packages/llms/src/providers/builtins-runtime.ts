@@ -2,11 +2,7 @@ import type {
 	GatewayProviderFactory,
 	GatewayProviderRegistration,
 } from "@cline/shared";
-import {
-	BUILTIN_PROVIDER_MANIFESTS_BY_ID,
-	BUILTIN_SPECS,
-	type ProviderFamily,
-} from "./builtins";
+import { BUILTIN_SPECS, type ProviderFamily, toManifest } from "./builtins";
 
 const FAMILY_FACTORY_PROMISES = new Map<
 	ProviderFamily,
@@ -23,10 +19,6 @@ async function loadFamilyFactory(
 
 	const promise = (async () => {
 		switch (family) {
-			case "cline": {
-				const module = await import("./ai-sdk");
-				return module.createClineProvider;
-			}
 			case "openai": {
 				const module = await import("./ai-sdk");
 				return module.createOpenAIProvider;
@@ -71,10 +63,6 @@ async function loadFamilyFactory(
 				const module = await import("./ai-sdk");
 				return module.createDifyProvider;
 			}
-			case "ollama": {
-				const module = await import("./ai-sdk");
-				return module.createOllamaProvider;
-			}
 			case "sap-ai-core": {
 				const module = await import("./ai-sdk");
 				return module.createSapAiCoreProvider;
@@ -101,22 +89,11 @@ function resolveRuntimeFamily(
 
 export const BUILTIN_PROVIDER_REGISTRATIONS: GatewayProviderRegistration[] =
 	BUILTIN_SPECS.map((spec) => ({
-		manifest: BUILTIN_PROVIDER_MANIFESTS_BY_ID[spec.id],
+		manifest: toManifest(spec),
 		defaults: {
 			...spec.defaults,
 			apiKeyEnv: spec.apiKeyEnv,
 			baseUrl: spec.defaults?.baseUrl,
-			// Surface the regional endpoint facts as a default option so the
-			// registry can resolve a base URL from a caller-selected
-			// `options.apiLine` (see GatewayRegistry.createProvider).
-			...(spec.apiLineBaseUrls
-				? {
-						options: {
-							...(spec.defaults?.options ?? {}),
-							apiLineBaseUrls: spec.apiLineBaseUrls,
-						},
-					}
-				: {}),
 		},
 		loadProvider: async () => ({
 			createProvider: await loadFamilyFactory(resolveRuntimeFamily(spec)),

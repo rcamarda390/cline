@@ -3,7 +3,8 @@ import type {
 	AutocompleteMode,
 	AutocompleteOption,
 } from "../hooks/use-autocomplete";
-import { useTheme } from "../hooks/use-theme";
+import { useTerminalBackground } from "../hooks/use-terminal-background";
+import { getDefaultForeground, palette } from "../palette";
 
 const MAX_ROWS = 7;
 export const DROPDOWN_MAX_HEIGHT = MAX_ROWS + 2;
@@ -18,9 +19,7 @@ export interface AutocompleteDropdownProps {
 }
 
 export function AutocompleteDropdown(props: AutocompleteDropdownProps) {
-	const theme = useTheme();
-	const { mode, options, selected, onSelect } = props;
-	const accent = props.accent ?? theme.accents.act;
+	const { mode, options, selected, onSelect, accent = palette.act } = props;
 	const { width: termWidth } = useTerminalDimensions();
 
 	if (!mode || options.length === 0) return null;
@@ -123,8 +122,8 @@ function OptionRow(props: {
 	accent: string;
 	onSelect: (option: AutocompleteOption) => void;
 }) {
-	const theme = useTheme();
-	const defaultFg = theme.defaultForeground;
+	const terminalBg = useTerminalBackground();
+	const defaultFg = getDefaultForeground(terminalBg);
 	const { opt, isSelected, rowBudget, mode, accent, onSelect } = props;
 
 	if (opt.isHeader) {
@@ -173,12 +172,12 @@ function OptionRow(props: {
 			onMouseDown={() => onSelect(opt)}
 		>
 			<text wrapMode="none">
-				<span fg={isSelected ? theme.textOnSelection : "gray"}>{prefix}</span>
-				<span fg={isSelected ? theme.textOnSelection : defaultFg}>
+				<span fg={isSelected ? palette.textOnSelection : "gray"}>{prefix}</span>
+				<span fg={isSelected ? palette.textOnSelection : defaultFg}>
 					{displayName}
 				</span>
 				{descText ? (
-					<span fg={isSelected ? theme.textOnSelection : "gray"}>
+					<span fg={isSelected ? palette.textOnSelection : "gray"}>
 						{" ".repeat(descGap)}
 						{descText}
 					</span>

@@ -14,9 +14,10 @@
 import { z } from "zod"
 
 // OpenAI Compatible model schema with per-model settings
-const OpenAiCompatibleModelSchema = z.object({
+export const OpenAiCompatibleModelSchema = z.object({
 	id: z.string(), // The model ID is required
 	temperature: z.number().optional(),
+	isR1FormatRequired: z.boolean().optional(),
 	maxTokens: z.number().optional(),
 	contextWindow: z.number().optional(),
 	inputPrice: z.number().optional(),
@@ -36,13 +37,13 @@ export const OpenAiCompatibleSchema = z.object({
 })
 
 // AWS Bedrock model schema with per-model settings
-const AwsBedrockModelSchema = z.object({
+export const AwsBedrockModelSchema = z.object({
 	id: z.string(), // The model ID is required
 	thinkingBudgetTokens: z.number().optional(),
 })
 
 // AWS Bedrock custom model schema (separate from regular models)
-const AwsBedrockCustomModelSchema = z.object({
+export const AwsBedrockCustomModelSchema = z.object({
 	name: z.string(), // The model name is required
 	baseModelId: z.string(), // The base model ID is required
 	thinkingBudgetTokens: z.number().optional(),
@@ -63,7 +64,7 @@ export const AwsBedrockSettingsSchema = z.object({
 })
 
 // Cline Provider model schema with per-model settings
-const ClineModelSchema = z.object({
+export const ClineModelSchema = z.object({
 	id: z.string(), // The model ID is required
 })
 
@@ -74,36 +75,36 @@ export const ClineSettingsSchema = z.object({
 })
 
 // Vertex Provider model schema with per-model settings
-const VertexModelSchema = z.object({
+export const VertexModelSchema = z.object({
 	id: z.string(), // The model ID is required
 	thinkingBudgetTokens: z.number().optional(),
 })
 
 // GCP Vertex Provider specific settings
-const VertexSettingsSchema = z.object({
+export const VertexSettingsSchema = z.object({
 	// A list of the allowed models with their settings
 	models: z.array(VertexModelSchema).optional(),
 	vertexProjectId: z.string().optional(),
 	vertexRegion: z.string().optional(),
 })
 
-const LiteLLMModelSchema = z.object({
+export const LiteLLMModelSchema = z.object({
 	id: z.string(),
 	thinkingBudgetTokens: z.number().optional(),
 	promptCachingEnabled: z.boolean().optional(),
 })
 
-const LiteLLMSchema = z.object({
+export const LiteLLMSchema = z.object({
 	models: z.array(LiteLLMModelSchema).optional(),
 	baseUrl: z.string().optional(),
 })
 
-const AnthropicModelSchema = z.object({
+export const AnthropicModelSchema = z.object({
 	id: z.string(),
 	thinkingBudgetTokens: z.number().optional(),
 })
 
-const AnthropicSchema = z.object({
+export const AnthropicSchema = z.object({
 	models: z.array(AnthropicModelSchema).optional(),
 	baseUrl: z.string().optional(),
 })
@@ -119,12 +120,12 @@ const ProviderSettingsSchema = z.object({
 	Anthropic: AnthropicSchema.optional(),
 })
 
-const AllowedMCPServerSchema = z.object({
+export const AllowedMCPServerSchema = z.object({
 	// The ID of the MCP is the URL for their github repo.
 	id: z.string(),
 })
 
-const RemoteMCPServerSchema = z.object({
+export const RemoteMCPServerSchema = z.object({
 	// The name of the MCP server
 	name: z.string(),
 	// The URL of the MCP server
@@ -136,7 +137,7 @@ const RemoteMCPServerSchema = z.object({
 })
 
 // Settings for a global cline rules or workflow file.
-const GlobalInstructionsFileSchema = z.object({
+export const GlobalInstructionsFileSchema = z.object({
 	// When this is enabled, the user cannot turn off this rule or workflow.
 	alwaysEnabled: z.boolean(),
 	// The name of the rules or workflow file.
@@ -185,10 +186,10 @@ export const RemoteConfigSchema = z.object({
 	kanbanEnabled: z.boolean().optional(),
 
 	// MCP settings
-	// Legacy field name. If this is false, locally configured MCP servers are blocked.
+	// If this is false, the MCP marketplace is disabled in the extension
 	mcpMarketplaceEnabled: z.boolean().optional(),
 
-	// If this is configured, users only have access to these allowlisted local MCP servers.
+	// If this is configured, the users only have access to these allowlisted MCP servers in the marketplace.
 	allowedMCPServers: z.array(AllowedMCPServerSchema).optional(),
 
 	// A list of pre-configured remote MCP servers.
@@ -231,30 +232,30 @@ export const APIKeySchema = z.record(z.string(), z.string())
 
 // Type inference from schemas
 export type RemoteConfig = z.infer<typeof RemoteConfigSchema>
-type MCPServer = z.infer<typeof AllowedMCPServerSchema>
+export type MCPServer = z.infer<typeof AllowedMCPServerSchema>
 export type RemoteMCPServer = z.infer<typeof RemoteMCPServerSchema>
 export type GlobalInstructionsFile = z.infer<typeof GlobalInstructionsFileSchema>
 
-type ProviderSettings = z.infer<typeof ProviderSettingsSchema>
+export type ProviderSettings = z.infer<typeof ProviderSettingsSchema>
 
-type OpenAiCompatible = z.infer<typeof OpenAiCompatibleSchema>
-type OpenAiCompatibleModel = z.infer<typeof OpenAiCompatibleModelSchema>
+export type OpenAiCompatible = z.infer<typeof OpenAiCompatibleSchema>
+export type OpenAiCompatibleModel = z.infer<typeof OpenAiCompatibleModelSchema>
 
-type AwsBedrockSettings = z.infer<typeof AwsBedrockSettingsSchema>
-type AwsBedrockModel = z.infer<typeof AwsBedrockModelSchema>
-type AwsBedrockCustomModel = z.infer<typeof AwsBedrockCustomModelSchema>
+export type AwsBedrockSettings = z.infer<typeof AwsBedrockSettingsSchema>
+export type AwsBedrockModel = z.infer<typeof AwsBedrockModelSchema>
+export type AwsBedrockCustomModel = z.infer<typeof AwsBedrockCustomModelSchema>
 
-type VertexSettings = z.infer<typeof VertexSettingsSchema>
-type VertexModel = z.infer<typeof VertexModelSchema>
+export type VertexSettings = z.infer<typeof VertexSettingsSchema>
+export type VertexModel = z.infer<typeof VertexModelSchema>
 
-type LiteLLMSettings = z.infer<typeof LiteLLMSchema>
-type LiteLLMModel = z.infer<typeof LiteLLMModelSchema>
+export type LiteLLMSettings = z.infer<typeof LiteLLMSchema>
+export type LiteLLMModel = z.infer<typeof LiteLLMModelSchema>
 
-type AnthropicSettings = z.infer<typeof AnthropicSchema>
-type AnthropicModel = z.infer<typeof AnthropicModelSchema>
+export type AnthropicSettings = z.infer<typeof AnthropicSchema>
+export type AnthropicModel = z.infer<typeof AnthropicModelSchema>
 
 export type APIKeySettings = z.infer<typeof APIKeySchema>
 
-type EnterpriseTelemetry = z.infer<typeof EnterpriseTelemetrySchema>
-type PromptUploading = z.infer<typeof PromptUploadingSchema>
+export type EnterpriseTelemetry = z.infer<typeof EnterpriseTelemetrySchema>
+export type PromptUploading = z.infer<typeof PromptUploadingSchema>
 export type S3AccessKeySettings = z.infer<typeof S3AccessKeySettingsSchema>

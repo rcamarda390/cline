@@ -78,9 +78,11 @@ export function handleCapabilityProgress(
 			: "";
 	const pending = ctx.pendingCapabilityRequests.get(requestId);
 	if (!pending) {
-		// Duplicate/late progress after resolve is common with multiple connectors;
-		// ack quietly instead of capability_not_found spam.
-		return okReply(envelope, { requestId, ignored: true });
+		return errorReply(
+			envelope,
+			"capability_not_found",
+			`Unknown capability request: ${requestId}`,
+		);
 	}
 	const responderClientId = envelope.clientId?.trim() || "";
 	if (responderClientId !== pending.targetClientId) {
@@ -211,9 +213,11 @@ export function handleCapabilityRespond(
 			: "";
 	const pending = ctx.pendingCapabilityRequests.get(requestId);
 	if (!pending) {
-		// A second connector (or a retried client) often answers after the first
-		// already resolved the request. Treat as a no-op success.
-		return okReply(envelope, { requestId, ignored: true });
+		return errorReply(
+			envelope,
+			"capability_not_found",
+			`Unknown capability request: ${requestId}`,
+		);
 	}
 	const responderClientId = envelope.clientId?.trim() || "";
 	if (responderClientId !== pending.targetClientId) {

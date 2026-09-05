@@ -1,8 +1,7 @@
-import type { ModelInfo } from "@shared/api"
+import { geminiModels, ModelInfo } from "@shared/api"
 import { VSCodeDropdown, VSCodeOption } from "@vscode/webview-ui-toolkit/react"
 import { useState } from "react"
 import styled from "styled-components"
-import { useProviderModels } from "@/hooks/useProviderModels"
 import { ModelDescriptionMarkdown } from "../ModelDescriptionMarkdown"
 import { formatPrice, hasThinkingBudget, supportsBrowserUse, supportsImages, supportsPromptCache } from "../utils/pricingUtils"
 
@@ -175,14 +174,6 @@ interface ModelInfoViewProps {
 	providerSorting?: string
 	onProviderSortingChange?: (value: string) => void
 	showProviderRouting?: boolean
-	/**
-	 * Suppress the per-token pricing display (compact input/output row, cache
-	 * pricing in Advanced, and tiered pricing). Set this for providers whose
-	 * billing is subscription-based or otherwise not per-token — any
-	 * `ProviderInfo.metadata.usageCostDisplay` other than `"show"` (see
-	 * `resolveProviderUsageCostDisplay` in `@cline/llms`).
-	 */
-	hideUsageCost?: boolean
 }
 
 // ========== Component ==========
@@ -194,14 +185,13 @@ export const ModelInfoView = ({
 	providerSorting,
 	onProviderSortingChange,
 	showProviderRouting,
-	hideUsageCost,
 }: ModelInfoViewProps) => {
 	const [advancedExpanded, setAdvancedExpanded] = useState(false)
 
-	const { models: geminiModels } = useProviderModels("gemini")
-	const isGemini = Object.hasOwn(geminiModels, selectedModelId)
+	const isGemini = Object.keys(geminiModels).includes(selectedModelId)
+	const hidePricing = selectedModelId.trim().toLowerCase().startsWith("cline-pass/")
 	const hasThinkingConfig = hasThinkingBudget(modelInfo)
-	const hasTiers = !!modelInfo.tiers && modelInfo.tiers.length > 0
+	const hasTiers = !hidePricing && !!modelInfo.tiers && modelInfo.tiers.length > 0
 
 	// Capability checks
 	const hasImages = supportsImages(modelInfo)
@@ -209,7 +199,8 @@ export const ModelInfoView = ({
 	const hasCaching = !isGemini && supportsPromptCache(modelInfo)
 
 	// Check if we have cache pricing to show in Advanced section
-	const hasCachePricing = modelInfo.supportsPromptCache && (modelInfo.cacheWritesPrice || modelInfo.cacheReadsPrice)
+	const hasCachePricing =
+		!hidePricing && modelInfo.supportsPromptCache && (modelInfo.cacheWritesPrice || modelInfo.cacheReadsPrice)
 
 	return (
 		<div style={{ marginTop: 4 }}>
@@ -226,13 +217,13 @@ export const ModelInfoView = ({
 						<InfoValue>{formatCompactContext(modelInfo.contextWindow)}</InfoValue>
 					</InfoItem>
 				)}
-				{!hideUsageCost && modelInfo.inputPrice !== undefined && (
+				{!hidePricing && modelInfo.inputPrice !== undefined && (
 					<InfoItem>
 						<InfoLabel>Input: </InfoLabel>
 						<InfoValue>{formatCompactPrice(modelInfo.inputPrice)}</InfoValue>
 					</InfoItem>
 				)}
-				{!hideUsageCost && modelInfo.outputPrice !== undefined && (
+				{!hidePricing && modelInfo.outputPrice !== undefined && (
 					<InfoItem>
 						<InfoLabel>Output: </InfoLabel>
 						<InfoValue>
@@ -268,7 +259,7 @@ export const ModelInfoView = ({
 					)}
 
 					{/* Cache Pricing */}
-					{!hideUsageCost && hasCachePricing && (
+					{hasCachePricing && (
 						<>
 							{modelInfo.cacheReadsPrice !== undefined && (
 								<AdvancedRow>
@@ -286,7 +277,7 @@ export const ModelInfoView = ({
 					)}
 
 					{/* Tiered Pricing */}
-					{!hideUsageCost && hasTiers && (
+					{hasTiers && (
 						<div style={{ marginTop: 8 }}>
 							<div style={{ fontWeight: 500, marginBottom: 4 }}>Tiered Pricing:</div>
 							{modelInfo.tiers && (

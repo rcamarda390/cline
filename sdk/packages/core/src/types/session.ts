@@ -3,7 +3,6 @@ import type { AgentFinishReason } from "@cline/shared";
 import type { SessionAccumulatedUsage } from "../runtime/host/runtime-host";
 import type { BuiltRuntime } from "../runtime/orchestration/session-runtime";
 import type { SessionRuntime } from "../runtime/orchestration/session-runtime-orchestrator";
-import type { SessionCompactionState } from "../session/models/session-compaction";
 import type { SessionRow } from "../session/models/session-row";
 import type { RootSessionArtifacts } from "../session/services/session-service";
 import type { SessionSource, SessionStatus } from "./common";
@@ -27,8 +26,6 @@ export type ActiveSession = {
 	aborting: boolean;
 	interactive: boolean;
 	persistedMessages?: LlmsProviders.MessageWithMetadata[];
-	compactionState?: SessionCompactionState;
-	compactionStateWriteQueue?: Promise<void>;
 	activeTeamRunIds: Set<string>;
 	pendingTeamRunUpdates: TeamRunUpdate[];
 	teamRunWaiters: Array<() => void>;
@@ -48,21 +45,14 @@ export type ActiveSession = {
 	 *    declares completion (parity with original Cline's
 	 *    `attempt_completion`).
 	 * 2. Suppress the fallback `task.completed` emission from
-	 *    `emitTaskCompletedOnTeardown(...)` so the same logical completion
-	 *    is not reported twice.
+	 *    `shutdownSession(...)` so the same logical completion is not
+	 *    reported twice.
 	 *
 	 * Non-interactive sessions that finish without ever calling the
-	 * completion tool still receive a `task.completed` from the teardown
+	 * completion tool still receive a `task.completed` from the shutdown
 	 * fallback.
 	 */
 	submitAndExitObserved: boolean;
-	/**
-	 * Set to `true` the moment `task.completed` is emitted for this session,
-	 * whether by the `submit_and_exit` observer or by the teardown fallback
-	 * (`emitTaskCompletedOnTeardown`). Enforces the invariant of exactly one
-	 * `task.completed` per session regardless of which teardown path runs.
-	 */
-	taskCompletedEmitted: boolean;
 };
 
 export type PendingPrompt = {

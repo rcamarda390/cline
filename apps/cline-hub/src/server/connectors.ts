@@ -2,14 +2,13 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import process from "node:process";
-import { listActiveConnectors } from "@cline/core";
+import { withResolvedClineBuildEnv } from "@cline/shared";
+import { listConnectorCatalog } from "../../../cli/src/connectors/catalog";
+import { listActiveConnectors } from "../../../cli/src/connectors/status";
 import {
-	buildConnectorConnectArgs,
-	CONNECTOR_PLATFORMS,
-	listConnectorCatalog,
-	setConnectorCliLaunchSpec,
-	withResolvedClineBuildEnv,
-} from "@cline/shared";
+	PLATFORMS,
+	shouldIncludeField,
+} from "../../../cli/src/wizards/connect/platforms";
 import type {
 	WebviewConnectorChannel,
 	WebviewConnectorChannelsResponse,
@@ -79,21 +78,12 @@ function buildCliConnectCommand(
 	return { launcher, childArgs };
 }
 
-export function configureConnectorCliLaunch(): void {
-	const command = buildCliConnectCommand([]);
-	setConnectorCliLaunchSpec({
-		launcher: command.launcher,
-		connectArgsPrefix: command.childArgs,
-		cwd: workspaceRoot,
-	});
-}
-
 export function connectorChannelsPayload(): WebviewConnectorChannelsResponse {
 	const supported = new Set(
 		listConnectorCatalog().map((connector) => connector.name),
 	);
-	const available: WebviewConnectorChannel[] = CONNECTOR_PLATFORMS.filter(
-		(platform) => supported.has(platform.id),
+	const available: WebviewConnectorChannel[] = PLATFORMS.filter((platform) =>
+		supported.has(platform.id),
 	).map((platform) => ({
 		id: platform.id,
 		name: platform.name,
@@ -164,15 +154,12 @@ async function waitForConnectorState(
 		if (predicate()) return;
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
-	throw new Error(
-		`connector did not reach expected state within ${timeoutMs}ms`,
-	);
 }
 
 function buildConnectorStartArgs(args?: Record<string, unknown>): string[] {
 	const channel = asString(args?.channel);
 	if (!channel) throw new Error("channel is required");
-	const platform = CONNECTOR_PLATFORMS.find((entry) => entry.id === channel);
+	const platform = PLATFORMS.find((entry) => entry.id === channel);
 	if (!platform) throw new Error(`unknown connector channel: ${channel}`);
 	const supported = new Set(
 		listConnectorCatalog().map((connector) => connector.name),
@@ -190,40 +177,32 @@ function buildConnectorStartArgs(args?: Record<string, unknown>): string[] {
 			fieldValues[field.flag] = field.initialValue;
 		}
 	}
-	const securityInput = asRecord(args?.security);
-	const rawSecurityValues = asRecord(securityInput?.values) ?? {};
-	const securityValues: Record<string, string> = {};
-	for (const [key, value] of Object.entries(rawSecurityValues)) {
-		if (typeof value === "string") {
-			securityValues[key] = value.trim();
+	const cliArgs = [channel];
+	for (const field of platform.fields) {
+		if (!shouldIncludeField(field, fieldValues)) {
+			continue;
 		}
+		const value = fieldValues[field.flag];
+		if (!value) {
+			if (field.required) throw new Error(`${field.label} is required`);
+			continue;
+		}
+		cliArgs.push(field.flag, value);
 	}
-	return [
-		channel,
-		...buildConnectorConnectArgs(platform, fieldValues, {
-			enabled: securityInput?.enabled === true,
-			values: securityValues,
-		}),
-	];
-}
-
-function buildConnectorLaunchArgs(
-	cliArgs: string[],
-	mode: "start" | "restart",
-): string[] {
-	return mode === "restart" ? ["--restart", ...cliArgs] : cliArgs;
-}
-
-function resolveConnectorLaunchMode(
-	channel: string,
-	activeCount: number,
-): "start" | "restart" {
-	if (activeCount > 1) {
-		throw new Error(
-			`cannot safely restart ${channel}: ${activeCount} instances are active; stop the intended instances explicitly first`,
-		);
+	const security = asRecord(args?.security);
+	if (security?.enabled === true && platform.security) {
+		const securityValues = asRecord(security.values) ?? {};
+		const hookValues: Record<string, string> = {};
+		for (const field of platform.security.fields) {
+			const value = asString(securityValues[field.key]);
+			if (!value) throw new Error(field.requiredMessage);
+			const validationError = field.validate?.(value);
+			if (validationError) throw new Error(validationError);
+			hookValues[field.key] = value;
+		}
+		cliArgs.push(...platform.security.buildArgs(hookValues));
 	}
-	return activeCount === 1 ? "restart" : "start";
+	return cliArgs;
 }
 
 export async function startConnectorChannel(
@@ -231,13 +210,7 @@ export async function startConnectorChannel(
 ): Promise<WebviewConnectorChannelsResponse> {
 	const cliArgs = buildConnectorStartArgs(args);
 	const channel = cliArgs[0] ?? "";
-	const activeCount = listActiveConnectors().filter(
-		(connector) => connector.type === channel,
-	).length;
-	const mode = resolveConnectorLaunchMode(channel, activeCount);
-	const result = await runCliConnectCommand(
-		buildConnectorLaunchArgs(cliArgs, mode),
-	);
+	const result = await runCliConnectCommand(cliArgs);
 	if (result.code !== 0) {
 		throw new Error(
 			normalizeConnectorError(
@@ -254,11 +227,7 @@ export async function startConnectorChannel(
 
 export const __test__ = {
 	buildCliConnectCommand,
-	buildConnectorLaunchArgs,
-	buildConnectorStartArgs,
 	normalizeConnectorError,
-	resolveConnectorLaunchMode,
-	waitForConnectorState,
 };
 
 export async function stopConnectorChannel(
@@ -272,9 +241,7 @@ export async function stopConnectorChannel(
 	if (!supported.has(channel)) {
 		throw new Error(`unknown connector channel: ${channel}`);
 	}
-	// `--stop` must precede the channel: the connect command uses
-	// passThroughOptions, so flags after the channel go to the adapter.
-	const result = await runCliConnectCommand(["--stop", channel]);
+	const result = await runCliConnectCommand([channel, "--stop"]);
 	if (result.code !== 0) {
 		throw new Error(
 			normalizeConnectorError(

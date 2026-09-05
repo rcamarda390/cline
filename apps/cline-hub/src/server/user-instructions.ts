@@ -1,19 +1,70 @@
-import { existsSync, readdirSync } from "node:fs";
-import { extname, join, basename as pathBasename } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import {
-	createCoreSettingsService,
+	dirname,
+	extname,
+	isAbsolute,
+	join,
+	basename as pathBasename,
+	relative,
+	resolve,
+} from "node:path";
+import {
 	createUserInstructionConfigService,
+	discoverPluginModulePaths,
 	getCoreBuiltinToolCatalog,
 	listHookConfigFiles,
+	listPluginTools,
 	readGlobalSettings,
+	resolvePluginConfigSearchPaths,
 	resolveAgentConfigSearchPaths as resolveSharedAgentConfigSearchPaths,
 } from "@cline/core";
-import { readFileSyncStrippingUtf8Bom } from "@cline/shared/node";
 import { readMcpServersResponse } from "./mcp";
 import type { JsonRecord } from "./types";
 
 function resolveAgentConfigSearchPaths(workspaceRoot?: string): string[] {
 	return resolveSharedAgentConfigSearchPaths(workspaceRoot);
+}
+
+function readPackageName(packageJsonPath: string): string | undefined {
+	try {
+		const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+			name?: unknown;
+		};
+		return typeof packageJson.name === "string" && packageJson.name.trim()
+			? packageJson.name.trim()
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function isPathWithin(parentPath: string, childPath: string): boolean {
+	const relativePath = relative(resolve(parentPath), resolve(childPath));
+	return (
+		relativePath === "" ||
+		(!relativePath.startsWith("..") && !isAbsolute(relativePath))
+	);
+}
+
+function getPluginDisplayName(filePath: string, searchRoot: string): string {
+	let current = dirname(filePath);
+	const root = resolve(searchRoot);
+	while (isPathWithin(root, current)) {
+		const packageJsonPath = join(current, "package.json");
+		if (existsSync(packageJsonPath)) {
+			const packageName = readPackageName(packageJsonPath);
+			if (packageName) {
+				return packageName;
+			}
+			break;
+		}
+		const parent = resolve(current, "..");
+		if (parent === current) {
+			break;
+		}
+		current = parent;
+	}
+	return pathBasename(filePath, extname(filePath));
 }
 
 export async function listUserInstructionConfigs(
@@ -63,7 +114,7 @@ export async function listUserInstructionConfigs(
 					const ext = extname(entry.name).toLowerCase();
 					if (ext !== ".yml" && ext !== ".yaml") continue;
 					const filePath = join(directory, entry.name);
-					const raw = readFileSyncStrippingUtf8Bom(filePath);
+					const raw = readFileSync(filePath, "utf8");
 					const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
 					const fm = fmMatch?.[1] ?? "";
 					const nameMatch = fm.match(/^\s*name:\s*(.+?)\s*$/m);
@@ -96,21 +147,49 @@ export async function listUserInstructionConfigs(
 		}
 	};
 
-	const [rules, workflows, skills, settingsSnapshot] = await Promise.all([
+	const loadPlugins = (): Array<{
+		name: string;
+		path: string;
+		enabled: boolean;
+	}> => {
+		const disabledPlugins = new Set(readGlobalSettings().disabledPlugins ?? []);
+		const pluginsByPath = new Map<
+			string,
+			{ name: string; path: string; enabled: boolean }
+		>();
+		const directories = resolvePluginConfigSearchPaths(
+			targetWorkspaceRoot,
+		).filter((d) => existsSync(d));
+		for (const directory of directories) {
+			try {
+				for (const filePath of discoverPluginModulePaths(directory)) {
+					if (pluginsByPath.has(filePath)) continue;
+					pluginsByPath.set(filePath, {
+						name: getPluginDisplayName(filePath, directory),
+						path: filePath,
+						enabled: !disabledPlugins.has(filePath),
+					});
+				}
+			} catch {
+				// best-effort
+			}
+		}
+		return [...pluginsByPath.values()].sort((a, b) =>
+			a.name.localeCompare(b.name),
+		);
+	};
+
+	const [rules, workflows, skills, pluginTools] = await Promise.all([
 		loadUserInstructionSnapshot("rule"),
 		loadUserInstructionSnapshot("workflow"),
 		loadUserInstructionSnapshot("skill"),
-		createCoreSettingsService().list({
-			workspaceRoot: targetWorkspaceRoot,
+		listPluginTools({
+			workspacePath: targetWorkspaceRoot,
 			cwd: targetWorkspaceRoot,
 		}),
 	]);
 	const disabledTools = new Set(readGlobalSettings().disabledTools ?? []);
-	// Pin spawn/teams availability so this listing matches the desktop
-	// sidecar's (sidecar/commands.ts) even if the preset defaults change.
 	const builtinToolCatalog = getCoreBuiltinToolCatalog({
-		enableSpawnAgent: true,
-		enableAgentTeams: true,
 		disabledToolIds: disabledTools,
 	});
 
@@ -120,12 +199,7 @@ export async function listUserInstructionConfigs(
 		workflows,
 		skills,
 		agents: loadAgents(),
-		plugins: settingsSnapshot.plugins.map((plugin) => ({
-			name: plugin.name,
-			path: plugin.path,
-			enabled: plugin.enabled !== false,
-			contributions: plugin.contributions,
-		})),
+		plugins: loadPlugins(),
 		tools: [
 			...builtinToolCatalog.map((tool) => ({
 				id: tool.id,
@@ -137,11 +211,11 @@ export async function listUserInstructionConfigs(
 				source: "builtin",
 				headlessToolNames: tool.headlessToolNames,
 			})),
-			...settingsSnapshot.tools.map((tool) => ({
-				id: tool.id,
+			...pluginTools.map((tool) => ({
+				id: `${tool.pluginName}:${tool.name}:${tool.path}`,
 				name: tool.name,
 				description: tool.description,
-				enabled: tool.enabled !== false,
+				enabled: tool.enabled,
 				source: tool.source,
 				path: tool.path,
 				pluginName: tool.pluginName,

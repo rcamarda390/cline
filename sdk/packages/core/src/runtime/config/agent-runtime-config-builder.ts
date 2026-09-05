@@ -25,7 +25,6 @@ import type {
 	BasicLogger,
 	ITelemetryService,
 } from "@cline/shared";
-import { version as clineCoreVersion } from "../../../package.json";
 
 /**
  * Inputs required to assemble an `AgentRuntimeConfig`. Distinct from
@@ -70,11 +69,6 @@ export interface CreateAgentRuntimeConfigInput {
 	/** Seed messages (usually `session.conversation.getMessages()`). */
 	readonly initialMessages?: readonly AgentMessage[];
 	/**
-	 * Optional completion-policy override. Pass `null` for model modes that
-	 * cannot call tools (for example image generation).
-	 */
-	readonly completionPolicy?: AgentRuntimeConfig["completionPolicy"] | null;
-	/**
 	 * Override for `AgentRuntimeConfig.systemPrompt` — useful when
 	 * the caller has composed additional guidance (e.g. via
 	 * `LocalRuntimeHost.composeSystemPrompt`). Defaults to
@@ -97,10 +91,6 @@ export function createAgentRuntimeConfig(
 	const toolExecution = resolveToolExecution(agentConfig.maxParallelToolCalls);
 
 	const config: AgentRuntimeConfig = {
-		distinctId: agentConfig.distinctId,
-		clientName: agentConfig.extensionContext?.client?.name,
-		clientVersion: agentConfig.extensionContext?.client?.version,
-		clineCoreVersion,
 		sessionId: input.sessionId ?? agentConfig.sessionId,
 		agentId: input.agentId,
 		conversationId: input.conversationId,
@@ -110,7 +100,6 @@ export function createAgentRuntimeConfig(
 		messageModelInfo,
 		model: input.model,
 		modelOptions,
-		modelTools: agentConfig.modelTools,
 		tools: input.tools,
 		hooks,
 		prepareTurn: input.prepareTurn,
@@ -119,10 +108,7 @@ export function createAgentRuntimeConfig(
 		logger: input.logger ?? agentConfig.logger,
 		telemetry: input.telemetry ?? agentConfig.telemetry,
 		initialMessages: input.initialMessages,
-		completionPolicy:
-			input.completionPolicy === null
-				? undefined
-				: (input.completionPolicy ?? agentConfig.completionPolicy),
+		completionPolicy: agentConfig.completionPolicy,
 		maxIterations: agentConfig.maxIterations,
 		toolExecution,
 		toolPolicies: agentConfig.toolPolicies,
@@ -157,9 +143,6 @@ export function buildModelOptions(
 	}
 	if (config.maxTokensPerTurn !== undefined) {
 		options.maxTokensPerTurn = config.maxTokensPerTurn;
-	}
-	if (config.temperature !== undefined) {
-		options.temperature = config.temperature;
 	}
 	if (config.apiTimeoutMs !== undefined) {
 		options.apiTimeoutMs = config.apiTimeoutMs;

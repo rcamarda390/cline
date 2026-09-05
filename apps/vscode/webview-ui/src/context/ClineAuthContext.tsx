@@ -1,8 +1,8 @@
-import type { AuthState, UserOrganization } from "@shared/proto/cline/account"
+import type { UserOrganization } from "@shared/proto/cline/account"
 import { EmptyRequest } from "@shared/proto/cline/common"
 import deepEqual from "fast-deep-equal"
 import type React from "react"
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { AccountServiceClient } from "@/services/grpc-client"
 
 // Define User type (you may need to adjust this based on your actual User type)
@@ -25,15 +25,10 @@ export const ClineAuthContext = createContext<ClineAuthContextType | undefined>(
 export const ClineAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [user, setUser] = useState<ClineUser | null>(null)
 	const [userOrganizations, setUserOrganizations] = useState<UserOrganization[] | null>(null)
-	const organizationsRequestIdRef = useRef(0)
 
 	const getUserOrganizations = useCallback(async () => {
-		const requestId = ++organizationsRequestIdRef.current
 		try {
 			const response = await AccountServiceClient.getUserOrganizations(EmptyRequest.create())
-			if (requestId !== organizationsRequestIdRef.current) {
-				return
-			}
 			setUserOrganizations((old) => {
 				if (!deepEqual(response.organizations, old)) {
 					return response.organizations
@@ -57,23 +52,22 @@ export const ClineAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 	// Handle auth status update events
 	useEffect(() => {
 		const cancelSubscription = AccountServiceClient.subscribeToAuthStatusUpdate(EmptyRequest.create(), {
-			onResponse: (response: AuthState) => {
-				const responseUser = response.user
-				if (!responseUser?.uid) {
-					organizationsRequestIdRef.current++
-					setUser(null)
-					setUserOrganizations(null)
-					return
-				}
+			onResponse: async (response) => {
+				setUser((oldUser) => {
+					if (!response?.user?.uid) {
+						return null
+					}
 
-				// Refresh organizations on every auth status update, not just user
-				// changes. Switching organizations doesn't change the uid, so gating
-				// this on uid changes leaves stale `active` flags — which reset the
-				// account view's org dropdown on remount. The deepEqual guard in
-				// getUserOrganizations prevents no-op re-renders.
-				getUserOrganizations()
+					if (response?.user && oldUser?.uid !== response.user.uid) {
+						// Once we have a new user, fetch organizations that
+						// allow us to display the active account in account view UI
+						// and fetch the correct credit balance to display on mount
+						getUserOrganizations()
+						return response.user
+					}
 
-				setUser((oldUser) => (oldUser?.uid !== responseUser.uid ? responseUser : oldUser))
+					return oldUser
+				})
 			},
 			onError: (error: Error) => {
 				console.error("Error in auth callback subscription:", error)
@@ -85,7 +79,6 @@ export const ClineAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
 		// Cleanup function to cancel subscription when component unmounts
 		return () => {
-			organizationsRequestIdRef.current++
 			cancelSubscription()
 		}
 	}, [getUserOrganizations])
@@ -112,34 +105,23 @@ export const useClineAuth = () => {
 
 export const useClineSignIn = () => {
 	const [isLoading, setIsLoading] = useState(false)
-	const [authStatusMessage, setAuthStatusMessage] = useState<string | null>(null)
 
 	const handleSignIn = useCallback(() => {
 		try {
 			setIsLoading(true)
-			setAuthStatusMessage(null)
 
 			AccountServiceClient.accountLoginClicked(EmptyRequest.create())
-				.then((response) => {
-					setAuthStatusMessage(response.value || "Complete sign-in in your browser.")
-				})
-				.catch((err) => {
-					console.error("Failed to start login:", err)
-					setAuthStatusMessage("Unable to start sign-in. Please try again.")
-				})
+				.catch((err) => console.error("Failed to get login URL:", err))
 				.finally(() => {
 					setIsLoading(false)
 				})
 		} catch (error) {
 			console.error("Error signing in:", error)
-			setAuthStatusMessage("Unable to start sign-in. Please try again.")
-			setIsLoading(false)
 		}
 	}, [])
 
 	return {
 		isLoginLoading: isLoading,
-		authStatusMessage,
 		handleSignIn,
 	}
 }

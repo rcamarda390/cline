@@ -1,31 +1,17 @@
-import { afterEach, beforeEach, describe, it, mock } from "bun:test"
+import { afterEach, describe, it } from "mocha"
 import "should"
 import sinon from "sinon"
-import * as actualGitUtils from "@/utils/git"
-
-// bun loads real ESM, so sinon cannot stub the `@/utils/git` namespace export
-// ("ES Modules cannot be stubbed"). Inject a module-level sinon stub for
-// `getGitDiff` via mock.module so the full sinon stub API keeps working.
-const getGitDiffStub: sinon.SinonStub = sinon.stub()
-const gitUtilsMock = () => ({ ...actualGitUtils, getGitDiff: getGitDiffStub })
-mock.module("@/utils/git", gitUtilsMock)
-mock.module("@utils/git", gitUtilsMock)
-
+import * as gitUtils from "@/utils/git"
 import { getGitDiffStagedFirst } from "../commit-message-generator"
 
 describe("commit-message-generator", () => {
 	describe("getGitDiffStagedFirst", () => {
-		beforeEach(() => {
-			getGitDiffStub.reset()
-		})
-
 		afterEach(() => {
 			sinon.restore()
-			getGitDiffStub.reset()
 		})
 
 		it("should return staged changes when they exist", async () => {
-			const stub = getGitDiffStub
+			const stub = sinon.stub(gitUtils, "getGitDiff")
 			stub.withArgs("/repo", true).resolves("staged diff content")
 
 			const result = await getGitDiffStagedFirst("/repo")
@@ -34,7 +20,7 @@ describe("commit-message-generator", () => {
 		})
 
 		it("should fall back to all changes when no staged changes exist", async () => {
-			const stub = getGitDiffStub
+			const stub = sinon.stub(gitUtils, "getGitDiff")
 			stub.withArgs("/repo", true).rejects(new Error("No changes in workspace for commit message"))
 			stub.withArgs("/repo", false).resolves("all diff content")
 
@@ -46,7 +32,7 @@ describe("commit-message-generator", () => {
 		})
 
 		it("should propagate error when both staged and all changes fail", async () => {
-			const stub = getGitDiffStub
+			const stub = sinon.stub(gitUtils, "getGitDiff")
 			stub.withArgs("/repo", true).rejects(new Error("No changes"))
 			stub.withArgs("/repo", false).rejects(new Error("No changes in workspace for commit message"))
 

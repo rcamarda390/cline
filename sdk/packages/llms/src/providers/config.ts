@@ -5,11 +5,7 @@
  * This replaces the per-provider config chaos with a single structure.
  */
 
-import type {
-	BasicLogger,
-	ExtensionContext,
-	ReasoningEffort,
-} from "@cline/shared";
+import type { BasicLogger, ExtensionContext } from "@cline/shared";
 import type { ModelInfo, ProviderClient } from "../catalog/types";
 import {
 	BUILT_IN_PROVIDER,
@@ -124,8 +120,6 @@ export interface TokenConfig {
 	maxInputTokens?: number;
 	/** Maximum output tokens (overrides model default) */
 	maxOutputTokens?: number;
-	/** Sampling temperature (overrides model default) */
-	temperature?: number;
 }
 
 /**
@@ -133,7 +127,7 @@ export interface TokenConfig {
  */
 export interface ReasoningConfig {
 	/** Reasoning effort level */
-	reasoningEffort?: ReasoningEffort;
+	reasoningEffort?: "low" | "medium" | "high" | "xhigh";
 	/** Extended thinking budget in tokens */
 	thinkingBudgetTokens?: number;
 	/** Enable thinking with provider/model defaults when supported */
@@ -263,6 +257,8 @@ export interface ProviderOptions {
  * Runtime model catalog refresh options
  */
 export interface ModelCatalogConfig {
+	/** Do not schedule live catalog or provider model refreshes. */
+	offlineMode?: boolean;
 	/** Fetch latest catalog at handler initialization */
 	loadLatestOnInit?: boolean;
 	/** Fetch provider-private models when auth is available */
@@ -313,6 +309,14 @@ export interface ProviderConfig
 
 	/** Task/session ID for telemetry */
 	taskId?: string;
+
+	/** Retry callback */
+	onRetryAttempt?: (
+		attempt: number,
+		maxRetries: number,
+		delay: number,
+		error: unknown,
+	) => void;
 
 	/** AbortSignal for cancelling requests */
 	abortSignal?: AbortSignal;

@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import type { McpToolNameTransform } from "./types";
 
-// 64 is OpenAI's function-name limit; Anthropic allows 128. Cap at the lower
-// bound so OpenAI-compatible providers don't reject long MCP tool names.
-const MAX_MCP_TOOL_NAME_LENGTH = 64;
+const MAX_MCP_TOOL_NAME_LENGTH = 128;
 const INVALID_MCP_TOOL_NAME_CHARACTERS = /[^a-zA-Z0-9_-]+/g;
 const HASH_LENGTH = 8;
 const HASH_SEPARATOR_LENGTH = 1;

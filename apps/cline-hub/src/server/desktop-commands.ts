@@ -11,7 +11,6 @@ import {
 	getValidClineCredentials,
 	listLocalProviders,
 	loginAndSaveLocalProviderOAuthCredentials,
-	markLocalProviderEnabled,
 	normalizeOAuthProvider,
 	type ProviderCapability,
 	type ProviderClient,
@@ -21,7 +20,10 @@ import {
 	saveLocalProviderOAuthCredentials,
 	saveLocalProviderSettings,
 	setAutoUpdateEnabledGlobally,
+	setDisabledPlugin,
+	setDisabledTools,
 	setTelemetryOptOutGlobally,
+	toggleDisabledTool,
 } from "@cline/core";
 import { getClineEnvironmentConfig } from "@cline/shared";
 import {
@@ -101,9 +103,7 @@ export async function handleDesktopCommand(
 ): Promise<unknown> {
 	if (command === "list_provider_catalog") {
 		await ensureCustomProvidersLoaded(providerSettingsManager);
-		return await listLocalProviders(providerSettingsManager, {
-			isClinePassEnabled: true,
-		});
+		return await listLocalProviders(providerSettingsManager);
 	}
 	if (command === "list_provider_models") {
 		const provider = String(args?.provider ?? "").trim();
@@ -165,11 +165,6 @@ export async function handleDesktopCommand(
 			providerId,
 			openExternalUrl,
 		);
-		if (saved.provider !== providerId) {
-			markLocalProviderEnabled(providerSettingsManager, providerId, {
-				tokenSource: "oauth",
-			});
-		}
 		return {
 			provider: providerId,
 			accessToken: saved.auth?.accessToken ?? saved.apiKey ?? "",
@@ -253,7 +248,7 @@ export async function handleDesktopCommand(
 		return path;
 	}
 	if (ROUTINE_SCHEDULE_COMMANDS.has(command)) {
-		return await handleRoutineScheduleCommand(command, args, workspaceRoot);
+		return await handleRoutineScheduleCommand(command, args);
 	}
 	if (command === "get_process_context") {
 		return { workspaceRoot, cwd: workspaceRoot };
@@ -294,13 +289,7 @@ export async function handleDesktopCommand(
 	if (command === "toggle_disabled_plugin_tool") {
 		const toolName = String(args?.name ?? "").trim();
 		if (!toolName) throw new Error("tool name is required");
-		if (!ctx.uiClient) throw new Error("Hub settings client is not connected");
-		await ctx.uiClient.toggleSetting({
-			type: "tools",
-			name: toolName,
-			workspaceRoot,
-			cwd: workspaceRoot,
-		});
+		toggleDisabledTool(toolName);
 		return await listUserInstructionConfigs(workspaceRoot);
 	}
 	if (command === "set_tool_disabled") {
@@ -309,30 +298,13 @@ export async function handleDesktopCommand(
 			.map((name) => String(name ?? "").trim())
 			.filter(Boolean);
 		if (toolNames.length === 0) throw new Error("tool name is required");
-		for (const name of toolNames) {
-			if (!ctx.uiClient)
-				throw new Error("Hub settings client is not connected");
-			await ctx.uiClient.toggleSetting({
-				type: "tools",
-				name,
-				enabled: args?.disabled !== true,
-				workspaceRoot,
-				cwd: workspaceRoot,
-			});
-		}
+		setDisabledTools(toolNames, args?.disabled === true);
 		return await listUserInstructionConfigs(workspaceRoot);
 	}
 	if (command === "set_plugin_disabled") {
 		const pluginPath = String(args?.path ?? "").trim();
 		if (!pluginPath) throw new Error("plugin path is required");
-		if (!ctx.uiClient) throw new Error("Hub settings client is not connected");
-		await ctx.uiClient.toggleSetting({
-			type: "plugins",
-			path: pluginPath,
-			enabled: args?.disabled !== true,
-			workspaceRoot,
-			cwd: workspaceRoot,
-		});
+		setDisabledPlugin(pluginPath, args?.disabled === true);
 		return await listUserInstructionConfigs(workspaceRoot);
 	}
 	throw new Error(`unsupported desktop command: ${command}`);

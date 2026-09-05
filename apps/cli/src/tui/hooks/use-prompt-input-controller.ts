@@ -1,5 +1,4 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { shouldExpandSkillSlashCommands } from "../../runtime/prompt";
 import { formatCliErrorMessage } from "../../utils/cline-pass-errors";
 import { shouldShowCliUsageCost } from "../../utils/usage-cost-display";
 import type { SlashCommandRegistry } from "../commands/slash-command-registry";
@@ -39,7 +38,6 @@ export function usePromptInputController(input: {
 	onSubmit: TuiProps["onSubmit"];
 	initialPrompt?: string;
 	providerId: string;
-	modelId?: string;
 	configVerbose: boolean;
 	refreshRepoStatus: () => void;
 	setAppView: (view: AppView) => void;
@@ -52,7 +50,6 @@ export function usePromptInputController(input: {
 		onSubmit,
 		initialPrompt,
 		providerId,
-		modelId,
 		configVerbose,
 		refreshRepoStatus,
 		setAppView,
@@ -309,12 +306,6 @@ export function usePromptInputController(input: {
 			const promptForSubmit = expandUserCommandPrompt(
 				expandedPrompt,
 				slashCommandRegistry,
-				// Skills load through the runtime's skills tool when it is
-				// available for the current mode; the typed command then goes
-				// through as-is so the transcript keeps what the user typed.
-				{
-					expandSkillCommands: shouldExpandSkillSlashCommands(session.uiMode),
-				},
 			);
 
 			session.setHasSubmitted(true);
@@ -386,7 +377,7 @@ export function usePromptInputController(input: {
 				if (!turnErrorReportedRef.current) {
 					session.appendEntry({
 						kind: "error",
-						text: formatCliErrorMessage(error, { modelId }),
+						text: formatCliErrorMessage(error),
 					});
 				}
 			} finally {
@@ -402,7 +393,6 @@ export function usePromptInputController(input: {
 			clearPasteAttachments,
 			configVerbose,
 			inputHistory,
-			modelId,
 			onSubmit,
 			providerId,
 			refreshRepoStatus,

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, it } from "bun:test"
+import { describe, it } from "mocha"
 import "should"
 import { escapeShellPath } from "../shell-escape"
 
@@ -15,7 +15,7 @@ describe("Shell Path Escaping", () => {
 	}
 
 	// Restore platform after tests
-	afterAll(() => {
+	after(() => {
 		Object.defineProperty(process, "platform", {
 			value: originalPlatform,
 			writable: true,
@@ -24,7 +24,7 @@ describe("Shell Path Escaping", () => {
 	})
 
 	describe("Unix/Linux/macOS path escaping", () => {
-		beforeAll(() => {
+		before(() => {
 			setPlatform("darwin") // macOS, but same escaping as Linux
 		})
 
@@ -131,7 +131,7 @@ describe("Shell Path Escaping", () => {
 	})
 
 	describe("Windows path escaping", () => {
-		beforeAll(() => {
+		before(() => {
 			setPlatform("win32")
 		})
 

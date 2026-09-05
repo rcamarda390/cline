@@ -1,11 +1,11 @@
+import { openAiNativeModels } from "@shared/api"
 import { Mode } from "@shared/storage/types"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import { useStaticProviderSelection } from "@/hooks/useStaticProviderSelection"
 import { ApiKeyField } from "../common/ApiKeyField"
 import { ModelInfoView } from "../common/ModelInfoView"
 import { ModelSelector } from "../common/ModelSelector"
 import ReasoningEffortSelector from "../ReasoningEffortSelector"
-import { supportsReasoningEffortForModelId } from "../utils/providerUtils"
+import { normalizeApiConfiguration, supportsReasoningEffortForModelId } from "../utils/providerUtils"
 import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
 
 /**
@@ -25,11 +25,7 @@ export const OpenAINativeProvider = ({ showModelOptions, isPopup, currentMode }:
 	const { handleFieldChange, handleModeFieldChange } = useApiConfigurationHandlers()
 
 	// Get the normalized configuration
-	const { models, selectedModelId, selectedModelInfo, hideUsageCost } = useStaticProviderSelection(
-		"openai-native",
-		apiConfiguration,
-		currentMode,
-	)
+	const { selectedModelId, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode)
 	const showReasoningEffort = supportsReasoningEffortForModelId(selectedModelId, true)
 
 	return (
@@ -45,7 +41,7 @@ export const OpenAINativeProvider = ({ showModelOptions, isPopup, currentMode }:
 				<>
 					<ModelSelector
 						label="Model"
-						models={models}
+						models={openAiNativeModels}
 						onChange={(e: any) =>
 							handleModeFieldChange(
 								{ plan: "planModeApiModelId", act: "actModeApiModelId" },
@@ -57,12 +53,7 @@ export const OpenAINativeProvider = ({ showModelOptions, isPopup, currentMode }:
 					/>
 					{showReasoningEffort && <ReasoningEffortSelector currentMode={currentMode} />}
 
-					<ModelInfoView
-						hideUsageCost={hideUsageCost}
-						isPopup={isPopup}
-						modelInfo={selectedModelInfo}
-						selectedModelId={selectedModelId}
-					/>
+					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />
 				</>
 			)}
 		</div>

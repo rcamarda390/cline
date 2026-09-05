@@ -20,14 +20,8 @@ import {
 	PatchParser,
 	type PatchWarning,
 } from "./apply-patch-parser";
-import {
-	detectLineEnding,
-	type LineEnding,
-	normalizeLineEndings,
-	normalizeNewFileLineEndings,
-} from "./line-endings";
 
-export interface PatchFileChange {
+interface FileChange {
 	type: PatchActionType;
 	oldContent?: string;
 	newContent?: string;
@@ -76,7 +70,7 @@ function resolveFilePath(
 	return resolved;
 }
 
-function splitPatchInputLines(input: string): string[] {
+function normalizeLineEndings(input: string): string[] {
 	return input.split("\n").map((line) => line.replace(/\r$/, ""));
 }
 
@@ -103,7 +97,7 @@ function trimWrapperLines(lines: string[]): string[] {
 }
 
 function normalizePatchInput(input: string): NormalizedPatchInput {
-	const rawLines = splitPatchInputLines(input);
+	const rawLines = normalizeLineEndings(input);
 	const beginIndex = rawLines.findIndex((line) =>
 		line.startsWith(PATCH_MARKERS.BEGIN),
 	);
@@ -192,28 +186,17 @@ function applyChunks(
 	return result.join("\n");
 }
 
-interface LoadedFiles {
-	/**
-	 * File contents normalized to LF. The parser and chunk math work in LF
-	 * space because models emit LF-only patch text even for CRLF files.
-	 */
-	files: Record<string, string>;
-	/** Each file's own EOL, restored onto the output after chunks apply. */
-	eols: Record<string, LineEnding>;
-}
-
 async function loadFiles(
 	lines: readonly string[],
 	cwd: string,
 	encoding: BufferEncoding,
 	restrictToCwd: boolean,
-): Promise<LoadedFiles> {
+): Promise<Record<string, string>> {
 	const filesToLoad = extractFilesForOperations(lines, [
 		PATCH_MARKERS.UPDATE,
 		PATCH_MARKERS.DELETE,
 	]);
 	const files: Record<string, string> = {};
-	const eols: Record<string, LineEnding> = {};
 
 	for (const filePath of filesToLoad) {
 		const absolutePath = resolveFilePath(cwd, filePath, restrictToCwd);
@@ -224,34 +207,23 @@ async function loadFiles(
 			throw new DiffError(`File not found: ${filePath}`);
 		}
 		files[filePath] = fileContent.replace(/\r\n/g, "\n");
-		eols[filePath] = detectLineEnding(fileContent);
 	}
 
-	return { files, eols };
+	return files;
 }
 
 function patchToChanges(
 	patch: ReturnType<PatchParser["parse"]>["patch"],
-	loaded: LoadedFiles,
-): Record<string, PatchFileChange> {
-	const changes: Record<string, PatchFileChange> = {};
-	const originalFiles = loaded.files;
-	// Chunk math ran in LF space; restore each file's own EOL on the way out
-	// so an UPDATE never rewrites a CRLF file to LF wholesale.
-	const withFileEol = (
-		filePath: string,
-		content: string | undefined,
-	): string | undefined =>
-		content === undefined
-			? undefined
-			: normalizeLineEndings(content, loaded.eols[filePath] ?? "\n");
+	originalFiles: Record<string, string>,
+): Record<string, FileChange> {
+	const changes: Record<string, FileChange> = {};
 
 	for (const [filePath, action] of Object.entries(patch.actions)) {
 		switch (action.type) {
 			case PatchActionType.DELETE:
 				changes[filePath] = {
 					type: PatchActionType.DELETE,
-					oldContent: withFileEol(filePath, originalFiles[filePath]),
+					oldContent: originalFiles[filePath],
 				};
 				break;
 			case PatchActionType.ADD:
@@ -260,16 +232,17 @@ function patchToChanges(
 				}
 				changes[filePath] = {
 					type: PatchActionType.ADD,
-					newContent: normalizeNewFileLineEndings(action.newFile),
+					newContent: action.newFile,
 				};
 				break;
 			case PatchActionType.UPDATE:
 				changes[filePath] = {
 					type: PatchActionType.UPDATE,
-					oldContent: withFileEol(filePath, originalFiles[filePath]),
-					newContent: withFileEol(
+					oldContent: originalFiles[filePath],
+					newContent: applyChunks(
+						originalFiles[filePath] ?? "",
+						action.chunks,
 						filePath,
-						applyChunks(originalFiles[filePath] ?? "", action.chunks, filePath),
 					),
 					movePath: action.movePath,
 				};
@@ -300,7 +273,7 @@ function formatSkippedHunkFailure(warnings: readonly PatchWarning[]): string {
 }
 
 async function applyChanges(
-	changes: Record<string, PatchFileChange>,
+	changes: Record<string, FileChange>,
 	cwd: string,
 	encoding: BufferEncoding,
 	restrictToCwd: boolean,
@@ -352,34 +325,6 @@ async function applyChanges(
 }
 
 /**
- * Parse a patch and compute the per-file changes it would apply, without
- * writing anything to disk. Reads the current contents of the files the patch
- * references. Exposed so hosts can preview a patch (e.g. in a diff editor)
- * before the executor applies it.
- */
-export async function computePatchChanges(
-	patchText: string,
-	cwd: string,
-	options: ApplyPatchExecutorOptions = {},
-): Promise<{ changes: Record<string, PatchFileChange>; fuzz: number }> {
-	const { encoding = "utf-8", restrictToCwd = true } = options;
-	const normalizedInput = normalizePatchInput(patchText);
-	const loaded = await loadFiles(
-		normalizedInput.lines,
-		cwd,
-		encoding,
-		restrictToCwd,
-	);
-	const parser = new PatchParser(normalizedInput.lines, loaded.files);
-	const { patch, fuzz } = parser.parse();
-	if (patch.warnings && patch.warnings.length > 0) {
-		throw new DiffError(formatSkippedHunkFailure(patch.warnings));
-	}
-
-	return { changes: patchToChanges(patch, loaded), fuzz };
-}
-
-/**
  * Create an apply_patch executor using Node.js fs module.
  */
 export function createApplyPatchExecutor(
@@ -392,10 +337,20 @@ export function createApplyPatchExecutor(
 		cwd: string,
 		_context: AgentToolContext,
 	): Promise<string> => {
-		const { changes, fuzz } = await computePatchChanges(input.input, cwd, {
+		const normalizedInput = normalizePatchInput(input.input);
+		const currentFiles = await loadFiles(
+			normalizedInput.lines,
+			cwd,
 			encoding,
 			restrictToCwd,
-		});
+		);
+		const parser = new PatchParser(normalizedInput.lines, currentFiles);
+		const { patch, fuzz } = parser.parse();
+		if (patch.warnings && patch.warnings.length > 0) {
+			throw new DiffError(formatSkippedHunkFailure(patch.warnings));
+		}
+
+		const changes = patchToChanges(patch, currentFiles);
 		const touched = await applyChanges(changes, cwd, encoding, restrictToCwd);
 
 		const responseLines = [

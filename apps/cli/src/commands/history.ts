@@ -1,6 +1,13 @@
-import { exportHistorySession } from "../session/history-export";
-import { deleteSession, listSessions, updateSession } from "../session/session";
-import { formatHistoryListLine } from "../utils/history-format";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { generateConversationHTML } from "../session/export";
+import {
+	deleteSession,
+	listSessions,
+	readSessionMessagesArtifact,
+	updateSession,
+} from "../session/session";
+import { disableOpenTuiGraphicsProbe } from "../tui/opentui-env";
 import { writeln } from "../utils/output";
 import type { CliOutputMode } from "../utils/types";
 
@@ -14,6 +21,22 @@ type HistoryIo = {
 	writeln: (text?: string) => void;
 	writeErr: (text: string) => void;
 };
+
+async function exportHistorySession(
+	sessionId: string,
+	outputPath?: string,
+): Promise<string> {
+	const data = await readSessionMessagesArtifact(sessionId);
+	if (!data) {
+		throw new Error(`Session ${sessionId} not found or has no messages.json`);
+	}
+
+	const targetPath = resolve(outputPath?.trim() || `${sessionId}.html`);
+	const html = generateConversationHTML(data, sessionId);
+	await mkdir(dirname(targetPath), { recursive: true });
+	await writeFile(targetPath, html, "utf8");
+	return targetPath;
+}
 
 async function runHistoryDelete(
 	sessionId: string | undefined,
@@ -113,11 +136,7 @@ async function runHistoryExport(
 	}
 
 	try {
-		const targetPath = await exportHistorySession({
-			sessionId,
-			format: "html",
-			outputPath,
-		});
+		const targetPath = await exportHistorySession(sessionId, outputPath);
 
 		if (outputMode === "json") {
 			process.stdout.write(
@@ -142,7 +161,7 @@ export async function runHistoryList(input: {
 	outputMode: CliOutputMode;
 	workspaceRoot?: string;
 	io?: HistoryIo;
-}): Promise<number> {
+}): Promise<number | string> {
 	const io = input.io ?? {
 		writeln,
 		writeErr: (text: string) => process.stderr.write(`${text}\n`),
@@ -167,10 +186,23 @@ export async function runHistoryList(input: {
 		return 0;
 	}
 
-	for (const row of rows) {
-		io.writeln(formatHistoryListLine(row));
-	}
-	return 0;
+	disableOpenTuiGraphicsProbe();
+	const { renderHistoryStandalone } = await import("../tui/history-standalone");
+	return await renderHistoryStandalone({
+		rows,
+		refreshRows: async () =>
+			await listSessions(limit, {
+				workspaceRoot: input.workspaceRoot,
+				hydrate: false,
+			}),
+		onExport: async (sessionId: string) =>
+			await exportHistorySession(sessionId, undefined),
+	});
 }
 
-export { runHistoryDelete, runHistoryExport, runHistoryUpdate };
+export {
+	exportHistorySession,
+	runHistoryDelete,
+	runHistoryExport,
+	runHistoryUpdate,
+};

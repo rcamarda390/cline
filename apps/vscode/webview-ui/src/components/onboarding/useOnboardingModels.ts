@@ -5,11 +5,10 @@ import type { ClineRecommendedModel } from "@shared/proto/cline/models"
 import type { OnboardingModel, OnboardingModelGroup } from "@shared/proto/cline/state"
 import { useEffect, useMemo, useState } from "react"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import { useProviderModels } from "@/hooks/useProviderModels"
 import { ModelsServiceClient } from "@/services/grpc-client"
 import { CLINEPASS_GROUP, getRecommendedModelsData, type RecommendedModelsData } from "./data-models"
 
-type OnboardingModelsStatus = "loading" | "success" | "empty"
+export type OnboardingModelsStatus = "loading" | "success" | "empty"
 
 export interface UseOnboardingModelsResult {
 	status: OnboardingModelsStatus
@@ -28,7 +27,6 @@ function toOnboardingModel(
 
 	return {
 		id: rec.id,
-		// Names arrive display-ready from the recommended-models RPC
 		name: rec.name || rec.id,
 		group,
 		badge,
@@ -50,8 +48,7 @@ function toOnboardingModel(
 type FetchState = { status: "loading" } | { status: "success"; data: RecommendedModelsData } | { status: "empty" }
 
 export function useOnboardingModels(): UseOnboardingModelsResult {
-	const { openRouterModels } = useExtensionState()
-	const { models: clineModels } = useProviderModels("cline")
+	const { openRouterModels, clineModels, refreshClineModels } = useExtensionState()
 	const [fetchState, setFetchState] = useState<FetchState>({ status: "loading" })
 
 	useEffect(() => {
@@ -61,7 +58,7 @@ export function useOnboardingModels(): UseOnboardingModelsResult {
 			try {
 				const response = await ModelsServiceClient.refreshClineRecommendedModelsRpc(EmptyRequest.create({}))
 				if (!cancelled) {
-					const data = getRecommendedModelsData(response)
+					const data = getRecommendedModelsData(response, true)
 					if (!data) {
 						setFetchState({ status: "empty" })
 					} else {
@@ -81,6 +78,10 @@ export function useOnboardingModels(): UseOnboardingModelsResult {
 			cancelled = true
 		}
 	}, [])
+
+	useEffect(() => {
+		refreshClineModels()
+	}, [refreshClineModels])
 
 	// Merge openRouter and cline models into a single catalog for lookups
 	const modelCatalog = useMemo<Record<string, ModelInfo>>(() => {

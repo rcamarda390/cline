@@ -1,4 +1,3 @@
-import { describe, it } from "bun:test"
 import { expect } from "chai"
 
 import { mentionRegex, mentionRegexGlobal } from "../context-mentions"

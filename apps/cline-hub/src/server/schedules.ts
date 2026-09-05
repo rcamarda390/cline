@@ -3,12 +3,6 @@ import {
 	HubScheduleCommandService,
 	HubScheduleService,
 } from "@cline/core";
-import {
-	CLINE_DEFAULT_MODEL_ID,
-	ONE_TIME_SCHEDULE_CRON_PATTERN,
-	ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY,
-	readHubScheduleMode,
-} from "@cline/shared";
 import { asTrimmedString, toPositiveInt } from "./utils";
 
 let scheduleService: HubScheduleService | undefined;
@@ -27,20 +21,13 @@ function getCommands(): HubScheduleCommandService {
 async function clientCommand(
 	hubCommand: string,
 	payload?: Record<string, unknown>,
-	workspaceRoot = process.cwd(),
 ): Promise<Record<string, unknown>> {
-	const reply = await getCommands().handleCommand(
-		{
-			version: "v1",
-			clientId: "cline-hub-schedules",
-			command: hubCommand as never,
-			payload,
-		},
-		{
-			clientId: "cline-hub-schedules",
-			workspaceContext: { workspaceRoot, cwd: workspaceRoot },
-		},
-	);
+	const reply = await getCommands().handleCommand({
+		version: "v1",
+		clientId: "cline-hub-schedules",
+		command: hubCommand as never,
+		payload,
+	});
 	if (!reply.ok) {
 		throw new Error(
 			reply.error?.message ?? `hub command failed: ${hubCommand}`,
@@ -49,45 +36,17 @@ async function clientCommand(
 	return (reply.payload ?? {}) as Record<string, unknown>;
 }
 
-function routineScheduleTiming(
-	args?: Record<string, unknown>,
-): { cronPattern: string; metadata?: Record<string, number> } | undefined {
-	if (args?.schedule_type === "once") {
-		const runAt =
-			typeof args.run_at === "number" ? args.run_at : Number(args?.run_at);
-		return Number.isFinite(runAt)
-			? {
-					cronPattern: ONE_TIME_SCHEDULE_CRON_PATTERN,
-					metadata: { [ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY]: runAt },
-				}
-			: undefined;
-	}
-	const cronPattern = asTrimmedString(args?.cron_pattern);
-	return cronPattern ? { cronPattern } : undefined;
-}
-
-function asTrimmedStringArray(value: unknown): string[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const values = value
-		.map((item) => asTrimmedString(item))
-		.filter((item): item is string => item !== undefined);
-	return values.length > 0 ? values : undefined;
-}
-
 export async function handleRoutineScheduleCommand(
 	command: string,
 	args?: Record<string, unknown>,
-	workspaceRoot = process.cwd(),
 ): Promise<unknown> {
-	const commandHub = (hubCommand: string, payload?: Record<string, unknown>) =>
-		clientCommand(hubCommand, payload, workspaceRoot);
 	if (command === "list_routine_schedules") {
 		const [schedules, activeExecutions, upcomingRuns] = await Promise.all([
-			commandHub("schedule.list", {
+			clientCommand("schedule.list", {
 				limit: toPositiveInt(args?.limit) ?? 200,
 			}),
-			commandHub("schedule.active"),
-			commandHub("schedule.upcoming", { limit: 30 }),
+			clientCommand("schedule.active"),
+			clientCommand("schedule.upcoming", { limit: 30 }),
 		]);
 		const scheduleRows = Array.isArray(schedules.schedules)
 			? schedules.schedules
@@ -98,7 +57,7 @@ export async function handleRoutineScheduleCommand(
 					(schedule as Record<string, unknown>).scheduleId,
 				);
 				if (!scheduleId) return undefined;
-				const reply = await commandHub("schedule.list_executions", {
+				const reply = await clientCommand("schedule.list_executions", {
 					scheduleId,
 					limit: 1,
 				});
@@ -117,23 +76,23 @@ export async function handleRoutineScheduleCommand(
 
 	if (command === "create_routine_schedule") {
 		const name = asTrimmedString(args?.name);
-		const timing = routineScheduleTiming(args);
+		const cronPattern = asTrimmedString(args?.cron_pattern);
 		const prompt = asTrimmedString(args?.prompt);
 		const routineWorkspaceRoot = asTrimmedString(args?.workspace_root);
-		if (!name || !timing || !prompt || !routineWorkspaceRoot) {
+		if (!name || !cronPattern || !prompt || !routineWorkspaceRoot) {
 			throw new Error(
-				"createSchedule requires name, timing, prompt, and workspace_root",
+				"createSchedule requires name, cron_pattern, prompt, and workspace_root",
 			);
 		}
-		const created = await commandHub("schedule.create", {
+		const created = await clientCommand("schedule.create", {
 			name,
-			...timing,
+			cronPattern,
 			prompt,
 			modelSelection: {
 				providerId: asTrimmedString(args?.provider) ?? "cline",
-				modelId: asTrimmedString(args?.model) ?? CLINE_DEFAULT_MODEL_ID,
+				modelId: asTrimmedString(args?.model) ?? "openai/gpt-5.3-codex",
 			},
-			mode: readHubScheduleMode(args, "yolo"),
+			mode: args?.mode === "plan" ? "plan" : "act",
 			workspaceRoot: routineWorkspaceRoot,
 			cwd: asTrimmedString(args?.cwd),
 			systemPrompt: asTrimmedString(args?.system_prompt),
@@ -141,7 +100,12 @@ export async function handleRoutineScheduleCommand(
 			timeoutSeconds: toPositiveInt(args?.timeout_seconds),
 			maxParallel: toPositiveInt(args?.max_parallel) ?? 1,
 			enabled: args?.enabled !== false,
-			tags: asTrimmedStringArray(args?.tags),
+			tags:
+				Array.isArray(args?.tags) && args.tags.length > 0
+					? (args.tags as string[])
+							.map((v) => v.trim())
+							.filter((v) => v.length > 0)
+					: undefined,
 		});
 		return { schedule: created.schedule ?? null };
 	}
@@ -149,26 +113,25 @@ export async function handleRoutineScheduleCommand(
 	const scheduleId = asTrimmedString(args?.schedule_id);
 	if (!scheduleId) throw new Error(`${command} requires schedule_id`);
 	if (command === "update_routine_schedule") {
-		const mode = readHubScheduleMode(args);
 		const name = asTrimmedString(args?.name);
-		const timing = routineScheduleTiming(args);
+		const cronPattern = asTrimmedString(args?.cron_pattern);
 		const prompt = asTrimmedString(args?.prompt);
 		const routineWorkspaceRoot = asTrimmedString(args?.workspace_root);
-		if (!name || !timing || !prompt || !routineWorkspaceRoot) {
+		if (!name || !cronPattern || !prompt || !routineWorkspaceRoot) {
 			throw new Error(
-				"updateSchedule requires schedule_id, name, timing, prompt, and workspace_root",
+				"updateSchedule requires schedule_id, name, cron_pattern, prompt, and workspace_root",
 			);
 		}
-		const reply = await commandHub("schedule.update", {
+		const reply = await clientCommand("schedule.update", {
 			scheduleId,
 			name,
-			...timing,
+			cronPattern,
 			prompt,
 			modelSelection: {
 				providerId: asTrimmedString(args?.provider) ?? "cline",
-				modelId: asTrimmedString(args?.model) ?? CLINE_DEFAULT_MODEL_ID,
+				modelId: asTrimmedString(args?.model) ?? "openai/gpt-5.3-codex",
 			},
-			...(mode === undefined ? {} : { mode }),
+			mode: args?.mode === "plan" ? "plan" : "act",
 			workspaceRoot: routineWorkspaceRoot,
 			cwd: asTrimmedString(args?.cwd) ?? null,
 			systemPrompt:
@@ -185,30 +148,34 @@ export async function handleRoutineScheduleCommand(
 					: toPositiveInt(args?.timeout_seconds),
 			maxParallel: toPositiveInt(args?.max_parallel) ?? 1,
 			enabled: args?.enabled !== false,
-			tags: asTrimmedStringArray(args?.tags) ?? [],
+			tags: Array.isArray(args?.tags)
+				? (args.tags as string[])
+						.map((v) => v.trim())
+						.filter((v) => v.length > 0)
+				: [],
 		});
 		return { schedule: reply.schedule ?? null };
 	}
 	if (command === "pause_routine_schedule") {
-		const reply = await commandHub("schedule.disable", { scheduleId });
+		const reply = await clientCommand("schedule.disable", { scheduleId });
 		return { schedule: reply.schedule ?? null };
 	}
 	if (command === "resume_routine_schedule") {
-		const reply = await commandHub("schedule.enable", { scheduleId });
+		const reply = await clientCommand("schedule.enable", { scheduleId });
 		return { schedule: reply.schedule ?? null };
 	}
 	if (command === "trigger_routine_schedule") {
-		const existing = await commandHub("schedule.get", { scheduleId });
+		const existing = await clientCommand("schedule.get", { scheduleId });
 		if (!existing.schedule)
 			throw new Error(`schedule not found: ${scheduleId}`);
-		const reply = await commandHub("schedule.trigger", {
+		const reply = await clientCommand("schedule.trigger", {
 			scheduleId,
 			wait: false,
 		});
 		return { execution: reply.execution ?? null };
 	}
 	if (command === "delete_routine_schedule") {
-		const reply = await commandHub("schedule.delete", { scheduleId });
+		const reply = await clientCommand("schedule.delete", { scheduleId });
 		return { deleted: reply.deleted === true };
 	}
 	throw new Error(`unsupported routine schedule command: ${command}`);

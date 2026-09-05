@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env npx tsx
 
 /**
  * Interactive Playwright launcher for the Cline VS Code extension.
@@ -15,10 +15,10 @@
  *
  * Usage:
  *   1. (Optional) Build and install the e2e extension:
- *        bun run test:e2e:build
+ *        npm run test:e2e:build
  *
  *   2. From the repo root, start the interactive session:
- *        bun run test:e2e:ui
+ *        npm run test:e2e:ui
  *
  *   3. VS Code will launch with the Cline extension loaded and gRPC recording enabled.
  *

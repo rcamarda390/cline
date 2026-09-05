@@ -1,26 +1,28 @@
 import { fireEvent, render, screen } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import FeatureSettingsSection from "./FeatureSettingsSection"
 
 const mockUpdateSetting = vi.fn()
-const mockExtensionState = vi.hoisted(() => ({
-	value: {
+
+vi.mock("@/context/ExtensionStateContext", () => ({
+	useExtensionState: vi.fn(() => ({
 		enableCheckpointsSetting: true,
 		hooksEnabled: false,
 		showFeatureTips: false,
 		mcpDisplayMode: "rich",
+		strictPlanModeEnabled: false,
+		yoloModeToggled: false,
 		useAutoCondense: false,
-		compactionStrategy: "basic",
 		subagentsEnabled: false,
+		clineWebToolsEnabled: { user: true, featureFlag: true },
 		worktreesEnabled: { user: true, featureFlag: true },
 		focusChainSettings: { enabled: false, remindClineInterval: 6 },
 		remoteConfigSettings: {},
+		nativeToolCallSetting: false,
+		enableParallelToolCalling: false,
 		backgroundEditEnabled: false,
-	},
-}))
-
-vi.mock("@/context/ExtensionStateContext", () => ({
-	useExtensionState: vi.fn(() => mockExtensionState.value),
+		doubleCheckCompletionEnabled: false,
+	})),
 }))
 
 vi.mock("../utils/settingsHandlers", () => ({
@@ -28,15 +30,6 @@ vi.mock("../utils/settingsHandlers", () => ({
 }))
 
 describe("FeatureSettingsSection", () => {
-	beforeEach(() => {
-		mockUpdateSetting.mockClear()
-		mockExtensionState.value = {
-			...mockExtensionState.value,
-			useAutoCondense: false,
-			compactionStrategy: "basic",
-		}
-	})
-
 	it("renders Hooks feature toggle", () => {
 		const { container } = render(<FeatureSettingsSection renderSectionHeader={() => null} />)
 
@@ -59,22 +52,6 @@ describe("FeatureSettingsSection", () => {
 
 		expect(editorSection?.querySelector('[id="Feature Tips"]')).toBeTruthy()
 		expect(agentSection?.querySelector('[id="Feature Tips"]')).toBeNull()
-	})
-
-	it("renders the Auto Compact Strategy setting in the Agent section", () => {
-		const { container } = render(<FeatureSettingsSection renderSectionHeader={() => null} />)
-
-		expect(screen.getByText("Auto Compact Strategy")).toBeTruthy()
-
-		const agentSection = container.querySelector("#agent-features")
-		expect(agentSection?.textContent).toContain("Basic")
-	})
-
-	it("disables Auto Compact Strategy when Auto Compact is off", () => {
-		const { container } = render(<FeatureSettingsSection renderSectionHeader={() => null} />)
-
-		const strategySelect = container.querySelector("#agent-features button[role='combobox']")
-		expect(strategySelect).toHaveAttribute("disabled")
 	})
 
 	it("calls updateSetting with hooksEnabled when toggled", () => {

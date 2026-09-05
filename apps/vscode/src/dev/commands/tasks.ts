@@ -16,28 +16,27 @@ export function registerTaskCommands(controller: Controller): vscode.Disposable[
 	return [
 		vscode.commands.registerCommand("cline.dev.expireMcpOAuthTokens", async () => {
 			try {
-				// OAuth tokens live in the shared MCP settings file (per-server
-				// `oauth.tokens`). Invalidate each access_token so the next request
-				// gets a 401 and the MCP SDK exercises the refresh_token flow.
-				const settingsPath = await controller.mcpHub.getMcpSettingsFilePath()
-				const content = JSON.parse(await fs.readFile(settingsPath, "utf-8"))
-				const servers = (content?.mcpServers ?? {}) as Record<string, { oauth?: { tokens?: { access_token?: string } } }>
-				let expiredCount = 0
+				const stateManager = controller.stateManager
+				const secretsJson = stateManager.getSecretKey("mcpOAuthSecrets")
 
-				for (const [name, server] of Object.entries(servers)) {
-					if (server?.oauth?.tokens?.access_token) {
-						server.oauth.tokens.access_token = "expired-by-dev-command"
-						expiredCount++
-						Logger.log(`[Dev] Invalidated access token for server: ${name}`)
-					}
-				}
-
-				if (expiredCount === 0) {
-					vscode.window.showInformationMessage("No MCP OAuth tokens found - no servers are authenticated")
+				if (!secretsJson) {
+					vscode.window.showInformationMessage("No MCP OAuth secrets found - no servers are authenticated")
 					return
 				}
 
-				await fs.writeFile(settingsPath, JSON.stringify(content, null, 2))
+				const secrets = JSON.parse(secretsJson)
+				let expiredCount = 0
+
+				// Set all tokens_saved_at to 2 hours ago (past expiration)
+				for (const hash in secrets) {
+					if (secrets[hash].tokens_saved_at) {
+						secrets[hash].tokens_saved_at = Date.now() - 2 * 60 * 60 * 1000 // 2 hours ago
+						expiredCount++
+						Logger.log(`[Dev] Expired tokens for hash: ${hash}`)
+					}
+				}
+
+				stateManager.setSecret("mcpOAuthSecrets", JSON.stringify(secrets))
 
 				const action = await vscode.window.showInformationMessage(
 					`Expired ${expiredCount} MCP OAuth token(s). Reload window to test token refresh flow.`,

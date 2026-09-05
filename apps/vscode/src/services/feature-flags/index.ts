@@ -1,4 +1,11 @@
+export {
+	type FeatureFlagsProviderConfig,
+	FeatureFlagsProviderFactory,
+	type FeatureFlagsProviderType,
+} from "./FeatureFlagsProviderFactory"
 export { FeatureFlagsService } from "./FeatureFlagsService"
+export type { FeatureFlagsSettings, IFeatureFlagsProvider } from "./providers/IFeatureFlagsProvider"
+export { PostHogFeatureFlagsProvider } from "./providers/PostHogFeatureFlagsProvider"
 
 import { FeatureFlagsProviderFactory } from "./FeatureFlagsProviderFactory"
 import { FeatureFlagsService } from "./FeatureFlagsService"
@@ -16,6 +23,13 @@ export function getFeatureFlagsService(): FeatureFlagsService {
 		_featureFlagsServiceInstance = new FeatureFlagsService(provider)
 	}
 	return _featureFlagsServiceInstance
+}
+
+/**
+ * Reset the feature flags service instance (useful for testing)
+ */
+export function resetFeatureFlagsService(): void {
+	_featureFlagsServiceInstance = null
 }
 
 export const featureFlagsService = new Proxy({} as FeatureFlagsService, {

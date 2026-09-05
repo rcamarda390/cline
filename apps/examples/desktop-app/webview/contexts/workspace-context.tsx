@@ -9,7 +9,6 @@ type WorkspaceContextValue = {
 	refreshWorkspaces: () => Promise<void>;
 	switchWorkspace: (workspacePath: string) => Promise<boolean>;
 	pickWorkspaceDirectory: (initialPath?: string) => Promise<string | null>;
-	selectChat: () => Promise<boolean>;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);

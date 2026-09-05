@@ -1,22 +1,8 @@
+import { getMcpSettingsFilePath } from "@core/storage/disk"
 import { RemoteMCPServer } from "@shared/remote-config/schema"
-import { updateMcpSettingsFile } from "@/services/mcp/settingsLock"
+import * as fs from "fs/promises"
+import type { McpHub } from "@/services/mcp/McpHub"
 import { Logger } from "@/shared/services/Logger"
-
-type McpSettingsFingerprintRecorder = {
-	recordSettingsFingerprint(servers: Record<string, unknown>): void
-}
-
-function getConfiguredServerUrl(server: Record<string, unknown>): string | undefined {
-	if (typeof server.url === "string") {
-		return server.url
-	}
-	const transport = server.transport
-	if (transport && typeof transport === "object" && !Array.isArray(transport)) {
-		const url = (transport as Record<string, unknown>).url
-		return typeof url === "string" ? url : undefined
-	}
-	return undefined
-}
 
 /**
  * Synchronizes remote MCP servers from remote config to the local MCP settings file
@@ -32,70 +18,76 @@ function getConfiguredServerUrl(server: Record<string, unknown>): string | undef
  * - Preventing duplicates when re-adding servers
  *
  * @param remoteMCPServers Array of remote MCP servers from remote config
- * @param settingsPath Path to the MCP settings file
+ * @param settingsDirectoryPath Path to the settings directory
  * @param mcpHub Optional McpHub instance to set flag preventing watcher triggers
  */
 export async function syncRemoteMcpServersToSettings(
 	remoteMCPServers: RemoteMCPServer[],
-	settingsPath: string,
-	mcpHub?: McpSettingsFingerprintRecorder,
+	settingsDirectoryPath: string,
+	mcpHub?: McpHub,
 ): Promise<void> {
 	try {
-		// Hold the cross-process lock across the whole read-modify-write so a
-		// concurrent writer (CLI, another window, an OAuth handshake) cannot drop
-		// this sync's changes from a stale snapshot. Only writers need the lock;
-		// reads rely on atomic rename to always see a complete file.
-		const config = await updateMcpSettingsFile(settingsPath, (current) => {
-			const config = current as Record<string, any>
-			const servers = config.mcpServers as Record<string, any>
+		// Get or create the MCP settings file
+		const settingsPath = await getMcpSettingsFilePath(settingsDirectoryPath)
 
-			// Remove servers marked as remoteConfigured that are no longer in the new remote config list.
-			// This uses the persistent `remoteConfigured` marker in the settings file instead of
-			// in-memory state, so it works correctly across extension restarts.
-			for (const [serverName, serverConfig] of Object.entries(servers)) {
-				const server = serverConfig as Record<string, unknown>
-				if (server.remoteConfigured === true) {
-					const configuredUrl = getConfiguredServerUrl(server)
-					const stillInRemoteConfig = remoteMCPServers.some(
-						(remoteServer) => remoteServer.name === serverName && remoteServer.url === configuredUrl,
-					)
-					if (!stillInRemoteConfig) {
-						delete servers[serverName]
-					}
+		// Read current settings
+		const content = await fs.readFile(settingsPath, "utf-8")
+		const config = JSON.parse(content)
+
+		// Ensure mcpServers object exists
+		if (!config.mcpServers || typeof config.mcpServers !== "object") {
+			config.mcpServers = {}
+		}
+
+		// Remove servers marked as remoteConfigured that are no longer in the new remote config list.
+		// This uses the persistent `remoteConfigured` marker in the settings file instead of
+		// in-memory state, so it works correctly across extension restarts.
+		for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
+			const server = serverConfig as Record<string, unknown>
+			if (server.remoteConfigured === true) {
+				const stillInRemoteConfig = remoteMCPServers.some(
+					(remoteServer) => remoteServer.name === serverName && remoteServer.url === server.url,
+				)
+				if (!stillInRemoteConfig) {
+					delete config.mcpServers[serverName]
 				}
 			}
+		}
 
-			// Add/update servers from new remote config
-			for (const server of remoteMCPServers) {
-				// Check if server with same name and URL already exists to skip duplicates
-				const existingServer = servers[server.name]
-				if (existingServer && getConfiguredServerUrl(existingServer) === server.url) {
-					if (!existingServer.remoteConfigured) {
-						existingServer.remoteConfigured = true
-					}
-					// Keep the historical top-level URL field for remote-configured
-					// servers so older sync/UI code can identify the managed server
-					// without needing to understand nested SDK transport shape.
-					if (!existingServer.url) {
-						existingServer.url = server.url
-					}
-					continue
+		// Add/update servers from new remote config
+		for (const server of remoteMCPServers) {
+			// Check if server with same name and URL already exists to skip duplicates
+			const existingServer = config.mcpServers[server.name]
+			if (existingServer && existingServer.url === server.url) {
+				if (!existingServer.remoteConfigured) {
+					existingServer.remoteConfigured = true
 				}
-
-				// Add or update the server with remoteConfigured marker
-				servers[server.name] = {
-					url: server.url,
-					type: "streamableHttp",
-					disabled: false,
-					autoApprove: [],
-					remoteConfigured: true,
-				}
+				continue
 			}
-			config.mcpServers = servers
-			return config
-		})
+
+			// Add or update the server with remoteConfigured marker
+			config.mcpServers[server.name] = {
+				url: server.url,
+				type: "streamableHttp",
+				disabled: false,
+				autoApprove: [],
+				remoteConfigured: true,
+			}
+		}
+
+		// Set flag to prevent watcher from triggering
 		if (mcpHub) {
-			mcpHub.recordSettingsFingerprint(config.mcpServers)
+			mcpHub.setIsUpdatingFromRemoteConfig(true)
+		}
+
+		try {
+			// Write back to file
+			await fs.writeFile(settingsPath, JSON.stringify(config, null, 2))
+		} finally {
+			// Always clear flag, even if write fails
+			if (mcpHub) {
+				mcpHub.setIsUpdatingFromRemoteConfig(false)
+			}
 		}
 	} catch (error) {
 		Logger.error("[RemoteConfig] Failed to sync remote MCP servers:", error)

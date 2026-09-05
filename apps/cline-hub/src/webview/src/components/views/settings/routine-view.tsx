@@ -1,11 +1,6 @@
 "use client";
 
 import {
-	CLINE_DEFAULT_MODEL_ID,
-	ONE_TIME_SCHEDULE_CRON_PATTERN,
-	ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY,
-} from "@cline/shared";
-import {
 	Circle,
 	Eye,
 	Pause,
@@ -77,7 +72,6 @@ interface RoutineSchedule {
 	scheduleId: string;
 	name: string;
 	cronPattern: string;
-	metadata?: Record<string, unknown>;
 	prompt: string;
 	provider?: string;
 	model?: string;
@@ -151,7 +145,7 @@ interface ProcessContext {
 }
 
 const FALLBACK_PROVIDER_MODELS: Record<string, string[]> = {
-	cline: [CLINE_DEFAULT_MODEL_ID],
+	cline: ["anthropic/claude-sonnet-4.6"],
 	anthropic: ["claude-sonnet-4-6"],
 	"openai-native": ["gpt-5.3-codex"],
 	openrouter: ["anthropic/claude-sonnet-4.6"],
@@ -176,9 +170,13 @@ interface RoutineFormState {
 	prompt: string;
 	provider: string;
 	model: string;
+	mode: "act" | "plan";
 	workspaceRoot: string;
+	cwd: string;
 	systemPrompt: string;
+	maxIterations: string;
 	timeoutSeconds: string;
+	maxParallel: string;
 	tags: string;
 	enabled: boolean;
 }
@@ -205,15 +203,6 @@ function formatDateTime(value?: DateTimeValue | null): string {
 	return parsed.toLocaleString();
 }
 
-function getOneTimeScheduleRunAt(
-	schedule: RoutineSchedule,
-): number | undefined {
-	const runAt = schedule.metadata?.[ONE_TIME_SCHEDULE_RUN_AT_METADATA_KEY];
-	return typeof runAt === "number" && Number.isFinite(runAt)
-		? runAt
-		: undefined;
-}
-
 function formatScheduleModel(schedule: RoutineSchedule): string {
 	const provider =
 		schedule.modelSelection?.providerId?.trim() || schedule.provider?.trim();
@@ -237,7 +226,7 @@ function getScheduleProviderModel(schedule: RoutineSchedule): {
 		model:
 			schedule.modelSelection?.modelId?.trim() ||
 			schedule.model?.trim() ||
-			CLINE_DEFAULT_MODEL_ID,
+			"openai/gpt-5.3-codex",
 	};
 }
 
@@ -252,27 +241,20 @@ function formatExecutionResult(execution?: RoutineExecution): string {
 	return when === "-" ? status : `${status} at ${when}`;
 }
 
-function asTrimmedFormString(value: unknown): string {
-	return typeof value === "string" ? value.trim() : "";
-}
-
-function parseOptionalPositiveInt(value: unknown): number | undefined {
-	const trimmed = asTrimmedFormString(value);
+function parseOptionalPositiveInt(text: string): number | undefined {
+	const trimmed = text.trim();
 	if (!trimmed) {
 		return undefined;
 	}
-	const parsedValue = Number.parseInt(trimmed, 10);
-	if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+	const value = Number.parseInt(trimmed, 10);
+	if (!Number.isFinite(value) || value <= 0) {
 		return undefined;
 	}
-	return parsedValue;
+	return value;
 }
 
-function parseTags(value: unknown): string[] | undefined {
-	if (typeof value !== "string") {
-		return undefined;
-	}
-	const tags = value
+function parseTags(text: string): string[] | undefined {
+	const tags = text
 		.split(",")
 		.map((value) => value.trim())
 		.filter((value) => value.length > 0);
@@ -400,10 +382,14 @@ export function RoutineSchedulesContent() {
 		scheduleDays: ["MON", "TUE", "WED", "THU", "FRI"],
 		prompt: "Review PRs opened yesterday and summarize issues.",
 		provider: "cline",
-		model: CLINE_DEFAULT_MODEL_ID,
+		model: "openai/gpt-5.3-codex",
+		mode: "act",
 		workspaceRoot: "",
+		cwd: "",
 		systemPrompt: "",
+		maxIterations: "",
 		timeoutSeconds: "",
+		maxParallel: "1",
 		tags: "",
 		enabled: true,
 	});
@@ -716,9 +702,13 @@ export function RoutineSchedulesContent() {
 			prompt: "Review PRs opened yesterday and summarize issues.",
 			provider: preferredProvider,
 			model: preferredModel,
+			mode: "act",
 			workspaceRoot: context.workspaceRoot || context.cwd,
+			cwd: context.cwd || "",
 			systemPrompt: "",
+			maxIterations: "",
 			timeoutSeconds: "",
+			maxParallel: "1",
 			tags: "",
 			enabled: true,
 		});
@@ -726,9 +716,6 @@ export function RoutineSchedulesContent() {
 	};
 
 	const openEditDialog = (schedule: RoutineSchedule) => {
-		if (schedule.cronPattern === ONE_TIME_SCHEDULE_CRON_PATTERN) {
-			return;
-		}
 		const { provider, model } = getScheduleProviderModel(schedule);
 		const parsedCron = parseCronPattern(schedule.cronPattern);
 		setEditingSchedule(schedule);
@@ -751,12 +738,22 @@ export function RoutineSchedulesContent() {
 			prompt: schedule.prompt,
 			provider,
 			model,
+			mode: schedule.mode === "plan" ? "plan" : "act",
 			workspaceRoot: schedule.workspaceRoot ?? "",
+			cwd: schedule.cwd ?? "",
 			systemPrompt: schedule.systemPrompt ?? "",
+			maxIterations:
+				typeof schedule.maxIterations === "number"
+					? String(schedule.maxIterations)
+					: "",
 			timeoutSeconds:
 				typeof schedule.timeoutSeconds === "number"
 					? String(schedule.timeoutSeconds)
 					: "",
+			maxParallel:
+				typeof schedule.maxParallel === "number"
+					? String(schedule.maxParallel)
+					: "1",
 			tags: schedule.tags?.join(",") ?? "",
 			enabled: schedule.enabled,
 		});
@@ -764,7 +761,7 @@ export function RoutineSchedulesContent() {
 	};
 
 	const submitCreateForm = async () => {
-		const name = asTrimmedFormString(createForm.name);
+		const name = createForm.name.trim();
 		if (!name) {
 			setCreateFormError("Routine name is required.");
 			return;
@@ -778,12 +775,12 @@ export function RoutineSchedulesContent() {
 			setCreateFormError("Select at least one day and a valid time.");
 			return;
 		}
-		const prompt = asTrimmedFormString(createForm.prompt);
+		const prompt = createForm.prompt.trim();
 		if (!prompt) {
 			setCreateFormError("Prompt is required.");
 			return;
 		}
-		const workspaceRoot = asTrimmedFormString(createForm.workspaceRoot);
+		const workspaceRoot = createForm.workspaceRoot.trim();
 		if (!workspaceRoot) {
 			setCreateFormError("Workspace root is required.");
 			return;
@@ -792,17 +789,18 @@ export function RoutineSchedulesContent() {
 		setIsCreating(true);
 		try {
 			const provider =
-				normalizeProviderId(asTrimmedFormString(createForm.provider)) ||
+				normalizeProviderId(createForm.provider) ||
 				availableProviders[0] ||
 				"cline";
 			const model =
-				asTrimmedFormString(createForm.model) ||
+				createForm.model.trim() ||
 				(visibleProviderModels[provider] ?? [])[0] ||
-				CLINE_DEFAULT_MODEL_ID;
-			const systemPrompt = asTrimmedFormString(createForm.systemPrompt);
+				"openai/gpt-5.3-codex";
+			const maxIterations = parseOptionalPositiveInt(createForm.maxIterations);
 			const timeoutSeconds = parseOptionalPositiveInt(
 				createForm.timeoutSeconds,
 			);
+			const maxParallel = parseOptionalPositiveInt(createForm.maxParallel) ?? 1;
 			const tags = parseTags(createForm.tags);
 			const command = editingSchedule
 				? "update_routine_schedule"
@@ -816,16 +814,19 @@ export function RoutineSchedulesContent() {
 				prompt,
 				provider,
 				model,
-				mode: editingSchedule?.mode ?? "yolo", // New routines must default to yolo mode.
+				mode: createForm.mode,
 				workspace_root: workspaceRoot,
-				cwd: editingSchedule ? (editingSchedule.cwd ?? null) : workspaceRoot,
+				cwd: createForm.cwd.trim() || undefined,
 				system_prompt: editingSchedule
-					? systemPrompt || null
-					: systemPrompt || undefined,
+					? createForm.systemPrompt.trim() || null
+					: createForm.systemPrompt.trim() || undefined,
+				max_iterations: editingSchedule
+					? (maxIterations ?? null)
+					: maxIterations,
 				timeout_seconds: editingSchedule
 					? (timeoutSeconds ?? null)
 					: timeoutSeconds,
-				max_parallel: 1,
+				max_parallel: maxParallel,
 				enabled: createForm.enabled,
 				tags: tags ?? [],
 			});
@@ -947,9 +948,7 @@ export function RoutineSchedulesContent() {
 										{schedule.mode}
 									</span>
 									<span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
-										{schedule.cronPattern === ONE_TIME_SCHEDULE_CRON_PATTERN
-											? `Once · ${formatDateTime(getOneTimeScheduleRunAt(schedule))}`
-											: schedule.cronPattern}
+										{schedule.cronPattern}
 									</span>
 									<div className="flex-1" />
 									<div className="flex items-center gap-1">
@@ -968,10 +967,7 @@ export function RoutineSchedulesContent() {
 											size="icon-sm"
 											aria-label={`Edit ${schedule.name}`}
 											onClick={() => openEditDialog(schedule)}
-											disabled={
-												isBusy ||
-												schedule.cronPattern === ONE_TIME_SCHEDULE_CRON_PATTERN
-											}
+											disabled={isBusy}
 										>
 											<Pencil className="h-3.5 w-3.5" />
 										</Button>
@@ -1154,7 +1150,9 @@ export function RoutineSchedulesContent() {
 			>
 				<DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
 					<DialogHeader>
-						<DialogTitle>Schedule</DialogTitle>
+						<DialogTitle>
+							{editingSchedule ? "Edit Routine" : "Create Routine"}
+						</DialogTitle>
 						<DialogDescription>
 							{editingSchedule
 								? "Update this scheduler routine."
@@ -1375,6 +1373,27 @@ export function RoutineSchedulesContent() {
 							</Combobox>
 						</div>
 
+						<div>
+							<Label>Mode</Label>
+							<Select
+								value={createForm.mode}
+								onValueChange={(value) =>
+									setCreateForm((prev) => ({
+										...prev,
+										mode: value === "plan" ? "plan" : "act",
+									}))
+								}
+							>
+								<SelectTrigger className="w-full">
+									<SelectValue placeholder="Select mode" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="act">act</SelectItem>
+									<SelectItem value="plan">plan</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+
 						<div className="sm:col-span-2">
 							<Label htmlFor="routine-workspace">Workspace root</Label>
 							<Input
@@ -1384,6 +1403,20 @@ export function RoutineSchedulesContent() {
 									setCreateForm((prev) => ({
 										...prev,
 										workspaceRoot: event.target.value,
+									}))
+								}
+							/>
+						</div>
+
+						<div className="sm:col-span-2">
+							<Label htmlFor="routine-cwd">CWD (optional)</Label>
+							<Input
+								id="routine-cwd"
+								value={createForm.cwd}
+								onChange={(event) =>
+									setCreateForm((prev) => ({
+										...prev,
+										cwd: event.target.value,
 									}))
 								}
 							/>
@@ -1407,6 +1440,23 @@ export function RoutineSchedulesContent() {
 						</div>
 
 						<div>
+							<Label htmlFor="routine-max-iterations">
+								Max iterations (optional)
+							</Label>
+							<Input
+								id="routine-max-iterations"
+								value={createForm.maxIterations}
+								onChange={(event) =>
+									setCreateForm((prev) => ({
+										...prev,
+										maxIterations: event.target.value,
+									}))
+								}
+								placeholder="50"
+							/>
+						</div>
+
+						<div>
 							<Label htmlFor="routine-timeout">
 								Timeout seconds (optional)
 							</Label>
@@ -1420,6 +1470,21 @@ export function RoutineSchedulesContent() {
 									}))
 								}
 								placeholder="3600"
+							/>
+						</div>
+
+						<div>
+							<Label htmlFor="routine-max-parallel">Max parallel</Label>
+							<Input
+								id="routine-max-parallel"
+								value={createForm.maxParallel}
+								onChange={(event) =>
+									setCreateForm((prev) => ({
+										...prev,
+										maxParallel: event.target.value,
+									}))
+								}
+								placeholder="1"
 							/>
 						</div>
 

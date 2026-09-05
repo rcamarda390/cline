@@ -1,6 +1,5 @@
 import { VSCodeLink, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
-import { useEffect, useRef, useState } from "react"
-import { useDebounceEffect } from "@/utils/useDebounceEffect"
+import { useDebouncedInput } from "../utils/useDebouncedInput"
 
 /**
  * Props for the ApiKeyField component
@@ -12,7 +11,6 @@ interface ApiKeyFieldProps {
 	signupUrl?: string
 	placeholder?: string
 	helpText?: string
-	label?: string
 }
 
 /**
@@ -25,61 +23,19 @@ export const ApiKeyField = ({
 	signupUrl,
 	placeholder = "Enter API Key...",
 	helpText,
-	label = `${providerName} API Key`,
 }: ApiKeyFieldProps) => {
-	const [localValue, setLocalValue] = useState(initialValue)
-	const isFocusedRef = useRef(false)
-	const hasPendingUserEditRef = useRef(false)
-	const prevInitialValueRef = useRef(initialValue)
-
-	useEffect(() => {
-		if (prevInitialValueRef.current === initialValue) {
-			return
-		}
-
-		prevInitialValueRef.current = initialValue
-
-		// API key saves can update the masked initial value while the user is still typing.
-		// Do not replace their in-progress input with the new mask, or subsequent saves only
-		// persist the suffix typed after that rerender.
-		if (!isFocusedRef.current) {
-			hasPendingUserEditRef.current = false
-			setLocalValue(initialValue)
-		}
-	}, [initialValue])
-
-	useDebounceEffect(
-		() => {
-			if (!hasPendingUserEditRef.current) {
-				return
-			}
-
-			hasPendingUserEditRef.current = false
-			onChange(localValue)
-		},
-		100,
-		[localValue],
-	)
+	const [localValue, setLocalValue] = useDebouncedInput(initialValue, onChange)
 
 	return (
 		<div>
 			<VSCodeTextField
-				onBlur={() => {
-					isFocusedRef.current = false
-				}}
-				onFocus={() => {
-					isFocusedRef.current = true
-				}}
-				onInput={(e) => {
-					hasPendingUserEditRef.current = true
-					setLocalValue((e.target as HTMLInputElement | null)?.value ?? "")
-				}}
+				onInput={(e: any) => setLocalValue(e.target.value)}
 				placeholder={placeholder}
 				required={true}
 				style={{ width: "100%" }}
 				type="password"
 				value={localValue}>
-				<span style={{ fontWeight: 500 }}>{label}</span>
+				<span style={{ fontWeight: 500 }}>{providerName} API Key</span>
 			</VSCodeTextField>
 			<p
 				style={{

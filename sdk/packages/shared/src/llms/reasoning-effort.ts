@@ -1,16 +1,13 @@
-import type { ReasoningLevel } from "./reasoning-options";
-
 export const REASONING_EFFORT_RATIOS = {
-	max: 1,
 	xhigh: 0.95,
 	high: 0.8,
 	medium: 0.5,
 	low: 0.2,
 	minimal: 0.1,
 	none: 0,
-} as const satisfies Record<ReasoningLevel, number>;
+} as const;
 
-export type ReasoningEffortValue = ReasoningLevel;
+export type ReasoningEffortValue = keyof typeof REASONING_EFFORT_RATIOS;
 export const DEFAULT_REASONING_EFFORT: ReasoningEffortValue | undefined =
 	undefined;
 

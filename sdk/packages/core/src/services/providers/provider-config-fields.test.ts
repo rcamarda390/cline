@@ -22,8 +22,9 @@ describe("getProviderConfigFields", () => {
 		expect(result.fields.apiKey).toEqual({
 			note: "Keep empty if no API key for local inference.",
 		});
-		// The native-API vendor appends /api itself; the default is a bare host.
-		expect(result.fields.baseUrl?.defaultValue).toBe("http://localhost:11434");
+		expect(result.fields.baseUrl?.defaultValue).toBe(
+			"http://localhost:11434/v1",
+		);
 	});
 
 	it("returns api-key auth with apiKey + baseUrl for LM Studio", () => {

@@ -79,13 +79,6 @@ export class SessionArtifacts {
 		);
 	}
 
-	public sessionCompactionPath(sessionId: string): string {
-		return join(
-			this.sessionArtifactsDir(sessionId),
-			`${sessionId}.compaction.json`,
-		);
-	}
-
 	public sessionManifestPath(sessionId: string, ensureDir = false): string {
 		const base = ensureDir
 			? this.ensureSessionArtifactsDir(sessionId)

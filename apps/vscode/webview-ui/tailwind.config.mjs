@@ -10,7 +10,7 @@ export default {
 	theme: {
 		extend: {
 			fontFamily: {
-				"geist-mono": ['"Geist Mono Variable"', "monospace"],
+				"azeret-mono": ['"Azeret Mono"', "monospace"],
 			},
 			colors: {
 				background: "var(--vscode-editor-background)",

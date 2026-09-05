@@ -1,12 +1,12 @@
 import type { ChoiceContext } from "@opentui-ui/dialog";
 import { useDialogKeyboard } from "@opentui-ui/dialog/react";
 import { useState } from "react";
-import { useDialogPalette } from "../../hooks/use-theme";
 import type {
 	InteractiveConfigData,
 	InteractiveConfigItem,
 	LoadInteractiveConfigDataOptions,
 } from "../../interactive-config";
+import { palette } from "../../palette";
 import {
 	getExtDetailFooterText,
 	getExtDetailRows,
@@ -23,7 +23,6 @@ export function ExtDetailContent(
 		) => Promise<InteractiveConfigData | undefined>;
 	},
 ) {
-	const palette = useDialogPalette();
 	const [item, setItem] = useState(props.item);
 	const [toggleError, setToggleError] = useState<string | undefined>();
 
@@ -91,7 +90,7 @@ export function ExtDetailContent(
 								flexDirection="row"
 								justifyContent="space-between"
 							>
-								<text fg={palette.act}>
+								<text fg="cyan">
 									<strong>{row.name}</strong>
 								</text>
 								<text

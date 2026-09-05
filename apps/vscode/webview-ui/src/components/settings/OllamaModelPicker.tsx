@@ -4,14 +4,12 @@ import React, { KeyboardEvent, memo, useEffect, useMemo, useRef, useState } from
 import styled from "styled-components"
 import { highlight } from "../history/HistoryView"
 
-const OLLAMA_MODEL_PICKER_Z_INDEX = 1_000
+export const OLLAMA_MODEL_PICKER_Z_INDEX = 1_000
 
-interface OllamaModelPickerProps {
+export interface OllamaModelPickerProps {
 	ollamaModels: string[]
 	selectedModelId: string
 	onModelChange: (modelId: string) => void
-	/** Called when the search field gains focus, e.g. to refresh the model list on demand. */
-	onFocus?: () => void
 	placeholder?: string
 }
 
@@ -19,7 +17,6 @@ const OllamaModelPicker: React.FC<OllamaModelPickerProps> = ({
 	ollamaModels,
 	selectedModelId,
 	onModelChange,
-	onFocus,
 	placeholder = "Search and select a model...",
 }) => {
 	const [searchTerm, setSearchTerm] = useState(selectedModelId || "")
@@ -134,10 +131,7 @@ const OllamaModelPicker: React.FC<OllamaModelPickerProps> = ({
 			<DropdownWrapper ref={dropdownRef}>
 				<VSCodeTextField
 					id="ollama-model-search"
-					onFocus={() => {
-						setIsDropdownVisible(true)
-						onFocus?.()
-					}}
+					onFocus={() => setIsDropdownVisible(true)}
 					onInput={(e) => {
 						const value = (e.target as HTMLInputElement)?.value || ""
 						handleModelChange(value)
@@ -223,10 +217,8 @@ const DropdownItem = styled.div<{ isSelected: boolean }>`
 	white-space: normal;
 
 	background-color: ${({ isSelected }) => (isSelected ? "var(--vscode-list-activeSelectionBackground)" : "inherit")};
-	color: ${({ isSelected }) => (isSelected ? "var(--vscode-list-activeSelectionForeground, inherit)" : "inherit")};
 
 	&:hover {
 		background-color: var(--vscode-list-activeSelectionBackground);
-		color: var(--vscode-list-activeSelectionForeground, inherit);
 	}
 `

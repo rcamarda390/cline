@@ -37,13 +37,13 @@ The E2E test suite consists of several key components:
 To build the test environment and run all E2E tests:
 
 ```bash
-bun run test:e2e
+npm run test:e2e
 ```
 
 To run all E2E tests without re-building the test environment (e.g. only test files were updated):
 
 ```bash
-bun run e2e
+npm run e2e
 ```
 
 ### Debug Mode
@@ -51,9 +51,9 @@ bun run e2e
 To run E2E tests in debug mode with Playwright's interactive debugger:
 
 ```bash
-bun run test:e2e -- --debug
+npm run test:e2e -- --debug
 # Or only run the tests without re-building
-bun run e2e -- --debug
+npm run e2e -- --debug
 ```
 
 In debug mode, Playwright will:
@@ -66,17 +66,17 @@ In debug mode, Playwright will:
 
 Run specific test files:
 ```bash
-bun run e2e -- auth.test.ts
+npm run e2e -- auth.test.ts
 ```
 
 Run tests with specific tags or patterns:
 ```bash
-bun run e2e -- --grep "Chat"
+npm run e2e -- --grep "Chat"
 ```
 
 Run tests in headed mode (visible browser):
 ```bash
-bun run e2e -- --headed
+npm run e2e -- --headed
 ```
 
 ## Writing Tests
@@ -165,7 +165,7 @@ The `--debug` flag enables Playwright's interactive debugging features:
 
 1. **Start debugging session:**
    ```bash
-   bun run test:e2e -- --debug
+   npm run test:e2e -- --debug
    ```
 
 2. **Playwright will open:**

@@ -3,9 +3,6 @@ import type { SessionHookEvent } from "@/lib/session-diff";
 export type ProcessContext = {
 	workspaceRoot: string;
 	cwd: string;
-	homeDir?: string;
-	platform?: string;
-	appVersion?: string;
 };
 
 export type AgentChunkEvent = {
@@ -19,17 +16,6 @@ export type AgentChunkEvent = {
 export type ReasoningDeltaEvent = {
 	text?: string;
 	redacted?: boolean;
-};
-
-export type ChatUsageEvent = {
-	/** Tokens consumed by the latest model request. */
-	inputTokens?: number;
-	/** Tokens produced by the latest model request. */
-	outputTokens?: number;
-	/** Input tokens served from the provider's prompt cache. */
-	cacheReadTokens?: number;
-	/** Cost of the latest model request. */
-	cost?: number;
 };
 
 export type ToolCallStartEvent = {
@@ -47,12 +33,6 @@ export type ToolCallEndEvent = {
 	durationMs?: number;
 };
 
-export type ToolCallUpdateEvent = {
-	toolCallId?: string;
-	toolName?: string;
-	update?: unknown;
-};
-
 export type ToolApprovalRequestItem = {
 	requestId: string;
 	sessionId: string;
@@ -67,7 +47,6 @@ export type ToolApprovalRequestItem = {
 
 export type AskQuestionRequestItem = {
 	requestId: string;
-	sessionId: string;
 	createdAt: string;
 	question: string;
 	options: string[];
@@ -105,19 +84,6 @@ export type ChatApiResult = {
 	messages?: unknown[];
 };
 
-export type ChatSessionCommandResponse = {
-	sessionId?: string;
-	cwd?: string;
-	workspaceRoot?: string;
-	result?: ChatApiResult;
-	ok?: boolean;
-	queued?: boolean;
-	promptsInQueue?: PromptInQueue[];
-	prompt?: PromptInQueue;
-	updated?: boolean;
-	removed?: boolean;
-};
-
 export type ChatWsResponseEvent = {
 	type: "chat_response";
 	requestId: string;
@@ -135,11 +101,7 @@ export type ChatWsChunkEvent = {
 	event: AgentChunkEvent;
 };
 
-export type ChatTransportState =
-	| "connecting"
-	| "reconnecting"
-	| "connected"
-	| "unavailable";
+export type ChatTransportState = "connecting" | "reconnecting" | "connected";
 
 export type CoreLogChunk = {
 	level?: string;

@@ -17,8 +17,7 @@ export const AUTH_ERROR_PATTERNS = [
  * Returns `true` when `error` looks like an authentication failure.
  */
 export function isLikelyAuthError(error: unknown): boolean {
-	const message = (
-		error instanceof Error ? error.message : String(error)
-	).toLowerCase();
+	const message =
+		error instanceof Error ? error.message.toLowerCase() : String(error);
 	return AUTH_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
 }

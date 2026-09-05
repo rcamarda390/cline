@@ -4,10 +4,10 @@ import { BASE_SLASH_COMMANDS, type SlashCommand, VSCODE_ONLY_COMMANDS } from "..
 
 export type { SlashCommand }
 
-const DEFAULT_SLASH_COMMANDS: SlashCommand[] =
+export const DEFAULT_SLASH_COMMANDS: SlashCommand[] =
 	PLATFORM_CONFIG.type === PlatformType.VSCODE ? [...BASE_SLASH_COMMANDS, ...VSCODE_ONLY_COMMANDS] : BASE_SLASH_COMMANDS
 
-function getWorkflowCommands(
+export function getWorkflowCommands(
 	localWorkflowToggles: Record<string, boolean>,
 	globalWorkflowToggles: Record<string, boolean>,
 	remoteWorkflowToggles?: Record<string, boolean>,

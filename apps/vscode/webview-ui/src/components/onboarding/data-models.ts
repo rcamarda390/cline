@@ -15,10 +15,13 @@ type RecommendedModelsResponseLike = {
 	clinePass?: ClineRecommendedModel[]
 }
 
-export function getRecommendedModelsData(response: RecommendedModelsResponseLike): RecommendedModelsData | undefined {
+export function getRecommendedModelsData(
+	response: RecommendedModelsResponseLike,
+	isClinePassEnabled: boolean,
+): RecommendedModelsData | undefined {
 	const recommended = response.recommended ?? []
 	const free = response.free ?? []
-	const clinePass = response.clinePass ?? []
+	const clinePass = isClinePassEnabled ? (response.clinePass ?? []) : []
 
 	if (recommended.length === 0 && free.length === 0 && clinePass.length === 0) {
 		return undefined
@@ -60,13 +63,6 @@ export function getClineUIOnboardingGroups(groupedModels: OnboardingModelGroup):
 	}
 }
 
-export function getOnboardingGroupDisplayName(group: string): string {
-	if (group === CLINEPASS_GROUP) {
-		return "ClinePass"
-	}
-	return group
-}
-
 export function getPriceRange(modelInfo: OpenRouterModelInfo): string {
 	const prompt = Number(modelInfo.inputPrice ?? 0)
 	const completion = Number(modelInfo.outputPrice ?? 0)
@@ -81,6 +77,22 @@ export function getPriceRange(modelInfo: OpenRouterModelInfo): string {
 		return "$$$"
 	}
 	return "$$"
+}
+
+export function getOverviewLabel(overview: number): string {
+	if (overview >= 95) {
+		return "Top Performer"
+	}
+	if (overview >= 80) {
+		return "Great"
+	}
+	if (overview >= 60) {
+		return "Good"
+	}
+	if (overview >= 50) {
+		return "Average"
+	}
+	return "Below Average"
 }
 
 export function getCapabilities(modelInfo: OpenRouterModelInfo): string[] {

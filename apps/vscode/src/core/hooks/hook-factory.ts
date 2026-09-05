@@ -18,7 +18,8 @@ import {
 	TaskStartData,
 	UserPromptSubmitData,
 } from "../../shared/proto/cline/hooks"
-import { getAllHooksDirs, getWindowWorkspaceRoots } from "../storage/disk"
+import { getAllHooksDirs } from "../storage/disk"
+import { StateManager } from "../storage/StateManager"
 import { HookExecutionError } from "./HookError"
 import { HookProcess } from "./HookProcess"
 
@@ -128,7 +129,7 @@ export interface Hooks {
 	}
 }
 
-interface HookModelInputContext {
+export interface HookModelInputContext {
 	provider?: string
 	slug?: string
 }
@@ -162,23 +163,7 @@ const exec = Symbol()
  * - Results are immediately consumed and added to the conversation context
  */
 export abstract class HookRunner<Name extends HookName> {
-	/**
-	 * @param workspaceRoots This window's workspace root paths, resolved when
-	 * the runner was created. Kept alongside the runner so hook input metadata
-	 * matches the roots used for discovery and cwd selection.
-	 */
-	constructor(
-		public readonly hookName: Name,
-		protected readonly workspaceRoots?: string[],
-	) {}
-
-	/**
-	 * True when no hook scripts were discovered and run() is a no-op. Callers
-	 * use this to skip status reporting for hooks that don't exist.
-	 */
-	get isNoOp(): boolean {
-		return false
-	}
+	constructor(public readonly hookName: Name) {}
 
 	/**
 	 * Execute the hook with the given parameters.
@@ -211,7 +196,10 @@ export abstract class HookRunner<Name extends HookName> {
 	 * @returns Complete HookInput ready to be serialized and sent to the hook script
 	 */
 	protected async completeParams(params: NamedHookInput<Name>): Promise<HookInput> {
-		const workspaceRoots = this.workspaceRoots ?? (await getWindowWorkspaceRoots())
+		const workspaceRoots =
+			StateManager.get()
+				.getGlobalStateKey("workspaceRoots")
+				?.map((root) => root.path) || []
 
 		const model: HookModelContext = {
 			provider: params.model?.provider?.trim() || "unknown",
@@ -240,10 +228,6 @@ export abstract class HookRunner<Name extends HookName> {
  * @template Name The type of hook this runner represents
  */
 class NoOpRunner<Name extends HookName> extends HookRunner<Name> {
-	override get isNoOp(): boolean {
-		return true
-	}
-
 	/**
 	 * Executes a no-op hook that always succeeds.
 	 * @param _ Hook input (ignored)
@@ -298,9 +282,8 @@ class StdioHookRunner<Name extends HookName> extends HookRunner<Name> {
 		private readonly taskId?: string,
 		private readonly toolName?: string,
 		private readonly cwd?: string,
-		workspaceRoots?: string[],
 	) {
-		super(hookName, workspaceRoots)
+		super(hookName)
 	}
 
 	override async [exec](input: HookInput): Promise<HookOutput> {
@@ -676,9 +659,8 @@ class CombinedHookRunner<Name extends HookName> extends HookRunner<Name> {
 	constructor(
 		hookName: Name,
 		private readonly runners: readonly HookRunner<Name>[],
-		workspaceRoots?: string[],
 	) {
-		super(hookName, workspaceRoots)
+		super(hookName)
 	}
 
 	override async [exec](input: HookInput): Promise<HookOutput> {
@@ -742,49 +724,33 @@ function isExpectedHookError(error: unknown): boolean {
 	return false
 }
 
-/**
- * True when `child` is the same path as `parent` or inside it. A plain
- * startsWith check would treat /a/b as containing /a/bc, so require the match
- * to end on a whole path segment.
- */
-export function isPathWithin(parent: string, child: string): boolean {
-	if (child === parent) {
-		return true
-	}
-	const prefix = parent.endsWith(path.sep) ? parent : parent + path.sep
-	return child.startsWith(prefix)
-}
-
 export class HookFactory {
 	/**
-	 * @param options.sessionWorkspaceRoot The workspace root of the session the
-	 * hooks run for. Discovery additionally scans this root's .clinerules/hooks
-	 * and hooks discovered there execute from it: the session's root is not
-	 * always among the window's workspace folders (e.g. the chat-workspace
-	 * fallback when no folder is open).
+	 * Get information about discovered hooks including their script paths
+	 * @param hookName The type of hook to query
+	 * @returns Object containing array of script paths
 	 */
-	constructor(private readonly options?: { sessionWorkspaceRoot?: string }) {}
-
-	private sessionHooksDir(): string | undefined {
-		const root = this.options?.sessionWorkspaceRoot
-		return root ? path.join(root, ".clinerules", "hooks") : undefined
-	}
-
-	private async findSessionScripts(hookName: HookName): Promise<string[]> {
-		const dir = this.sessionHooksDir()
-		if (!dir) {
-			return []
-		}
-		const script = await HookFactory.findHookInHooksDir(hookName, dir)
-		return script ? [script] : []
+	async getHookInfo<Name extends HookName>(
+		hookName: Name,
+	): Promise<{
+		scriptPaths: string[]
+	}> {
+		const { HookDiscoveryCache } = await import("./HookDiscoveryCache")
+		const scripts = await HookDiscoveryCache.getInstance().get(hookName)
+		return { scriptPaths: scripts }
 	}
 
 	/**
-	 * Create a hook runner without streaming support (backwards compatible).
-	 * Check the returned runner's isNoOp to learn whether any hook scripts
-	 * exist — creation is the single point where workspace roots and hook
-	 * discovery are resolved, so there is no separate existence check that
-	 * could disagree with what the runner will execute.
+	 * Check if any hook scripts exist for the given hook name
+	 * @returns true if at least one hook script exists, false otherwise
+	 */
+	async hasHook<Name extends HookName>(hookName: Name): Promise<boolean> {
+		const scripts = await HookFactory.findHookScripts(hookName)
+		return scripts.length > 0
+	}
+
+	/**
+	 * Create a hook runner without streaming support (backwards compatible)
 	 */
 	async create<Name extends HookName>(hookName: Name, taskId?: string, toolName?: string): Promise<HookRunner<Name>> {
 		return this.createWithStreaming(hookName, undefined, undefined, taskId, toolName)
@@ -817,30 +783,12 @@ export class HookFactory {
 		taskId?: string,
 		toolName?: string,
 	): Promise<HookRunner<Name>> {
-		// Resolve this window's workspace roots once, then reuse the same set
-		// for hooks-dir discovery, cwd selection, and hook input metadata so
-		// they can't disagree. The first workspace folder is the primary root;
-		// the session's root joins the set when it isn't a window folder, so
-		// session-discovered hooks execute from their own workspace.
-		const windowRoots = await getWindowWorkspaceRoots()
-		const sessionRoot = this.options?.sessionWorkspaceRoot
-		const workspaceRoots = sessionRoot && !windowRoots.includes(sessionRoot) ? [...windowRoots, sessionRoot] : windowRoots
-
-		const hooksDirs = await getAllHooksDirs(windowRoots)
-
-		// Use cache for hook discovery instead of direct file system scan,
-		// giving it the window-scoped hooks-dir snapshot for cache misses. The
-		// session dir is scanned outside the cache: the cache is a process-wide
-		// singleton, so per-session results must not seed it.
+		// Use cache for hook discovery instead of direct file system scan
 		const { HookDiscoveryCache } = await import("./HookDiscoveryCache")
-		const cachedScripts = await HookDiscoveryCache.getInstance().get(hookName, hooksDirs)
-		const sessionScripts = await this.findSessionScripts(hookName)
-		const scripts = [...new Set([...cachedScripts, ...sessionScripts])]
+		const scripts = await HookDiscoveryCache.getInstance().get(hookName)
 
-		const sessionDir = this.sessionHooksDir()
-		if (sessionDir && !hooksDirs.includes(sessionDir)) {
-			hooksDirs.push(sessionDir)
-		}
+		// Fetch hooks dirs once for source determination and telemetry
+		const hooksDirs = await getAllHooksDirs()
 
 		// Capture hook discovery telemetry
 		// Categorize scripts by location (global vs workspace)
@@ -852,29 +800,25 @@ export class HookFactory {
 			)
 		}
 
+		// Get workspace roots for cwd determination
+		const stateManager = StateManager.get()
+		const workspaceRoots = stateManager.getGlobalStateKey("workspaceRoots")
+		const primaryRootIndex = stateManager.getGlobalStateKey("primaryRootIndex") ?? 0
+		const primaryCwd = workspaceRoots?.[primaryRootIndex]?.path
+
 		// Create runners with source and cwd determination for each script
 		// Global hooks run from primary workspace root
 		// Workspace-specific hooks run from their respective workspace root
 		const runners = scripts.map((script) => {
 			const source = this.determineScriptSource(script, hooksDirs)
-			const cwd = this.determineHookCwd(script, hooksDirs, workspaceRoots)
-			return new StdioHookRunner(
-				hookName,
-				script,
-				source,
-				streamCallback,
-				abortSignal,
-				taskId,
-				toolName,
-				cwd,
-				workspaceRoots,
-			)
+			const cwd = this.determineHookCwd(script, hooksDirs, workspaceRoots, primaryCwd)
+			return new StdioHookRunner(hookName, script, source, streamCallback, abortSignal, taskId, toolName, cwd)
 		})
 
 		if (runners.length === 0) {
-			return new NoOpRunner(hookName, workspaceRoots)
+			return new NoOpRunner(hookName)
 		}
-		return runners.length === 1 ? runners[0] : new CombinedHookRunner(hookName, runners, workspaceRoots)
+		return runners.length === 1 ? runners[0] : new CombinedHookRunner(hookName, runners)
 	}
 
 	/**
@@ -889,7 +833,7 @@ export class HookFactory {
 	 * Determines if a single script is from global or workspace location
 	 */
 	private determineScriptSource(scriptPath: string, hooksDirs: string[]): "global" | "workspace" {
-		const containingDir = hooksDirs.find((dir) => isPathWithin(dir, scriptPath))
+		const containingDir = hooksDirs.find((dir) => scriptPath.startsWith(dir))
 		if (containingDir && HookFactory.isGlobalHooksDir(containingDir)) {
 			return "global"
 		}
@@ -907,29 +851,35 @@ export class HookFactory {
 	 *
 	 * @param scriptPath The full path to the hook script
 	 * @param hooksDirs Array of all hooks directories
-	 * @param workspaceRoots Array of workspace root paths; the first entry is
-	 * the primary root
+	 * @param workspaceRoots Array of workspace root objects
+	 * @param primaryCwd The primary workspace root path (fallback)
 	 * @returns The working directory to use for this hook
 	 */
-	private determineHookCwd(scriptPath: string, hooksDirs: string[], workspaceRoots: string[]): string | undefined {
-		const containingDir = hooksDirs.find((dir) => isPathWithin(dir, scriptPath))
+	private determineHookCwd(
+		scriptPath: string,
+		hooksDirs: string[],
+		workspaceRoots: Array<{ path: string }> | undefined,
+		primaryCwd: string | undefined,
+	): string | undefined {
+		const containingDir = hooksDirs.find((dir) => scriptPath.startsWith(dir))
 
-		// If workspace hook, find which workspace root it belongs to.
-		// Workspace hooks are at: workspaceRoot/.clinerules/hooks/. Prefer the
-		// longest matching root so nested workspace roots resolve to the
-		// innermost one.
-		if (containingDir && !HookFactory.isGlobalHooksDir(containingDir)) {
-			const workspaceRoot = [...workspaceRoots]
-				.sort((a, b) => b.length - a.length)
-				.find((root) => isPathWithin(root, containingDir))
+		// If global hook, use primary workspace root
+		if (containingDir && HookFactory.isGlobalHooksDir(containingDir)) {
+			return primaryCwd
+		}
+
+		// If workspace hook, find which workspace root it belongs to
+		// Workspace hooks are at: workspaceRoot/.clinerules/hooks/
+		// So find the workspace root whose path is a prefix of the containing hooks dir
+		if (containingDir && workspaceRoots) {
+			const workspaceRoot = workspaceRoots.find((root) => containingDir.startsWith(root.path))
 			if (workspaceRoot) {
-				return workspaceRoot
+				return workspaceRoot.path
 			}
 		}
 
-		// Global hooks (and any script we can't place) run from the primary
-		// workspace root.
-		return workspaceRoots[0]
+		// Fallback to primary cwd
+		return primaryCwd
 	}
 
 	/**
@@ -950,7 +900,7 @@ export class HookFactory {
 		let workspaceCount = 0
 
 		for (const script of scripts) {
-			const containingDir = hooksDirs.find((dir) => isPathWithin(dir, script))
+			const containingDir = hooksDirs.find((dir) => script.startsWith(dir))
 			if (containingDir && HookFactory.isGlobalHooksDir(containingDir)) {
 				globalCount++
 			} else {
@@ -959,6 +909,20 @@ export class HookFactory {
 		}
 
 		return { globalCount, workspaceCount }
+	}
+
+	/**
+	 * @returns A list of paths to scripts for the given hook name.
+	 * Includes both global hooks (from ~/Documents/Cline/Hooks/) and workspace hooks
+	 * (from .clinerules/hooks/ in each workspace root).
+	 */
+	private static async findHookScripts(hookName: HookName): Promise<string[]> {
+		const hookScripts = []
+		for (const hooksDir of await getAllHooksDirs()) {
+			hookScripts.push(HookFactory.findHookInHooksDir(hookName, hooksDir))
+		}
+		const isDefined = (scriptPath: string | undefined): scriptPath is string => Boolean(scriptPath)
+		return (await Promise.all(hookScripts)).filter(isDefined)
 	}
 
 	/**

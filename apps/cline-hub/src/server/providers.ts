@@ -5,11 +5,9 @@ import {
 	Llms,
 	listLocalProviders,
 	loginAndSaveLocalProviderOAuthCredentials,
-	markLocalProviderEnabled,
 	normalizeOAuthProvider,
 	saveLocalProviderSettings,
 } from "@cline/core";
-import { isChatCompatibleModel } from "@cline/shared";
 import type {
 	WebviewInboundMessage,
 	WebviewProviderModel,
@@ -87,25 +85,12 @@ export async function loadModels(
 		provider,
 		providerSettingsManager.getProviderConfig(provider),
 	);
-	const models: WebviewProviderModel[] = payload.models
-		.filter((model) =>
-			isChatCompatibleModel({
-				operation: model.operation,
-				modalities: {
-					input: model.inputModalities,
-					output: model.outputModalities,
-				},
-			}),
-		)
-		.map((model) => ({
-			id: model.id,
-			name: model.name,
-			operation: model.operation,
-			supportsReasoning: model.supportsReasoning,
-			supportsThinking: model.supportsReasoning,
-			inputModalities: model.inputModalities,
-			outputModalities: model.outputModalities,
-		}));
+	const models: WebviewProviderModel[] = payload.models.map((model) => ({
+		id: model.id,
+		name: model.name,
+		supportsReasoning: model.supportsReasoning,
+		supportsThinking: model.supportsReasoning,
+	}));
 	ctx.send(peer, { type: "models", providerId: provider, models });
 }
 
@@ -114,9 +99,7 @@ export async function sendProviderCatalog(
 	peer: BrowserPeer,
 ): Promise<void> {
 	await ensureCustomProvidersLoaded(providerSettingsManager);
-	const payload = await listLocalProviders(providerSettingsManager, {
-		isClinePassEnabled: true,
-	});
+	const payload = await listLocalProviders(providerSettingsManager);
 	ctx.send(peer, {
 		type: "provider_catalog",
 		providers: payload.providers,
@@ -155,11 +138,6 @@ export async function runProviderOAuthLogin(
 		normalized,
 		openExternalUrl,
 	);
-	if (saved.provider !== normalized) {
-		markLocalProviderEnabled(providerSettingsManager, normalized, {
-			tokenSource: "oauth",
-		});
-	}
 	ctx.send(peer, {
 		type: "provider_oauth_login_done",
 		providerId: normalized,

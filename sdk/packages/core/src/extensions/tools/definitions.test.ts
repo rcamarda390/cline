@@ -1,31 +1,21 @@
-import type { AgentToolContext, ITelemetryService } from "@cline/shared";
+import type { ITelemetryService } from "@cline/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
-	buildRunCommandsDescription,
+	CLINE_INTERNAL_TELEMETRY_METADATA_KEY,
+	getToolContextTelemetry,
+} from "../../services/telemetry/tool-context";
+import {
+	createBashTool,
 	createDefaultTools,
-	createEditorTool,
 	createReadFilesTool,
 	createSearchTool,
-	createShellTool,
 	createSkillsTool,
+	createWindowsShellTool,
 } from "./definitions";
 import { CommandExitError } from "./executors/bash";
 import { RUN_COMMAND_QUERY_PREVIEW_LIMIT, TimeoutError } from "./helpers";
-import { type EditFileInput, INPUT_ARG_CHAR_LIMIT } from "./schemas";
+import { INPUT_ARG_CHAR_LIMIT } from "./schemas";
 import type { SkillsExecutorWithMetadata } from "./types";
-
-function hasSchemaKey(value: unknown, key: string): boolean {
-	if (Array.isArray(value)) {
-		return value.some((item) => hasSchemaKey(item, key));
-	}
-	if (value && typeof value === "object") {
-		return Object.entries(value).some(
-			([entryKey, entryValue]) =>
-				entryKey === key || hasSchemaKey(entryValue, key),
-		);
-	}
-	return false;
-}
 
 function createMockSkillsExecutor(
 	fn: (...args: unknown[]) => Promise<string> = async () => "ok",
@@ -478,71 +468,6 @@ describe("default apply_patch tool", () => {
 	});
 });
 
-describe("run_commands tool description", () => {
-	it("names PowerShell with ';' sequencing for PowerShell shells", () => {
-		const description = buildRunCommandsDescription("powershell", true);
-		expect(description).toContain("Commands run through PowerShell");
-		expect(description).toContain("use ';' to sequence commands");
-		expect(description).toContain("in Windows environment");
-	});
-
-	it("names cmd.exe with '&&' sequencing for cmd shells", () => {
-		const description = buildRunCommandsDescription("cmd", true);
-		expect(description).toContain("Commands run through cmd.exe");
-		expect(description).toContain("use '&&' to sequence commands");
-		expect(description).not.toContain("PowerShell");
-	});
-
-	it("describes WSL bash with the /mnt working-directory mapping", () => {
-		const description = buildRunCommandsDescription("wsl", true);
-		expect(description).toContain("bash in WSL");
-		expect(description).toContain("/mnt/<drive>");
-		expect(description).not.toContain("PowerShell");
-	});
-
-	it("notes the Windows host for POSIX shells on Windows only", () => {
-		const onWindows = buildRunCommandsDescription("posix", true);
-		expect(onWindows).toContain("POSIX (bash-compatible) shell on Windows");
-		expect(onWindows).not.toContain("PowerShell");
-
-		const onUnix = buildRunCommandsDescription("posix", false);
-		expect(onUnix).not.toContain("Windows");
-		expect(onUnix).toContain("grep/head/tail");
-	});
-
-	it("derives the createShellTool description from config.shell", () => {
-		const posixTool = createShellTool(async () => "ok", {
-			shell: "/bin/bash",
-		});
-		expect(posixTool.description).toContain(
-			"Run non-interactive shell commands",
-		);
-		expect(posixTool.description).not.toContain("PowerShell");
-
-		const cmdTool = createShellTool(async () => "ok", {
-			shell: "C:\\Windows\\System32\\cmd.exe",
-		});
-		expect(cmdTool.description).toContain("Commands run through cmd.exe");
-	});
-
-	it("re-derives the description on each read when config.shell is a provider", () => {
-		let shell = "/bin/bash";
-		const tool = createShellTool(async () => "ok", {
-			shell: () => shell,
-		});
-		expect(tool.description).not.toContain("PowerShell");
-
-		shell = "powershell.exe";
-		expect(tool.description).toContain("Commands run through PowerShell");
-
-		// The property must survive the shallow copy the runtime performs when
-		// building AgentToolDefinitions for a model request.
-		shell = "cmd.exe";
-		const definition = { ...tool };
-		expect(definition.description).toContain("Commands run through cmd.exe");
-	});
-});
-
 describe("default run_commands tool", () => {
 	function createTelemetryStub(): ITelemetryService {
 		return {
@@ -568,11 +493,22 @@ describe("default run_commands tool", () => {
 			.filter((event) => event.event === "sdk.tool_timeout");
 	}
 
+	it("reads telemetry from the internal metadata key", () => {
+		const telemetry = createTelemetryStub();
+
+		expect(
+			getToolContextTelemetry({
+				telemetry: "user-defined-label",
+				[CLINE_INTERNAL_TELEMETRY_METADATA_KEY]: telemetry,
+			}),
+		).toBe(telemetry);
+	});
+
 	it("accepts object input with commands as a single string", async () => {
 		const execute = vi.fn(async (command: string | { command: string }) =>
 			typeof command === "string" ? `ran:${command}` : `ran:${command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createWindowsShellTool(execute);
 
 		const result = await tool.execute({ commands: "ls" } as never, {
 			agentId: "agent-1",
@@ -604,7 +540,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createWindowsShellTool(execute);
 
 		await tool.execute({ command: "pwd" } as never, {
 			agentId: "agent-1",
@@ -638,7 +574,7 @@ describe("default run_commands tool", () => {
 					? `ran:${command}`
 					: `ran:${command.command}:${(command.args ?? []).join(",")}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createWindowsShellTool(execute);
 
 		const result = await tool.execute(
 			{
@@ -675,105 +611,6 @@ describe("default run_commands tool", () => {
 		);
 	});
 
-	it("accepts mixed structured and string command arrays", async () => {
-		const execute = vi.fn(
-			async (command: string | { command: string; args?: string[] }) =>
-				typeof command === "string"
-					? `ran:${command}`
-					: `ran:${command.command}:${(command.args ?? []).join(",")}`,
-		);
-		const tool = createShellTool(execute);
-
-		const result = await tool.execute(
-			{
-				commands: ["pwd", { command: "node", args: ["--version"] }],
-			} as never,
-			{
-				agentId: "agent-1",
-				conversationId: "conv-1",
-				iteration: 1,
-			},
-		);
-
-		expect(result).toEqual([
-			{ query: "pwd", result: "ran:pwd", success: true },
-			{
-				query: "node --version",
-				result: "ran:node:--version",
-				success: true,
-			},
-		]);
-		expect(execute).toHaveBeenNthCalledWith(
-			1,
-			"pwd",
-			process.cwd(),
-			expect.objectContaining({ iteration: 1 }),
-		);
-		expect(execute).toHaveBeenNthCalledWith(
-			2,
-			{ command: "node", args: ["--version"] },
-			process.cwd(),
-			expect.objectContaining({ iteration: 1 }),
-		);
-	});
-
-	it("identifies streamed updates from parallel commands", async () => {
-		const updates: unknown[] = [];
-		const execute = vi.fn(
-			async (
-				command: string | { command: string; args?: string[] },
-				_cwd: string,
-				context: AgentToolContext,
-			) => {
-				context.emitUpdate?.({
-					stream: "stdout",
-					chunk: typeof command === "string" ? command : command.command,
-				});
-				return "done";
-			},
-		);
-		const tool = createShellTool(execute);
-
-		await tool.execute(
-			{ commands: ["pwd", { command: "node", args: ["--version"] }] },
-			{
-				agentId: "agent-1",
-				conversationId: "conv-1",
-				iteration: 1,
-				emitUpdate: (update) => updates.push(update),
-			},
-		);
-
-		expect(updates).toEqual([
-			{
-				stream: "stdout",
-				chunk: "pwd",
-				commandIndex: 0,
-				query: "pwd",
-			},
-			{
-				stream: "stdout",
-				chunk: "node",
-				commandIndex: 1,
-				query: "node --version",
-			},
-		]);
-	});
-
-	it("rejects invalid text-object command entries", async () => {
-		const execute = vi.fn(async () => "ran");
-		const tool = createShellTool(execute);
-
-		await expect(
-			tool.execute({ commands: [{ $text: "pwd" }] } as never, {
-				agentId: "agent-1",
-				conversationId: "conv-1",
-				iteration: 1,
-			}),
-		).rejects.toThrow("Invalid input");
-		expect(execute).not.toHaveBeenCalled();
-	});
-
 	it("preserves args on direct structured command objects", async () => {
 		const execute = vi.fn(
 			async (command: string | { command: string; args?: string[] }) =>
@@ -781,7 +618,7 @@ describe("default run_commands tool", () => {
 					? `ran:${command}`
 					: `ran:${command.command}:${(command.args ?? []).join(",")}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createWindowsShellTool(execute);
 
 		const result = await tool.execute(
 			{ command: "git", args: ["status", "--short"] } as never,
@@ -815,7 +652,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{ commands: ["git status --short"] },
@@ -842,7 +679,7 @@ describe("default run_commands tool", () => {
 				"[Command exited with code 1]\nfailed assertion details",
 			);
 		});
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{ commands: ["bun test"] },
@@ -868,7 +705,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{
@@ -909,7 +746,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{
@@ -964,7 +801,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{
@@ -1000,7 +837,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{ commands: ["pwd", "ls /app"] },
@@ -1024,7 +861,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{
@@ -1077,7 +914,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{ commands: ['wc -c <<< "hello"', "hello"] },
@@ -1107,7 +944,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command : command.command}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 
 		const result = await tool.execute(
 			{ commands: ["python3 << 'PYEOF'", "print('ok')"] },
@@ -1137,7 +974,7 @@ describe("default run_commands tool", () => {
 			async (command: string | { command: string }) =>
 				`ran:${typeof command === "string" ? command.length : command.command.length}`,
 		);
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 		const largeSource = "x".repeat(14000);
 		const command = `cat > /app/eval.scm << 'EOF'\n${largeSource}\nEOF`;
 
@@ -1171,7 +1008,7 @@ describe("default run_commands tool", () => {
 		const execute = vi.fn(async () => {
 			throw new Error("boom");
 		});
-		const tool = createShellTool(execute);
+		const tool = createBashTool(execute);
 		const command = `cat > /app/big.txt << 'EOF'\n${"y".repeat(10000)}\nEOF`;
 
 		const result = (await tool.execute(
@@ -1193,7 +1030,7 @@ describe("default run_commands tool", () => {
 
 	it("truncates long command echoes for the structured windows shell tool", async () => {
 		const execute = vi.fn(async () => "ok");
-		const tool = createShellTool(execute);
+		const tool = createWindowsShellTool(execute);
 		const command = `powershell -Command "${"z".repeat(9000)}"`;
 
 		const result = (await tool.execute({ commands: [command] } as never, {
@@ -1214,8 +1051,8 @@ describe("default run_commands tool", () => {
 		// race regardless of host load (a tight real-timer margin flaked under
 		// heavy parallel CI runs).
 		const execute = vi.fn((): Promise<string> => new Promise<string>(() => {}));
+		const tool = createWindowsShellTool(execute, { bashTimeoutMs: 5 });
 		const telemetry = createTelemetryStub();
-		const tool = createShellTool(execute, { bashTimeoutMs: 5, telemetry });
 
 		const result = await tool.execute(
 			{
@@ -1235,6 +1072,7 @@ describe("default run_commands tool", () => {
 				iteration: 1,
 				toolCallId: "tool-call-1",
 				metadata: {
+					[CLINE_INTERNAL_TELEMETRY_METADATA_KEY]: telemetry,
 					mode: "act",
 					source: "sdk-test",
 				},
@@ -1284,22 +1122,23 @@ describe("default run_commands tool", () => {
 			throw new Error("Command timed out after 5000ms");
 		});
 
-		await createShellTool(executorTimeout, {
+		await createWindowsShellTool(executorTimeout, {
 			bashTimeoutMs: 5000,
-			telemetry,
 		}).execute({ commands: ["echo timeout"] } as never, {
 			agentId: "agent-1",
 			conversationId: "conv-1",
 			iteration: 1,
+			metadata: { [CLINE_INTERNAL_TELEMETRY_METADATA_KEY]: telemetry },
 		});
-		await createShellTool(plainFailure, {
-			bashTimeoutMs: 5000,
-			telemetry,
-		}).execute({ commands: ["echo not-timeout"] } as never, {
-			agentId: "agent-1",
-			conversationId: "conv-1",
-			iteration: 2,
-		});
+		await createWindowsShellTool(plainFailure, { bashTimeoutMs: 5000 }).execute(
+			{ commands: ["echo not-timeout"] } as never,
+			{
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 2,
+				metadata: { [CLINE_INTERNAL_TELEMETRY_METADATA_KEY]: telemetry },
+			},
+		);
 
 		const timeoutCalls = capturedTimeoutEvents(telemetry);
 		expect(timeoutCalls).toHaveLength(1);
@@ -1316,7 +1155,7 @@ describe("default run_commands tool", () => {
 		// race regardless of host load (a tight real-timer margin flaked under
 		// heavy parallel CI runs).
 		const execute = vi.fn((): Promise<string> => new Promise<string>(() => {}));
-		const tool = createShellTool(execute, { bashTimeoutMs: 5, telemetry });
+		const tool = createBashTool(execute, { bashTimeoutMs: 5 });
 
 		const result = await tool.execute(
 			{ commands: ["echo secret-token", "pwd"] },
@@ -1328,6 +1167,7 @@ describe("default run_commands tool", () => {
 				iteration: 1,
 				toolCallId: "tool-call-1",
 				metadata: {
+					[CLINE_INTERNAL_TELEMETRY_METADATA_KEY]: telemetry,
 					mode: "act",
 					source: "sdk-test",
 				},
@@ -1367,13 +1207,14 @@ describe("default run_commands tool", () => {
 
 	it("does not emit timeout telemetry for normal command success", async () => {
 		const execute = vi.fn(async () => "ok");
+		const tool = createWindowsShellTool(execute, { bashTimeoutMs: 50 });
 		const telemetry = createTelemetryStub();
-		const tool = createShellTool(execute, { bashTimeoutMs: 50, telemetry });
 
 		await tool.execute({ commands: ["echo hi"] } as never, {
 			agentId: "agent-1",
 			conversationId: "conv-1",
 			iteration: 1,
+			metadata: { [CLINE_INTERNAL_TELEMETRY_METADATA_KEY]: telemetry },
 		});
 
 		expect(capturedTimeoutEvents(telemetry)).toEqual([]);
@@ -1519,89 +1360,6 @@ describe("default read_files tool", () => {
 		);
 	});
 
-	it("folds orphan range entries into the preceding file entry", async () => {
-		const execute = vi.fn(
-			async (request: { path: string }) => `content:${request.path}`,
-		);
-		const tool = createReadFilesTool(execute);
-
-		await tool.execute(
-			{
-				files: [
-					{ path: "/tmp/example.ips" },
-					{ start_line: 45, end_line: 100 },
-				],
-			} as never,
-			{
-				agentId: "agent-1",
-				conversationId: "conv-1",
-				iteration: 1,
-			},
-		);
-		await tool.execute(
-			{ paths: ["/tmp/a.ts", { end_line: 4 }, "/tmp/b.ts"] } as never,
-			{
-				agentId: "agent-1",
-				conversationId: "conv-1",
-				iteration: 2,
-			},
-		);
-
-		expect(execute).toHaveBeenNthCalledWith(
-			1,
-			{ path: "/tmp/example.ips", start_line: 45, end_line: 100 },
-			expect.objectContaining({ iteration: 1 }),
-		);
-		expect(execute).toHaveBeenNthCalledWith(
-			2,
-			{ path: "/tmp/a.ts", end_line: 4 },
-			expect.objectContaining({ iteration: 2 }),
-		);
-		expect(execute).toHaveBeenNthCalledWith(
-			3,
-			{ path: "/tmp/b.ts" },
-			expect.objectContaining({ iteration: 2 }),
-		);
-	});
-
-	it("rejects orphan range entries that cannot be attached to a file entry", async () => {
-		const execute = vi.fn(async () => "should not run");
-		const tool = createReadFilesTool(execute);
-
-		// Leading orphan range: no preceding file entry to fold into.
-		await expect(
-			tool.execute(
-				{
-					files: [{ start_line: 1, end_line: 2 }, { path: "/tmp/a.ts" }],
-				} as never,
-				{
-					agentId: "agent-1",
-					conversationId: "conv-1",
-					iteration: 1,
-				},
-			),
-		).rejects.toThrow();
-
-		// Preceding entry already has its own range: keep the conflict visible.
-		await expect(
-			tool.execute(
-				{
-					files: [
-						{ path: "/tmp/a.ts", start_line: 1 },
-						{ start_line: 4, end_line: 8 },
-					],
-				} as never,
-				{
-					agentId: "agent-1",
-					conversationId: "conv-1",
-					iteration: 2,
-				},
-			),
-		).rejects.toThrow();
-
-		expect(execute).not.toHaveBeenCalled();
-	});
-
 	it("rejects invalid union inputs before calling the executor", async () => {
 		const execute = vi.fn(async () => "should not run");
 		const tool = createReadFilesTool(execute);
@@ -1738,22 +1496,6 @@ describe("default read_files tool", () => {
 });
 
 describe("zod schema conversion", () => {
-	it("advertises run_commands as string-only command arrays", () => {
-		const tool = createShellTool(async () => "ok");
-		const inputSchema = tool.inputSchema as Record<string, unknown>;
-		const serialized = JSON.stringify(inputSchema);
-
-		expect(serialized).not.toContain('"anyOf"');
-		expect(serialized).not.toContain("Prefer structured");
-		expect(hasSchemaKey(inputSchema, "command")).toBe(false);
-
-		const properties = inputSchema.properties as Record<string, unknown>;
-		const commands = properties.commands as {
-			items?: { type?: string };
-		};
-		expect(commands.items?.type).toBe("string");
-	});
-
 	it("preserves read_files required properties in generated JSON schema", () => {
 		const tool = createReadFilesTool(async () => "ok");
 		const inputSchema = tool.inputSchema as Record<string, unknown>;
@@ -1767,7 +1509,7 @@ describe("zod schema conversion", () => {
 					path: {
 						type: "string",
 						description:
-							"The absolute path of a text file to read content from",
+							"The absolute file path of a text file to read content from",
 					},
 					start_line: {
 						anyOf: [{ type: "integer" }, { type: "null" }],
@@ -1783,7 +1525,7 @@ describe("zod schema conversion", () => {
 				required: ["path"],
 			},
 			description:
-				"Array of file read requests; each element is one file and must include path. Omit start_line/end_line or set them to null to read from the start; provide integers on the same object as the path to return only that inclusive one-based line range — never emit a range as its own array element. Reads are capped, so page through long files with start_line/end_line. Prefer this tool over running terminal command to get file content for better performance and reliability.",
+				"Array of file read requests. Omit start_line/end_line or set them to null to read from the start; provide integers to return only that inclusive one-based line range. Reads are capped, so page through long files with start_line/end_line. Prefer this tool over running terminal command to get file content for better performance and reliability.",
 		});
 		expect(inputSchema.required).toEqual(["files"]);
 	});
@@ -1966,35 +1708,6 @@ describe("default editor tool", () => {
 			}),
 			process.cwd(),
 			expect.anything(),
-		);
-	});
-
-	it("accepts a stringified insert_line but not a non-numeric one", async () => {
-		const execute = vi.fn(async () => "patched");
-		const tool = createEditorTool(execute);
-		const context = {
-			agentId: "agent-1",
-			conversationId: "conv-1",
-			iteration: 1,
-		};
-		// Deliberately wrong-typed: this is what an LLM can put on the wire.
-		const inputWith = (insert_line: unknown) =>
-			({
-				path: "/tmp/example.ts",
-				new_text: "after",
-				insert_line,
-			}) as EditFileInput;
-
-		await tool.execute(inputWith("3"), context);
-		expect(execute).toHaveBeenCalledWith(
-			expect.objectContaining({ insert_line: 3 }),
-			process.cwd(),
-			expect.anything(),
-		);
-
-		// A word such as "end" has no line number to infer, so it must keep failing.
-		await expect(tool.execute(inputWith("end"), context)).rejects.toThrow(
-			/insert_line/,
 		);
 	});
 

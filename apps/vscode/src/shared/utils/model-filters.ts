@@ -1,4 +1,5 @@
 import type { ApiProvider } from "@shared/api"
+import { isClineFreeModelId } from "@shared/cline/free-models"
 
 function normalizeModelId(modelId: string): string {
 	return modelId.trim().toLowerCase()
@@ -6,15 +7,16 @@ function normalizeModelId(modelId: string): string {
 
 const CLINE_FREE_MODEL_EXCEPTIONS = ["minimax-m2", "devstral-2512", "arcee-ai/trinity-large"]
 
-function isClineFreeModelException(modelId: string): boolean {
+export function isClineFreeModelException(modelId: string): boolean {
 	const normalizedModelId = normalizeModelId(modelId)
 	return CLINE_FREE_MODEL_EXCEPTIONS.some((token) => normalizedModelId.includes(token))
 }
 
 /**
  * Filters OpenRouter model IDs based on provider-specific rules.
- * For Cline provider: excludes :free models (except known exception models)
- * For OpenRouter/Vercel: excludes cline/ prefixed models
+ * For Cline provider: excludes :free models (except known exception models and
+ * explicit cline-free/ models)
+ * For OpenRouter/Vercel: excludes cline/ prefixed models (including cline-free/)
  * @param modelIds Array of model IDs to filter
  * @param provider The current API provider
  * @param allowedFreeModelIds Optional list of Cline free model IDs to keep visible
@@ -33,6 +35,10 @@ export function filterOpenRouterModelIds(
 			if (allowedFreeIdSet.has(normalizedModelId)) {
 				return true
 			}
+			// Explicit Cline free models are always selectable on the Cline routes
+			if (isClineFreeModelId(normalizedModelId)) {
+				return true
+			}
 			if (isClineFreeModelException(normalizedModelId)) {
 				return true
 			}
@@ -42,5 +48,5 @@ export function filterOpenRouterModelIds(
 	}
 
 	// For OpenRouter and Vercel AI Gateway providers: exclude Cline-specific models
-	return modelIds.filter((id) => !id.startsWith("cline/"))
+	return modelIds.filter((id) => !id.startsWith("cline/") && !isClineFreeModelId(id))
 }

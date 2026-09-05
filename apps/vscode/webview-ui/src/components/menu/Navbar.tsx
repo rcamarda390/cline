@@ -1,14 +1,20 @@
-import { IntentEvent } from "@shared/proto/cline/ui"
-import { HistoryIcon, PlusIcon, PuzzleIcon, SettingsIcon, UserCircleIcon } from "lucide-react"
+import { HistoryIcon, PlusIcon, SettingsIcon, UserCircleIcon } from "lucide-react"
 import { useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { TaskServiceClient, UiServiceClient } from "@/services/grpc-client"
+import { TaskServiceClient } from "@/services/grpc-client"
 import { useExtensionState } from "../../context/ExtensionStateContext"
 
+// Custom MCP Server Icon component using VSCode codicon
+const McpServerIcon = ({ className, size }: { className?: string; size?: number }) => (
+	<span
+		className={`codicon codicon-server flex items-center ${className || ""}`}
+		style={{ fontSize: size ? `${size}px` : "12.5px", marginBottom: "1px" }}
+	/>
+)
+
 export const Navbar = () => {
-	const { navigateToHistory, navigateToSettings, navigateToAccount, navigateToMarketplace, navigateToChat } =
-		useExtensionState()
+	const { navigateToHistory, navigateToSettings, navigateToAccount, navigateToMcp, navigateToChat } = useExtensionState()
 
 	const SETTINGS_TABS = useMemo(
 		() => [
@@ -18,12 +24,6 @@ export const Navbar = () => {
 				tooltip: "New Task",
 				icon: PlusIcon,
 				navigate: () => {
-					UiServiceClient.trackIntent(
-						IntentEvent.create({
-							action: "new_task_clicked",
-							source: "navbar",
-						}),
-					).catch((error) => console.error("Failed to track new task click:", error))
 					// Close the current task, then navigate to the chat view
 					TaskServiceClient.clearTask({})
 						.catch((error) => {
@@ -33,11 +33,11 @@ export const Navbar = () => {
 				},
 			},
 			{
-				id: "customize",
-				name: "Customize",
-				tooltip: "Customize",
-				icon: PuzzleIcon,
-				navigate: navigateToMarketplace,
+				id: "mcp",
+				name: "MCP",
+				tooltip: "MCP Servers",
+				icon: McpServerIcon,
+				navigate: navigateToMcp,
 			},
 			{
 				id: "history",
@@ -61,7 +61,7 @@ export const Navbar = () => {
 				navigate: navigateToSettings,
 			},
 		],
-		[navigateToAccount, navigateToChat, navigateToHistory, navigateToMarketplace, navigateToSettings],
+		[navigateToAccount, navigateToChat, navigateToHistory, navigateToMcp, navigateToSettings],
 	)
 
 	return (

@@ -1,9 +1,9 @@
 export const palette = {
-	act: "#79b8ff",
-	plan: "#ffea7f",
-	selection: "#79b8ff",
+	act: "cyan",
+	plan: "yellow",
+	selection: "cyan",
 	error: "red",
-	success: "#99e89b",
+	success: "brightGreen",
 	muted: "gray",
 	textOnSelection: "black",
 } as const;
@@ -16,11 +16,9 @@ export const themePalette = {
 		plan: palette.plan,
 		success: palette.success,
 	},
-	// Same OKLCH hues as the dark accents, darkened to hold >=4.5:1 contrast
-	// on white so the plan/act identity carries across themes.
 	light: {
-		act: "#0f72cb",
-		plan: "#867100",
+		act: "#0969da",
+		plan: "#9a6700",
 		success: "#116329",
 	},
 } as const;
@@ -31,7 +29,7 @@ export const diffPalettes = {
 		removedBg: "#4d1a1a",
 		addedLineNumberBg: "#1a4d1a",
 		removedLineNumberBg: "#4d1a1a",
-		addedSignColor: "#99e89b",
+		addedSignColor: "#22c55e",
 		removedSignColor: "#ef4444",
 		lineNumberFg: "#888888",
 	},
@@ -45,6 +43,17 @@ export const diffPalettes = {
 		lineNumberFg: "#57606a",
 	},
 } as const;
+
+export function getModeAccent(
+	mode: string,
+	theme: TerminalTheme = "dark",
+): string {
+	return mode === "plan" ? themePalette[theme].plan : themePalette[theme].act;
+}
+
+export function getSuccessColor(theme: TerminalTheme = "dark"): string {
+	return themePalette[theme].success;
+}
 
 // Input field adaptive color system
 //
@@ -66,8 +75,8 @@ export const diffPalettes = {
 //      overshoot.
 //   3. On dark themes, raise L (lighten). On light themes, lower L (darken).
 //   4. Nudge the a/b chromatic channels by CHROMA_NUDGE toward the mode's
-//      accent color. For plan (warm/yellow): +a, +b. For act (cool/blue):
-//      -a, -b. At 0.003 this is ~10x below OKLAB's just-noticeable-difference
+//      accent color. For plan (warm/yellow): +a, +b. For act (cool/cyan):
+//      -a, +b. At 0.003 this is ~10x below OKLAB's just-noticeable-difference
 //      threshold (~0.03), so it registers as a "feel" rather than visible color.
 //
 // Sample outputs on common terminals (act mode / plan mode bg):
@@ -122,60 +131,20 @@ export function getDefaultForeground(
 	return isLightTheme(terminalBg) ? "#1a1a1a" : undefined;
 }
 
-function liftedFromTerminalBg(
-	terminalBg: string | null,
-	baseLift: number,
-	nudgeA: number,
-	nudgeB: number,
-): string {
-	const hex = normalizeHex(terminalBg) ?? "#000000";
-	const base = hexToOklab(hex);
-	const light = base.L > LIGHT_THEME_THRESHOLD;
-	const lift = baseLift / (1 + (light ? 1 - base.L : base.L) * LIFT_DAMPING);
-	return oklabToHex(
-		base.L + (light ? -lift : lift),
-		base.a + nudgeA,
-		base.b + nudgeB,
-	);
-}
-
 export function getModeInputBackground(
 	mode: string,
 	terminalBg: string | null,
 ): string {
+	const hex = normalizeHex(terminalBg) ?? "#000000";
+	const base = hexToOklab(hex);
+	const light = base.L > LIGHT_THEME_THRESHOLD;
+	const lift = BASE_LIFT / (1 + (light ? 1 - base.L : base.L) * LIFT_DAMPING);
 	const warm = mode === "plan";
-	return liftedFromTerminalBg(
-		terminalBg,
-		BASE_LIFT,
-		warm ? CHROMA_NUDGE : -CHROMA_NUDGE,
-		warm ? CHROMA_NUDGE : -CHROMA_NUDGE,
+	return oklabToHex(
+		base.L + (light ? -lift : lift),
+		base.a + (warm ? CHROMA_NUDGE : -CHROMA_NUDGE),
+		base.b + CHROMA_NUDGE,
 	);
-}
-
-// The `─` rules framing the input field are thin foreground strokes rather
-// than filled cells, so they need a much larger lift than a background tint
-// to register at the same perceptual weight — this lands them around mid-gray
-// on both black and white terminals. They stay neutral (no mode chroma) so
-// the frame doesn't shift color when toggling plan/act.
-const RULE_BASE_LIFT = 0.5;
-
-export function getInputRuleColor(terminalBg: string | null): string {
-	return liftedFromTerminalBg(terminalBg, RULE_BASE_LIFT, 0, 0);
-}
-
-// User message bubbles stay neutral (no mode chroma) so the transcript reads
-// as history rather than tracking whichever mode is currently active.
-export function getUserMessageBackground(terminalBg: string | null): string {
-	return liftedFromTerminalBg(terminalBg, BASE_LIFT, 0, 0);
-}
-
-// Dialog panels lift the theme background the same way, but a touch softer:
-// they cover a large area and sit over a dimmed backdrop, so a smaller step
-// already reads as "raised" without washing out the theme's hue.
-const DIALOG_SURFACE_LIFT = 0.16;
-
-export function getDialogSurfaceBackground(terminalBg: string | null): string {
-	return liftedFromTerminalBg(terminalBg, DIALOG_SURFACE_LIFT, 0, 0);
 }
 
 export function getModeInputForeground(
@@ -188,7 +157,7 @@ export function getModeInputForeground(
 	return oklabToHex(
 		base.L,
 		base.a + (warm ? CHROMA_NUDGE : -CHROMA_NUDGE),
-		base.b + (warm ? CHROMA_NUDGE : -CHROMA_NUDGE),
+		base.b + CHROMA_NUDGE,
 	);
 }
 
@@ -202,11 +171,9 @@ export function getModeInputPlaceholder(
 	return oklabToHex(
 		base.L,
 		base.a + (warm ? CHROMA_NUDGE * 2 : -CHROMA_NUDGE * 2),
-		base.b + (warm ? CHROMA_NUDGE * 2 : -CHROMA_NUDGE * 2),
+		base.b + CHROMA_NUDGE * 2,
 	);
 }
-
-export { hexToOklab, oklabToHex };
 
 function srgbToLinear(c: number): number {
 	return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;

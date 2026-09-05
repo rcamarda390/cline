@@ -1,6 +1,4 @@
 import type {
-	AgentExtension,
-	AgentTool,
 	HubClientRecord,
 	HubCommandEnvelope,
 	HubEventEnvelope,
@@ -12,10 +10,8 @@ import type {
 } from "@cline/shared";
 import { createSessionId } from "@cline/shared";
 import type {
-	CommandExecutionRuntimeService,
 	PendingPromptsRuntimeService,
 	RuntimeHost,
-	SessionConnectionRuntimeService,
 	SessionUsageRuntimeService,
 } from "../../../runtime/host/runtime-host";
 import {
@@ -30,12 +26,6 @@ import {
 export type PendingApproval = {
 	sessionId: string;
 	resolve: (result: { approved: boolean; reason?: string }) => void;
-	/**
-	 * The `approval.requested` event as originally published. Pending
-	 * approvals survive client disconnects, so a (re)subscribing client is
-	 * re-issued this event instead of being left with a silently parked turn.
-	 */
-	requestedEvent?: HubEventEnvelope;
 };
 
 export type PendingCapabilityRequest = {
@@ -60,35 +50,9 @@ export interface HubTransportContext {
 	readonly pendingApprovals: Map<string, PendingApproval>;
 	readonly pendingCapabilityRequests: Map<string, PendingCapabilityRequest>;
 	readonly suppressNextTerminalEventBySession: Map<string, string>;
-	/**
-	 * Count of RPC-driven turns (`run.start` / session input commands)
-	 * currently awaiting `sessionHost.runTurn` per session. While > 0 the
-	 * awaiting handler publishes the authoritative terminal run event, so the
-	 * session-event projector must not publish its own `run.failed` for
-	 * agent-level error events emitted during that turn. Turns drained from
-	 * the pending-prompt queue run with no awaiting RPC handler (count 0), so
-	 * the projector is their only failure reporter.
-	 */
-	readonly activeRpcTurnCountBySession: Map<string, number>;
 	readonly telemetry?: ITelemetryService;
-	/** Hub-owned tools injected into every local session runtime. */
-	readonly sessionTools?: readonly AgentTool[];
-	/** Hub-owned extensions injected into every local session runtime. */
-	readonly sessionExtensions?: readonly AgentExtension[];
 	readonly sessionHost: RuntimeHost &
-		Partial<
-			CommandExecutionRuntimeService &
-				PendingPromptsRuntimeService &
-				SessionUsageRuntimeService &
-				SessionConnectionRuntimeService
-		>;
-	/**
-	 * While draining, new mutating work (session.create, run.*) is refused
-	 * with the retryable `hub_draining` error so the Hub can be replaced at a
-	 * boundary an operator chose instead of being ambushed mid-turn.
-	 * Optional: absent contexts (test fixtures) are never draining.
-	 */
-	isDraining?(): boolean;
+		Partial<PendingPromptsRuntimeService & SessionUsageRuntimeService>;
 	publish(event: HubEventEnvelope): void;
 	buildEvent(
 		event: HubEventEnvelope["event"],
@@ -185,15 +149,6 @@ export async function readHubSessionRecord(
 	);
 }
 
-/**
- * Builds the snapshot that rides on hub events and command replies. It is a
- * state notification — status, usage, model, workspace, checkpoint — and
- * deliberately does NOT read the transcript: `snapshot.messages` here would
- * put the entire conversation on every status flip, for every subscriber,
- * and into the durable event log (observed in the wild as a 25GB hub process
- * feeding a slow reader). Anything that needs messages fetches them with the
- * `session.messages` command.
- */
 export async function readCoreSessionSnapshot(
 	ctx: HubTransportContext,
 	sessionId: string,
@@ -202,9 +157,15 @@ export async function readCoreSessionSnapshot(
 	if (!session) {
 		return undefined;
 	}
-	const usageSummary = await ctx.sessionHost.getAccumulatedUsage?.(sessionId);
+	const [messages, usageSummary] = await Promise.all([
+		typeof ctx.sessionHost.readSessionMessages === "function"
+			? ctx.sessionHost.readSessionMessages(sessionId)
+			: [],
+		ctx.sessionHost.getAccumulatedUsage?.(sessionId),
+	]);
 	return createCoreSessionSnapshot({
 		session,
+		messages,
 		usage: usageSummary?.usage,
 		aggregateUsage: usageSummary?.aggregateUsage,
 	});
@@ -222,9 +183,6 @@ export function ensureSessionState(
 		if (options.interactive !== undefined) {
 			existing.interactive = options.interactive;
 		}
-		if (role === "creator" && !existing.createdByClientId) {
-			existing.createdByClientId = clientId;
-		}
 		if (!existing.participants.has(clientId)) {
 			existing.participants.set(clientId, {
 				clientId,
@@ -236,44 +194,6 @@ export function ensureSessionState(
 	}
 	const state: HubSessionState = {
 		createdByClientId: clientId,
-		interactive: options.interactive ?? true,
-		participants: new Map([
-			[
-				clientId,
-				{
-					clientId,
-					attachedAt: Date.now(),
-					role,
-				},
-			],
-		]),
-	};
-	ctx.sessionState.set(sessionId, state);
-	return state;
-}
-
-export function ensureSessionParticipant(
-	ctx: HubTransportContext,
-	sessionId: string,
-	clientId: string,
-	role: SessionParticipant["role"],
-	options: { interactive?: boolean } = {},
-): HubSessionState {
-	const existing = ctx.sessionState.get(sessionId);
-	if (existing) {
-		if (options.interactive !== undefined) {
-			existing.interactive = options.interactive;
-		}
-		if (!existing.participants.has(clientId)) {
-			existing.participants.set(clientId, {
-				clientId,
-				attachedAt: Date.now(),
-				role,
-			});
-		}
-		return existing;
-	}
-	const state: HubSessionState = {
 		interactive: options.interactive ?? true,
 		participants: new Map([
 			[

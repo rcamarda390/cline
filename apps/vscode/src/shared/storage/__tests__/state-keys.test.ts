@@ -31,12 +31,12 @@
  * ## Running Tests
  *
  * ```bash
- * bun run test:unit -- --grep "State Keys"
+ * npm run test:unit -- --grep "State Keys"
  * ```
  */
 
-import { describe, it } from "bun:test"
 import { expect } from "chai"
+import { describe, it } from "mocha"
 
 import {
 	applyTransform,
@@ -128,10 +128,6 @@ describe("State Keys Type Safety", () => {
 				// Re-validate to ensure consistency
 				assertTypeMatch(value, type, `GLOBAL_STATE_DEFAULTS.${key}`)
 			}
-		})
-
-		it("defaults terminal execution to the VS Code terminal", () => {
-			expect(getDefaultValue("vscodeTerminalExecutionMode")).to.equal("vscodeTerminal")
 		})
 
 		it("should have Settings defaults with correct runtime types", () => {
@@ -294,7 +290,8 @@ describe("State Keys Type Safety", () => {
 				{ key: "browserSettings", expectedType: "object" },
 				{ key: "shellIntegrationTimeout", expectedType: "number" },
 				{ key: "preferredLanguage", expectedType: "string" },
-				{ key: "hooksEnabled", expectedType: "boolean" },
+				{ key: "yoloModeToggled", expectedType: "boolean" },
+				{ key: "autoApproveAllToggled", expectedType: "boolean" },
 			]
 
 			for (const { key, expectedType } of testCases) {
@@ -364,16 +361,6 @@ describe("State Keys Type Safety", () => {
 				expect(result).to.be.an("object")
 				expect(result.viewport).to.deep.equal({ width: 800, height: 600 })
 			}
-		})
-
-		it("should fold SDK provider spellings to legacy ApiProvider spellings on load", () => {
-			// State written by older builds (or other hosts) may store the SDK
-			// catalog id `openai-compatible`; the load transform migrates it to
-			// the legacy `openai` spelling the rest of the extension is keyed by.
-			expect(applyTransform("planModeApiProvider", "openai-compatible")).to.equal("openai")
-			expect(applyTransform("actModeApiProvider", "openai-compatible")).to.equal("openai")
-			expect(applyTransform("planModeApiProvider", "anthropic")).to.equal("anthropic")
-			expect(applyTransform("actModeApiProvider", "openai")).to.equal("openai")
 		})
 	})
 

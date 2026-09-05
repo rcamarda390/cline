@@ -1,12 +1,12 @@
+import { sapAiCoreModels } from "@shared/api"
 import { SapAiCoreModelDeployment } from "@shared/proto/index.cline"
 import { VSCodeDropdown, VSCodeOption } from "@vscode/webview-ui-toolkit/react"
 import React, { memo, useEffect, useMemo } from "react"
-import { useProviderModels } from "@/hooks/useProviderModels"
 import { DropdownContainer } from "./common/ModelSelector"
 
-const SAP_AI_CORE_MODEL_PICKER_Z_INDEX = 1_000
+export const SAP_AI_CORE_MODEL_PICKER_Z_INDEX = 1_000
 
-interface SapAiCoreModelPickerProps {
+export interface SapAiCoreModelPickerProps {
 	sapAiCoreModelDeployments: SapAiCoreModelDeployment[]
 	selectedModelId: string
 	selectedDeploymentId?: string
@@ -21,30 +21,14 @@ interface CategorizedModel {
 	section: "deployed" | "supported"
 }
 
-function isSapAiCoreFoundationChatModel(modelId: string): boolean {
-	const normalizedModelId = modelId.trim().toLowerCase()
-	const unsupportedModelKinds = ["base", "codex", "instruct", "realtime"]
-	return /^gpt-?\d/.test(normalizedModelId) && !unsupportedModelKinds.some((kind) => normalizedModelId.includes(kind))
-}
-
 const SapAiCoreModelPicker: React.FC<SapAiCoreModelPickerProps> = ({
 	sapAiCoreModelDeployments,
 	selectedModelId,
 	selectedDeploymentId,
 	onModelChange,
 	placeholder = "Select a model...",
-	useOrchestrationMode = true,
+	useOrchestrationMode = false,
 }) => {
-	const { models: sapAiCoreModels } = useProviderModels("sapaicore")
-
-	const visibleSapAiCoreModels = useMemo(() => {
-		if (useOrchestrationMode) {
-			return sapAiCoreModels
-		}
-
-		return Object.fromEntries(Object.entries(sapAiCoreModels).filter(([modelId]) => isSapAiCoreFoundationChatModel(modelId)))
-	}, [sapAiCoreModels, useOrchestrationMode])
-
 	// Auto-fix deployment ID mismatch or missing deployment ID when deployments change (when ai core creds changes)
 	useEffect(() => {
 		if (!selectedModelId) {
@@ -84,7 +68,7 @@ const SapAiCoreModelPicker: React.FC<SapAiCoreModelPickerProps> = ({
 	}
 
 	const categorizedModels = useMemo(() => {
-		const allSupportedModels = Object.keys(visibleSapAiCoreModels)
+		const allSupportedModels = Object.keys(sapAiCoreModels)
 
 		// Models that are both deployed AND supported in Cline
 		const deployedModelNames = sapAiCoreModelDeployments.map((d) => d.modelName)
@@ -110,7 +94,7 @@ const SapAiCoreModelPicker: React.FC<SapAiCoreModelPickerProps> = ({
 		}))
 
 		return { deployed, supported }
-	}, [sapAiCoreModelDeployments, visibleSapAiCoreModels])
+	}, [sapAiCoreModelDeployments])
 
 	const renderOptions = () => {
 		const options: React.ReactNode[] = []
@@ -124,7 +108,7 @@ const SapAiCoreModelPicker: React.FC<SapAiCoreModelPickerProps> = ({
 
 		if (useOrchestrationMode) {
 			// Orchestration mode: Show all supported models in one flat list (no separators)
-			const allSupportedModels = Object.keys(visibleSapAiCoreModels)
+			const allSupportedModels = Object.keys(sapAiCoreModels)
 			allSupportedModels.forEach((modelId) => {
 				options.push(
 					<VSCodeOption key={modelId} value={modelId}>

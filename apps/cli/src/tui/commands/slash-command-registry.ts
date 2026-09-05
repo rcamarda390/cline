@@ -17,7 +17,6 @@ export type LocalSlashCommandName =
 	| "plugins"
 	| "account"
 	| "model"
-	| "theme"
 	| "compact"
 	| "skills"
 	| "fork"
@@ -62,10 +61,6 @@ const TUI_LOCAL_COMMANDS: Array<{
 	{
 		name: "model",
 		description: "Switch model or provider",
-	},
-	{
-		name: "theme",
-		description: "Change color theme",
 	},
 	{
 		name: "account",
@@ -117,7 +112,6 @@ const TUI_LOCAL_COMMANDS: Array<{
 const SYSTEM_COMMAND_ORDER = [
 	"settings",
 	"model",
-	"theme",
 	"account",
 	"mcp",
 	"plugins",
@@ -245,33 +239,19 @@ export function formatSlashCommandAutocompleteValue(
 	return `/${entry.name} `;
 }
 
-export interface ExpandUserCommandPromptOptions {
-	/**
-	 * Whether matched skill commands are wrapped into the prompt. Pass false
-	 * when the session registers the runtime's skills tool: the typed
-	 * `/skill args` then goes through as-is and the model loads the
-	 * instructions via the tool. Workflows always expand (the tool does not
-	 * serve them). Defaults to true.
-	 */
-	expandSkillCommands?: boolean;
-}
-
 export function expandUserCommandPrompt(
 	input: string,
 	registry: SlashCommandRegistry,
-	options?: ExpandUserCommandPromptOptions,
 ): string {
 	if (input.includes("<user_command")) {
 		return input;
 	}
-	const skipCommand = (command: SlashCommandRegistryEntry): boolean =>
-		command.kind === "skill" && options?.expandSkillCommands === false;
 
 	const expandedSlashCommands = input.replace(
 		USER_COMMAND_SLASH_PATTERN,
 		(match, prefix: string, name: string) => {
 			const command = resolveSlashCommand(registry, name);
-			if (command?.execution !== "user-command" || skipCommand(command)) {
+			if (command?.execution !== "user-command") {
 				return match;
 			}
 			return `${prefix}${formatUserCommandBlock(command.instructions, command.name)}`;
@@ -286,11 +266,7 @@ export function expandUserCommandPrompt(
 		return input;
 	}
 	const command = resolveSlashCommand(registry, match[1] ?? "");
-	if (
-		!command ||
-		command.execution !== "user-command" ||
-		skipCommand(command)
-	) {
+	if (!command || command.execution !== "user-command") {
 		return input;
 	}
 	const rest = (match[2] ?? "").trim();

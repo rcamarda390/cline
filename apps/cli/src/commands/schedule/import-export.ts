@@ -17,12 +17,7 @@ import {
 	resolveAddress,
 	toPositiveInt,
 } from "./common";
-import { resolveScheduleModelSelection } from "./model-selection";
 import type { CommandIo, ScheduleActionWrapper } from "./types";
-
-function stringValue(value: unknown): string | undefined {
-	return typeof value === "string" ? value : undefined;
-}
 
 function resolveImportedModelSelection(parsed: Record<string, unknown>): {
 	provider: string;
@@ -34,16 +29,19 @@ function resolveImportedModelSelection(parsed: Record<string, unknown>): {
 		!Array.isArray(parsed.modelSelection)
 			? (parsed.modelSelection as Record<string, unknown>)
 			: undefined;
-	return resolveScheduleModelSelection({
-		provider:
-			stringValue(modelSelection?.providerId) ??
-			stringValue(parsed.providerId) ??
-			stringValue(parsed.provider),
-		model:
-			stringValue(modelSelection?.modelId) ??
-			stringValue(parsed.modelId) ??
-			stringValue(parsed.model),
-	});
+	const provider = String(
+		modelSelection?.providerId ??
+			parsed.providerId ??
+			parsed.provider ??
+			"cline",
+	).trim();
+	const model = String(
+		modelSelection?.modelId ??
+			parsed.modelId ??
+			parsed.model ??
+			"openai/gpt-5.3-codex",
+	).trim();
+	return { provider, model };
 }
 
 export function registerScheduleExportCommand(
@@ -167,10 +165,7 @@ export function registerScheduleImportCommand(
 					prompt: String(parsed.prompt ?? "").trim(),
 					provider,
 					model,
-					mode:
-						parseMode(
-							typeof parsed.mode === "string" ? parsed.mode : undefined,
-						) ?? "yolo",
+					mode: parsed.mode === "plan" ? "plan" : "act",
 					workspaceRoot,
 					cwd: String(parsed.cwd ?? "").trim() || undefined,
 					systemPrompt:
@@ -234,7 +229,7 @@ export function registerScheduleUpdateCommand(
 		.option("--enabled", "Enable the schedule")
 		.option("--max-parallel <n>", "New max parallel executions")
 		.option("--metadata-json <json>", "New metadata as JSON object")
-		.option("--mode <act|plan|yolo>", "New execution mode")
+		.option("--mode <act|plan>", "New execution mode")
 		.option("--model <model>", "New model")
 		.option("--name <name>", "New name")
 		.option("--pause", "Pause the schedule")

@@ -23,8 +23,6 @@ import type {
 	ClineCoreOptions,
 	ClineCoreSettingsApi,
 	ClineCoreStartInput,
-	CompareCheckpointInput,
-	CompareCheckpointResult,
 	RestoreInput,
 	RestoreResult,
 	StartSessionBootstrap,
@@ -39,7 +37,6 @@ import type {
 	PendingPromptsServiceApi,
 	RuntimeHost,
 	RuntimeHostSubscribeOptions,
-	SessionConnectionRuntimeService,
 	SessionModelRuntimeService,
 	SessionUsageRuntimeService,
 	StartSessionInput,
@@ -50,11 +47,6 @@ import {
 	NoOpFeatureFlagsProvider,
 } from "./services/feature-flags";
 import { resolveCoreDistinctId } from "./services/telemetry/distinct-id";
-import { compareCheckpointToWorkspace } from "./session/checkpoint-diff";
-import {
-	projectSessionMessagesForDisplay,
-	type SessionDisplayMessage,
-} from "./session/display-messages";
 import type { CoreSessionEvent } from "./types/events";
 import type { SessionHistoryRecord } from "./types/sessions";
 
@@ -74,8 +66,6 @@ export type {
 	ClineCoreOptions,
 	ClineCoreSettingsApi,
 	ClineCoreStartInput,
-	CompareCheckpointInput,
-	CompareCheckpointResult,
 	HubOptions,
 	RemoteOptions,
 	RestoreInput,
@@ -497,24 +487,10 @@ export class ClineCore {
 	update: RuntimeHost["updateSession"] = (...args) =>
 		this.host.updateSession(...args);
 	/**
-	 * Stores the compacted working-context state for an existing session.
-	 */
-	updateSessionCompactionState: RuntimeHost["updateSessionCompactionState"] = (
-		...args
-	) => this.host.updateSessionCompactionState(...args);
-	/**
-	 * Reads the compacted working-context sidecar for a session, if one exists.
-	 */
-	readSessionCompactionState: RuntimeHost["readSessionCompactionState"] = (
-		...args
-	) => this.host.readSessionCompactionState(...args);
-	/**
-	 * Reads the canonical message history for a session.
+	 * Reads message history for a session.
 	 *
-	 * This is the model/replay representation used by resume, fork, and
-	 * compaction. Provider-owned model-tool activity remains observational
-	 * metadata here. Use {@link readDisplayMessages} for a UI transcript with
-	 * that activity projected into ordinary tool blocks.
+	 * Retrieves the full message transcript for a specific session, including all
+	 * user messages, agent responses, and tool interactions.
 	 *
 	 * @example
 	 * ```ts
@@ -526,36 +502,6 @@ export class ClineCore {
 	 */
 	readMessages: RuntimeHost["readSessionMessages"] = (...args) =>
 		this.host.readSessionMessages(...args);
-
-	/**
-	 * Reads a transcript projected for presentation. Observational model-tool
-	 * activity is represented with the same tool blocks as ordinary local tools.
-	 *
-	 * Use {@link readMessages} for resume, fork, compaction, or model replay.
-	 */
-	async readDisplayMessages(
-		sessionId: string,
-	): Promise<SessionDisplayMessage[]> {
-		return projectSessionMessagesForDisplay(
-			await this.host.readSessionMessages(sessionId),
-		);
-	}
-
-	/**
-	 * Reads message history for a session, preferring the live in-memory
-	 * conversation when the session is still resident in this host.
-	 *
-	 * The persisted transcript only catches up at assistant-message/turn
-	 * boundaries, so `readMessages` can miss an in-flight (or just-aborted)
-	 * turn. Use this when the current conversation matters — e.g. seeding a
-	 * replacement session during a plan/act mode switch. Falls back to the
-	 * persisted transcript when the session is not resident or the host does
-	 * not track live sessions.
-	 */
-	readLiveMessages: RuntimeHost["readSessionMessages"] = (sessionId) =>
-		this.host.readLiveSessionMessages
-			? this.host.readLiveSessionMessages(sessionId)
-			: this.host.readSessionMessages(sessionId);
 
 	async restore(input: RestoreInput): Promise<RestoreResult> {
 		const normalizedStart = input.start
@@ -579,24 +525,6 @@ export class ClineCore {
 			cwd: input.cwd,
 			restore: input.restore,
 			start: normalizedStart,
-		});
-	}
-
-	async compareCheckpoint(
-		input: CompareCheckpointInput,
-	): Promise<CompareCheckpointResult> {
-		const sessionId = input.sessionId.trim();
-		if (!sessionId) {
-			throw new Error("sessionId is required");
-		}
-		const session = await this.host.getSession(sessionId);
-		if (!session) {
-			throw new Error(`Session ${sessionId} not found`);
-		}
-		return compareCheckpointToWorkspace({
-			session,
-			checkpointRunCount: input.checkpointRunCount,
-			cwd: input.cwd,
 		});
 	}
 
@@ -657,13 +585,4 @@ export class ClineCore {
 		const service = this.host as RuntimeHostServiceExtensions;
 		return service.updateSessionModel?.(...args) ?? Promise.resolve();
 	};
-	/**
-	 * Updates provider/model/reasoning connection options for subsequent turns in
-	 * an active session.
-	 */
-	updateSessionConnection: SessionConnectionRuntimeService["updateSessionConnection"] =
-		(...args) => {
-			const service = this.host as RuntimeHostServiceExtensions;
-			return service.updateSessionConnection?.(...args) ?? Promise.resolve();
-		};
 }

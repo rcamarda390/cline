@@ -1,4 +1,4 @@
-import type { MessageWithMetadata } from "@cline/llms";
+import type { Message } from "@cline/llms";
 import type {
 	AgentConfig,
 	AutomationEventEnvelope,
@@ -22,8 +22,7 @@ import type {
 	StartSessionResult,
 } from "../runtime/host/runtime-host";
 import type { FeatureFlagsService } from "../services/feature-flags";
-import type { CheckpointWorkspaceCompareResult } from "../session/checkpoint-diff";
-import type { ClineCoreStartConfig } from "../types/config";
+import type { CoreSessionConfig } from "../types/config";
 import type { SessionMessagesArtifactUploader } from "../types/session";
 
 export type { RuntimeHostMode } from "../runtime/host/runtime-host";
@@ -128,7 +127,7 @@ export type ClineCoreListHistoryOptions = SessionHistoryListOptions;
 
 export interface ClineCoreStartInput
 	extends Omit<StartSessionInput, "config" | "localRuntime"> {
-	config: ClineCoreStartConfig;
+	config: CoreSessionConfig;
 	localRuntime?: LocalRuntimeStartOptions;
 }
 
@@ -163,17 +162,9 @@ export interface RestoreInput {
 export interface RestoreResult {
 	sessionId?: string;
 	startResult?: StartSessionResult;
-	messages?: MessageWithMetadata[];
+	messages?: Message[];
 	checkpoint: CheckpointEntry;
 }
-
-export interface CompareCheckpointInput {
-	sessionId: string;
-	checkpointRunCount: number;
-	cwd?: string;
-}
-
-export type CompareCheckpointResult = CheckpointWorkspaceCompareResult;
 
 export interface ClineCoreOptions {
 	/**
@@ -272,8 +263,6 @@ export interface ClineCoreOptions {
 	 * Optional hook invoked before each session starts.
 	 * Use this to prepare workspace-scoped runtime state and then return an
 	 * adapter that mutates the shared session input before core starts the run.
-	 * This runs before the execution host resolves an omitted workspace, so
-	 * pathless starts expose neither `cwd` nor `workspaceRoot` to this hook.
 	 */
 	prepare?: (
 		input: ClineCoreStartInput,

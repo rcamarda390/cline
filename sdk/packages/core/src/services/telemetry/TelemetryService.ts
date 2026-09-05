@@ -4,7 +4,6 @@ import type {
 	TelemetryMetadata,
 	TelemetryProperties,
 } from "@cline/shared";
-import { resolveCoreDeviceId } from "./distinct-id";
 import type { ITelemetryAdapter } from "./ITelemetryAdapter";
 import { TelemetryLoggerSink } from "./TelemetryLoggerSink";
 
@@ -12,11 +11,6 @@ export interface TelemetryServiceOptions {
 	adapters?: ITelemetryAdapter[];
 	metadata?: Partial<TelemetryMetadata>;
 	distinctId?: string;
-	/**
-	 * Deterministic per-device identifier attached to every event as
-	 * `device_id`. Defaults to {@link resolveCoreDeviceId}
-	 */
-	deviceId?: string;
 	commonProperties?: TelemetryProperties;
 	logger?: BasicLogger;
 }
@@ -25,7 +19,6 @@ export class TelemetryService implements ITelemetryService {
 	private adapters: ITelemetryAdapter[];
 	private metadata: Partial<TelemetryMetadata>;
 	private distinctId?: string;
-	private readonly deviceId: string;
 	private commonProperties: TelemetryProperties;
 
 	constructor(options: TelemetryServiceOptions = {}) {
@@ -35,7 +28,6 @@ export class TelemetryService implements ITelemetryService {
 		}
 		this.metadata = { ...(options.metadata ?? {}) };
 		this.distinctId = options.distinctId;
-		this.deviceId = options.deviceId ?? resolveCoreDeviceId();
 		this.commonProperties = { ...(options.commonProperties ?? {}) };
 	}
 
@@ -142,7 +134,6 @@ export class TelemetryService implements ITelemetryService {
 			...properties,
 			...this.metadata,
 			...(this.distinctId ? { distinct_id: this.distinctId } : {}),
-			device_id: this.deviceId,
 		};
 	}
 }

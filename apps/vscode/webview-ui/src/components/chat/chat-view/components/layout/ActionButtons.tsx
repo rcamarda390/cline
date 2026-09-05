@@ -2,9 +2,9 @@ import type { ClineMessage } from "@shared/ExtensionMessage"
 import type { Mode } from "@shared/storage/types"
 import { VSCodeButton } from "@vscode/webview-ui-toolkit/react"
 import type React from "react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useExtensionState } from "../../../../../context/ExtensionStateContext"
-import { ButtonActionType, getButtonConfigFromState } from "../../shared/buttonConfig"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { VirtuosoHandle } from "react-virtuoso"
+import { ButtonActionType, getButtonConfig } from "../../shared/buttonConfig"
 import type { ChatState, MessageHandlers } from "../../types/chatTypes"
 
 interface ActionButtonsProps {
@@ -13,22 +13,27 @@ interface ActionButtonsProps {
 	chatState: ChatState
 	messageHandlers: MessageHandlers
 	mode: Mode
+	scrollBehavior: {
+		scrollToBottomSmooth: () => void
+		disableAutoScrollRef: React.MutableRefObject<boolean>
+		showScrollToBottom: boolean
+		virtuosoRef: React.RefObject<VirtuosoHandle>
+	}
 }
 
 /**
- * Action buttons area including approve/reject buttons
+ * Action buttons area including scroll-to-bottom and approve/reject buttons
  */
-export const ActionButtons: React.FC<ActionButtonsProps> = ({ task, messages, chatState, mode, messageHandlers }) => {
+export const ActionButtons: React.FC<ActionButtonsProps> = ({
+	task,
+	messages,
+	chatState,
+	mode,
+	messageHandlers,
+	scrollBehavior,
+}) => {
 	const { inputValue, selectedImages, selectedFiles, setSendingDisabled } = chatState
-	const { turnState, foregroundCommandRunning } = useExtensionState()
-
-	// Tracks the ask the user last acted on. Clicking a footer button latches this so the
-	// buttons disable immediately (and survive the trailing bookkeeping re-renders before the
-	// backend advances the turn). It is a ref, not state, so it can be compared against the
-	// current ask during render without scheduling an extra update.
-	const processedAskRef = useRef<string | undefined>(undefined)
-	// Forces a re-render when the latch flips; the counter value itself is unused.
-	const [, bumpRender] = useState(0)
+	const [isProcessing, setIsProcessing] = useState(false)
 
 	// Memoize last messages to avoid unnecessary recalculations
 	const [lastMessage, secondLastMessage] = useMemo(() => {
@@ -36,32 +41,15 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({ task, messages, ch
 		return len > 0 ? [messages[len - 1], messages[len - 2]] : [undefined, undefined]
 	}, [messages])
 
-	// Button configuration is driven by the authoritative backend TurnState when present (SDK
-	// path); otherwise it falls back to the legacy tail-walking heuristic. This makes the footer
-	// buttons immune to trailing bookkeeping messages and never disagree with the thinking
-	// indicator (RC1).
+	// Memoize button configuration to avoid recalculation on every render
 	const buttonConfig = useMemo(() => {
-		return getButtonConfigFromState(messages, turnState, mode, foregroundCommandRunning)
-	}, [messages, turnState, mode, foregroundCommandRunning])
+		return lastMessage ? getButtonConfig(lastMessage, mode) : { sendingDisabled: false, enableButtons: false }
+	}, [lastMessage, mode])
 
-	// Identity of the ask that currently owns the footer buttons. The button config objects are
-	// shared singletons (e.g. BUTTON_CONFIGS.tool_approve), so two consecutive identical asks
-	// (approve → approve) return the same reference. The anchored turn timestamp (or the last
-	// message) changes on every new ask, making it the reliable signal that a fresh decision is
-	// due even when the config object is identical. Folding the config's button text in also
-	// covers a same-anchor transition between different button sets.
-	const askIdentity = `${turnState?.anchorTs ?? lastMessage?.ts ?? ""}:${buttonConfig.primaryText ?? ""}:${buttonConfig.secondaryText ?? ""}`
-
-	// The buttons are "processing" only while the user's click is being handled for the current
-	// ask. Because the latch is keyed on the ask identity, a new ask (even one reusing the same
-	// shared config object) is never seen as already-processed, so its buttons are interactive
-	// again.
-	const isProcessing = processedAskRef.current === askIdentity
-
-	// Mirror the config's sending-disabled flag into chat state whenever the active button set
-	// changes.
+	// Single effect to handle all configuration updates
 	useEffect(() => {
 		setSendingDisabled(buttonConfig.sendingDisabled)
+		setIsProcessing(false)
 	}, [buttonConfig, setSendingDisabled])
 
 	// Clear input when transitioning from command_output to api_req
@@ -76,23 +64,17 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({ task, messages, ch
 
 	const handleActionClick = useCallback(
 		(action: ButtonActionType, text?: string, images?: string[], files?: string[]) => {
-			if (processedAskRef.current === askIdentity) {
+			if (isProcessing) {
 				return
 			}
-			// Latch this ask as processed and force a render so the buttons disable immediately.
-			processedAskRef.current = askIdentity
-			bumpRender((n) => n + 1)
+			setIsProcessing(true)
 
 			void messageHandlers.executeButtonAction(action, text, images, files).catch(() => {
-				// Re-enable on error so the user is not stuck; a later ask would clear the latch
-				// on its own, but failures keep the same ask.
-				if (processedAskRef.current === askIdentity) {
-					processedAskRef.current = undefined
-					bumpRender((n) => n + 1)
-				}
+				// Reset processing state on errors to avoid getting stuck.
+				setIsProcessing(false)
 			})
 		},
-		[messageHandlers, askIdentity],
+		[messageHandlers, isProcessing],
 	)
 
 	// Keyboard event handler
@@ -116,13 +98,61 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({ task, messages, ch
 		return null
 	}
 
+	const { showScrollToBottom, scrollToBottomSmooth, disableAutoScrollRef } = scrollBehavior
+
 	const { primaryText, secondaryText, primaryAction, secondaryAction, enableButtons } = buttonConfig
 	const hasButtons = primaryText || secondaryText
 	const isStreaming = task.partial === true
 	const canInteract = enableButtons && !isProcessing
 
-	if (!hasButtons) {
-		return null
+	// Early return for scroll button to avoid unnecessary computation
+	if (showScrollToBottom || !hasButtons) {
+		const handleScrollToBottom = () => {
+			scrollToBottomSmooth()
+			disableAutoScrollRef.current = false
+		}
+		// Show scroll to top button when there are no action buttons
+		const handleScrollToTop = () => {
+			scrollBehavior.virtuosoRef.current?.scrollTo({
+				top: 0,
+				behavior: "smooth",
+			})
+			disableAutoScrollRef.current = true
+			// Virtual rendering may not have all items rendered when at bottom,
+			// so scroll again after a delay to ensure we reach the true top
+			setTimeout(() => {
+				scrollBehavior.virtuosoRef.current?.scrollTo({
+					top: 0,
+					behavior: "smooth",
+				})
+			}, 300)
+		}
+
+		return (
+			<div className="flex px-3.5">
+				<VSCodeButton
+					appearance="icon"
+					aria-label={showScrollToBottom ? "Scroll to bottom" : "Scroll to top"}
+					className="text-lg text-(--vscode-primaryButton-foreground) bg-[color-mix(in_srgb,var(--vscode-toolbar-hoverBackground)_55%,transparent)] rounded-[3px] overflow-hidden cursor-pointer flex justify-center items-center flex-1 h-[25px] hover:bg-[color-mix(in_srgb,var(--vscode-toolbar-hoverBackground)_90%,transparent)] active:bg-[color-mix(in_srgb,var(--vscode-toolbar-hoverBackground)_70%,transparent)] border-0"
+					onClick={showScrollToBottom ? handleScrollToBottom : handleScrollToTop}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" || e.key === " ") {
+							e.preventDefault()
+							if (showScrollToBottom) {
+								handleScrollToBottom()
+							} else {
+								handleScrollToTop()
+							}
+						}
+					}}>
+					{showScrollToBottom ? (
+						<span className="codicon codicon-chevron-down" />
+					) : (
+						<span className="codicon codicon-chevron-up" />
+					)}
+				</VSCodeButton>
+			</div>
+		)
 	}
 
 	const opacity = canInteract || isStreaming ? 1 : 0.5

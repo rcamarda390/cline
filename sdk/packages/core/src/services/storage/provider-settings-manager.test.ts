@@ -1,11 +1,4 @@
-import {
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as LlmsModels from "@cline/llms";
@@ -58,100 +51,6 @@ describe("ProviderSettingsManager", () => {
 		expect(reloaded.read().providers.anthropic?.tokenSource).toBe("manual");
 	});
 
-	it("persists voice input selection independently of the chat provider", () => {
-		const tempDir = mkdtempSync(
-			path.join(os.tmpdir(), "core-provider-settings-"),
-		);
-		tempDirs.push(tempDir);
-		const filePath = path.join(tempDir, "provider-settings.json");
-		const manager = new ProviderSettingsManager({ filePath });
-
-		manager.saveProviderSettings(
-			{
-				provider: "anthropic",
-				model: "claude-sonnet-4-6",
-				apiKey: "chat-key",
-			},
-			{ setLastUsed: true },
-		);
-		manager.setVoiceInputSettings({
-			providerId: "elevenlabs",
-			modelId: "scribe_v2",
-		});
-
-		const reloaded = new ProviderSettingsManager({ filePath });
-		expect(reloaded.getVoiceInputSettings()).toEqual({
-			providerId: "elevenlabs",
-			modelId: "scribe_v2",
-		});
-		const persisted = JSON.parse(readFileSync(filePath, "utf8")) as Record<
-			string,
-			unknown
-		>;
-		expect(persisted).toMatchObject({
-			modes: {
-				voiceInput: {
-					providerId: "elevenlabs",
-					modelId: "scribe_v2",
-				},
-			},
-		});
-		expect(persisted).not.toHaveProperty("voiceInput");
-		expect(reloaded.getLastUsedProviderSettings()?.provider).toBe("anthropic");
-
-		reloaded.setVoiceInputSettings(undefined);
-		expect(
-			new ProviderSettingsManager({ filePath }).getVoiceInputSettings(),
-		).toBe(undefined);
-		expect(JSON.parse(readFileSync(filePath, "utf8"))).toMatchObject({
-			modes: {},
-		});
-	});
-
-	it("writes atomically, leaving no temp file behind", () => {
-		const tempDir = mkdtempSync(
-			path.join(os.tmpdir(), "core-provider-settings-"),
-		);
-		tempDirs.push(tempDir);
-		const filePath = path.join(tempDir, "provider-settings.json");
-		const manager = new ProviderSettingsManager({ filePath });
-
-		manager.saveProviderSettings(
-			{ provider: "anthropic", apiKey: "test-key" },
-			{ setLastUsed: true },
-		);
-
-		const siblings = readdirSync(tempDir);
-		expect(siblings).toEqual(["provider-settings.json"]);
-	});
-
-	it("preserves the previous file when the staged write cannot be renamed", () => {
-		const tempDir = mkdtempSync(
-			path.join(os.tmpdir(), "core-provider-settings-"),
-		);
-		tempDirs.push(tempDir);
-		const filePath = path.join(tempDir, "provider-settings.json");
-		const manager = new ProviderSettingsManager({ filePath });
-		manager.saveProviderSettings(
-			{ provider: "anthropic", apiKey: "before" },
-			{ setLastUsed: true },
-		);
-		const before = readFileSync(filePath, "utf8");
-
-		// Occupying the temp path with a directory makes writeFileSync fail,
-		// simulating a mid-write crash: the destination must be untouched.
-		mkdirSync(`${filePath}.${process.pid}.tmp`);
-		expect(() =>
-			manager.saveProviderSettings(
-				{ provider: "anthropic", apiKey: "after" },
-				{ setLastUsed: true },
-			),
-		).toThrow();
-		rmSync(`${filePath}.${process.pid}.tmp`, { recursive: true, force: true });
-
-		expect(readFileSync(filePath, "utf8")).toBe(before);
-	});
-
 	it("resolves auth storage settings for providers registered with a storage provider id", () => {
 		const tempDir = mkdtempSync(
 			path.join(os.tmpdir(), "core-provider-settings-"),
@@ -190,14 +89,14 @@ describe("ProviderSettingsManager", () => {
 		manager.saveProviderSettings(
 			{
 				provider: "cline-pass",
-				model: "cline-pass/glm-5.2",
+				model: "cline-pass/glm-5.1",
 			},
 			{ setLastUsed: true },
 		);
 
 		expect(manager.getProviderSettings("cline-pass")).toEqual({
 			provider: "cline-pass",
-			model: "cline-pass/glm-5.2",
+			model: "cline-pass/glm-5.1",
 			baseUrl: "https://api.example.test",
 			auth: {
 				accessToken: "workos:shared-token",
@@ -229,14 +128,14 @@ describe("ProviderSettingsManager", () => {
 		manager.saveProviderSettings(
 			{
 				provider: "cline-pass",
-				model: "cline-pass/glm-5.2",
+				model: "cline-pass/glm-5.1",
 			},
 			{ setLastUsed: true },
 		);
 
 		expect(manager.getLastUsedProviderSettings()).toMatchObject({
 			provider: "cline-pass",
-			model: "cline-pass/glm-5.2",
+			model: "cline-pass/glm-5.1",
 		});
 		expect(
 			manager.getLastUsedProviderSettings({ isClinePassEnabled: false }),
@@ -269,7 +168,7 @@ describe("ProviderSettingsManager", () => {
 		manager.saveProviderSettings(
 			{
 				provider: "cline-pass",
-				model: "cline-pass/glm-5.2",
+				model: "cline-pass/glm-5.1",
 			},
 			{ setLastUsed: true },
 		);
@@ -587,7 +486,6 @@ describe("ProviderSettingsManager", () => {
 		const manager = new ProviderSettingsManager({ filePath });
 		expect(manager.read()).toEqual({
 			version: 1,
-			modes: {},
 			providers: {},
 		});
 	});

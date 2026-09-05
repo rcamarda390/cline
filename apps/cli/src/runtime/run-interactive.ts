@@ -2,19 +2,12 @@ import {
 	getCurrentContextSize,
 	type ProviderSettings,
 	ProviderSettingsManager,
-	setCompactionModeGlobally,
-	setPlanActModeGlobally,
-	setToolAutoApproveGlobally,
 	type UserInstructionConfigService,
 } from "@cline/core";
-import { formatModeSwitchNotice } from "@cline/shared";
 import type { CliMigrationNotice } from "../kanban-migration/notice";
 import { logCliError } from "../logging/errors";
-import { exportHistorySession } from "../session/history-export";
-import { deleteSession } from "../session/session";
 import {
 	loadClineAccountSnapshot,
-	loadIndividualSubscriptionPlans,
 	onProviderChange,
 	switchClineAccount,
 } from "../tui/cline-account";
@@ -28,7 +21,7 @@ import {
 	resolveClineWelcomeLine,
 } from "../tui/interactive-welcome";
 import { disableOpenTuiGraphicsProbe } from "../tui/opentui-env";
-import type { QueuedPromptItem, TuiStartupTarget } from "../tui/types";
+import type { QueuedPromptItem } from "../tui/types";
 import { type ChatCommandState, chatCommandHost } from "../utils/chat-commands";
 import { applyCliCompactionMode } from "../utils/compaction-mode";
 import {
@@ -58,121 +51,11 @@ import {
 	type InteractiveExitSummary,
 } from "./interactive/exit-summary";
 import { createMistakeLimitDecisionResolver } from "./interactive/mistakes";
-import {
-	type AppliedModeChange,
-	createInteractiveModeSwitchTool,
-	createModeSwitchNoticeTracker,
-	type PendingModeChange,
-	sendTurnWithActModeContinuation,
-} from "./interactive/mode";
+import { createInteractiveModeSwitchTool } from "./interactive/mode";
 import { assertInteractivePreflight } from "./interactive/preflight";
 import { createInteractiveSessionRuntime } from "./interactive/session-runtime";
 import { buildUserInputMessage } from "./prompt";
 import { getUIEventEmitter } from "./session-events";
-
-type ModelChangeReasoningConfig = {
-	thinking?: boolean;
-	reasoningEffort?: Config["reasoningEffort"];
-};
-
-export function assertHistorySessionIsDeletable(
-	sessionId: string,
-	activeSessionId: string,
-): void {
-	if (activeSessionId && sessionId === activeSessionId) {
-		throw new Error(
-			"Cannot delete the active session. Start or resume another session first.",
-		);
-	}
-}
-
-export function resolveReasoningForModelChange(
-	config: ModelChangeReasoningConfig,
-	existing: Pick<ProviderSettings, "reasoning">,
-): ProviderSettings["reasoning"] {
-	if (config.thinking === false) return { enabled: false };
-	if (config.reasoningEffort) {
-		return { enabled: true, effort: config.reasoningEffort };
-	}
-	if (config.thinking === true) return { enabled: true };
-	return existing.reasoning;
-}
-
-export async function applyInteractiveModelChange(input: {
-	config: Config;
-	providerSettingsManager: Pick<
-		ProviderSettingsManager,
-		"getProviderSettings" | "saveProviderSettings"
-	>;
-	sessionRuntime: Pick<
-		ReturnType<typeof createInteractiveSessionRuntime>,
-		| "ensureReady"
-		| "restartWithCurrentMessages"
-		| "updateCurrentSessionConnection"
-	>;
-}): Promise<void> {
-	const { config, providerSettingsManager, sessionRuntime } = input;
-	await sessionRuntime.ensureReady();
-	await onProviderChange({
-		config,
-		providerId: config.providerId,
-	});
-	const existing = providerSettingsManager.getProviderSettings(
-		config.providerId,
-	) ?? {
-		provider: config.providerId,
-	};
-	const reasoning = resolveReasoningForModelChange(config, existing);
-	providerSettingsManager.saveProviderSettings({
-		...existing,
-		model: config.modelId,
-		...(reasoning === undefined ? {} : { reasoning }),
-	});
-
-	// Provider changes affect more than the model connection: startup resolves
-	// the endpoint, headers, provider-specific options, tools, and plugins. Rebuild
-	// the runtime with the existing transcript so all of that state changes
-	// together. restartWithCurrentMessages preserves the session ID.
-	await sessionRuntime.restartWithCurrentMessages();
-	// A same-ID restart reuses the existing manifest. Sync its connection label
-	// after the fully configured runtime is live so session history reflects the
-	// provider/model that will handle subsequent turns.
-	await sessionRuntime.updateCurrentSessionConnection({
-		providerId: config.providerId,
-		modelId: config.modelId,
-	});
-}
-
-export async function resumeInteractiveSession(
-	sessionRuntime: Pick<
-		ReturnType<typeof createInteractiveSessionRuntime>,
-		"resumeSession" | "getAccumulatedUsage"
-	>,
-	sessionId: string,
-) {
-	const previousAgentResume = process.env.CLINE_HOOK_AGENT_RESUME;
-	process.env.CLINE_HOOK_AGENT_RESUME = "1";
-	let messages: Awaited<ReturnType<typeof sessionRuntime.resumeSession>>;
-	try {
-		messages = await sessionRuntime.resumeSession(sessionId);
-	} catch (error) {
-		if (previousAgentResume === undefined) {
-			delete process.env.CLINE_HOOK_AGENT_RESUME;
-		} else {
-			process.env.CLINE_HOOK_AGENT_RESUME = previousAgentResume;
-		}
-		throw error;
-	}
-	const usage = await sessionRuntime.getAccumulatedUsage({
-		inputTokens: 0,
-		outputTokens: 0,
-	});
-	return {
-		messages,
-		totalCost: usage.totalCost,
-		currentContextSize: getCurrentContextSize(messages),
-	};
-}
 
 export async function runInteractive(
 	config: Config,
@@ -181,7 +64,7 @@ export async function runInteractive(
 	options?: {
 		clineApiBaseUrl?: string;
 		clineProviderSettings?: ProviderSettings;
-		startupTarget?: TuiStartupTarget;
+		initialView?: "chat" | "config";
 		initialPrompt?: string;
 		initialNotice?: CliMigrationNotice;
 		onInitialNoticeShown?: (notice: CliMigrationNotice) => void | Promise<void>;
@@ -248,9 +131,8 @@ export async function runInteractive(
 		tuiAskQuestion,
 	} = createInteractiveApprovalController(config);
 
-	const pendingModeChange: PendingModeChange = {
+	const pendingModeChange: { current: "plan" | "act" | null } = {
 		current: null,
-		source: null,
 	};
 	const tuiModeChanged: {
 		current: ((mode: "plan" | "act") => void) | null;
@@ -304,7 +186,6 @@ export async function runInteractive(
 	});
 	let modeChangePromise: Promise<void> | undefined;
 	let modeChangeTarget: "plan" | "act" | undefined;
-	const modeSwitchNotice = createModeSwitchNoticeTracker();
 
 	const isInteractiveMode = (mode: unknown): mode is "plan" | "act" =>
 		mode === "plan" || mode === "act";
@@ -319,11 +200,7 @@ export async function runInteractive(
 				await modeChangePromise;
 			}
 			await sessionRuntime.ensureReady();
-			const from = config.mode;
 			await sessionRuntime.applyMode(mode);
-			if (isInteractiveMode(from)) {
-				modeSwitchNotice.record(from, mode);
-			}
 		})().finally(() => {
 			if (modeChangePromise === next) {
 				modeChangePromise = undefined;
@@ -490,12 +367,11 @@ export async function runInteractive(
 		tuiApp?.destroy();
 	});
 	let startupErrorReported = false;
-	let updateCliAfterExit = false;
 	const loadDeferredInitialMessages = resumeSessionId?.trim()
 		? async () => {
 				try {
 					await sessionRuntime.ensureReady();
-					const { messages } = await sessionRuntime.readCurrentMessages();
+					const messages = await sessionRuntime.readCurrentMessages();
 					const usage = await sessionRuntime.getAccumulatedUsage({
 						inputTokens: 0,
 						outputTokens: 0,
@@ -515,7 +391,7 @@ export async function runInteractive(
 
 	tuiApp = await renderOpenTui({
 		config,
-		startupTarget: options?.startupTarget,
+		initialView: options?.initialView,
 		initialPrompt: options?.initialPrompt,
 		initialNotice: options?.initialNotice,
 		onInitialNoticeShown: options?.onInitialNoticeShown,
@@ -533,12 +409,6 @@ export async function runInteractive(
 			await loadClineAccountSnapshot({
 				config,
 				clineApiBaseUrl: options?.clineApiBaseUrl,
-			}),
-		loadIndividualSubscriptionPlans: async () =>
-			await loadIndividualSubscriptionPlans({
-				config,
-				clineApiBaseUrl: options?.clineApiBaseUrl,
-				clineProviderSettings: options?.clineProviderSettings,
 			}),
 		switchClineAccount: async (organizationId) =>
 			await switchClineAccount({
@@ -621,56 +491,31 @@ export async function runInteractive(
 					prompt: userInput,
 					userImages,
 					userFiles,
-				} = await buildUserInputMessage(input, userInstructionService, {
-					mode,
-				});
+				} = await buildUserInputMessage(input, userInstructionService);
 				const mergedUserImages = [
 					...(attachments?.userImages ?? []),
 					...userImages,
 				];
-				// Mark a preceding user-initiated mode switch on this message so
-				// the model sees exactly when the rules changed, instead of only
-				// inferring it from the user_input mode attribute flipping.
-				const switchNotice = modeSwitchNotice.consume();
-				const noticedUserInput = switchNotice
-					? `${formatModeSwitchNotice(switchNotice.from, switchNotice.to)}\n${userInput}`
-					: userInput;
 
-				const applyPendingModeChange = async (): Promise<
-					AppliedModeChange | undefined
-				> => {
+				const applyPendingModeChange = async () => {
 					if (!pendingModeChange.current) return undefined;
-					const applied: AppliedModeChange = {
-						mode: pendingModeChange.current,
-						source: pendingModeChange.source ?? "ui",
-					};
+					const newMode = pendingModeChange.current;
 					pendingModeChange.current = null;
-					pendingModeChange.source = null;
-					const from = config.mode;
-					await sessionRuntime.applyMode(applied.mode);
-					tuiModeChanged.current?.(applied.mode);
-					// The switch_to_act_mode path announces itself through the
-					// continuation prompt; only UI toggles need a notice.
-					if (applied.source === "ui" && isInteractiveMode(from)) {
-						modeSwitchNotice.record(from, applied.mode);
-					}
-					return applied;
+					await sessionRuntime.applyMode(newMode);
+					tuiModeChanged.current?.(newMode);
+					return newMode;
 				};
 
-				const result = await sendTurnWithActModeContinuation({
-					sendInitialTurn: () =>
-						sessionRuntime.sendCurrentTurn({
-							prompt: noticedUserInput,
-							mode,
-							userImages:
-								mergedUserImages.length > 0 ? mergedUserImages : undefined,
-							userFiles: userFiles.length > 0 ? userFiles : undefined,
-							delivery,
-						}),
-					sendContinuationTurn: (prompt) =>
-						sessionRuntime.sendCurrentTurn({ prompt, mode: "act" }),
-					applyPendingModeChange,
+				const result = await sessionRuntime.sendCurrentTurn({
+					prompt: userInput,
+					mode,
+					userImages:
+						mergedUserImages.length > 0 ? mergedUserImages : undefined,
+					userFiles: userFiles.length > 0 ? userFiles : undefined,
+					delivery,
 				});
+
+				await applyPendingModeChange();
 
 				if (!result) {
 					return {
@@ -752,10 +597,6 @@ export async function runInteractive(
 		onExit: () => {
 			tuiApp?.destroy();
 		},
-		onHubUpdateRestart: () => {
-			updateCliAfterExit = true;
-			tuiApp?.destroy();
-		},
 		onRunningChange: (running) => {
 			isRunning = running;
 			if (!running) {
@@ -766,23 +607,17 @@ export async function runInteractive(
 		onTurnErrorReported: () => {},
 		onAutoApproveChange: (enabled) => {
 			setInteractiveAutoApprove(enabled);
-			setToolAutoApproveGlobally(enabled);
 			void refreshInteractiveSessionPolicies();
 		},
 		onCompactionModeChange: async (mode) => {
 			await sessionRuntime.ensureReady();
 			applyCliCompactionMode(config, mode);
-			setCompactionModeGlobally(mode);
 			await sessionRuntime.restartWithCurrentMessages();
 		},
 		onModeChange: async (mode) => {
 			if (!isInteractiveMode(mode)) return;
-			// Persist the user's choice immediately, even when the switch is
-			// deferred until the current turn aborts, so it survives restarts.
-			setPlanActModeGlobally(mode);
 			if (isRunning) {
 				pendingModeChange.current = mode;
-				pendingModeChange.source = "ui";
 				sessionRuntime.abortAll();
 				return;
 			}
@@ -791,12 +626,26 @@ export async function runInteractive(
 		onNewSession: async () => {
 			await sessionRuntime.resetForNewSession();
 		},
-		onModelChange: () =>
-			applyInteractiveModelChange({
+		onModelChange: async () => {
+			await sessionRuntime.ensureReady();
+			await onProviderChange({
 				config,
-				providerSettingsManager,
-				sessionRuntime,
-			}),
+				providerId: config.providerId,
+			});
+			const existing = providerSettingsManager.getProviderSettings(
+				config.providerId,
+			) ?? {
+				provider: config.providerId,
+			};
+			providerSettingsManager.saveProviderSettings({
+				...existing,
+				model: config.modelId,
+				reasoning: config.reasoningEffort
+					? { enabled: true, effort: config.reasoningEffort }
+					: { enabled: false },
+			});
+			await sessionRuntime.restartWithCurrentMessages();
+		},
 		onSessionRestart: async () => {
 			await sessionRuntime.ensureReady();
 			await sessionRuntime.restartEmpty();
@@ -815,23 +664,18 @@ export async function runInteractive(
 			});
 			await sessionRuntime.restartWithCurrentMessages();
 		},
-		// resumeSession initializes the manager and starts the selected session
-		// directly. Ensuring a session first would mint an empty history entry
-		// when the TUI was launched through `cline history`.
-		onResumeSession: async (sessionId: string) =>
-			await resumeInteractiveSession(sessionRuntime, sessionId),
-		onExportHistorySession: async (sessionId, format) =>
-			await exportHistorySession({
-				sessionId,
-				format,
-				outputDirectory: config.cwd,
-			}),
-		onDeleteHistorySession: async (sessionId) => {
-			assertHistorySessionIsDeletable(
-				sessionId,
-				sessionRuntime.getActiveSessionId(),
-			);
-			return (await deleteSession(sessionId)).deleted;
+		onResumeSession: async (sessionId: string) => {
+			await sessionRuntime.ensureReady();
+			const messages = await sessionRuntime.resumeSession(sessionId);
+			const usage = await sessionRuntime.getAccumulatedUsage({
+				inputTokens: 0,
+				outputTokens: 0,
+			});
+			return {
+				messages,
+				totalCost: usage.totalCost,
+				currentContextSize: getCurrentContextSize(messages),
+			};
 		},
 		onCompact: async () => {
 			await sessionRuntime.ensureReady();
@@ -860,7 +704,7 @@ export async function runInteractive(
 		},
 	});
 
-	if (!loadDeferredInitialMessages && options?.startupTarget !== "history") {
+	if (!loadDeferredInitialMessages) {
 		setTimeout(() => {
 			void sessionRuntime.ensureReady().catch((error) => {
 				if (sessionRuntime.isShutdownRequested() || startupErrorReported) {
@@ -883,20 +727,5 @@ export async function runInteractive(
 	if (exitSummary) {
 		prepareTerminalForPostTuiOutput();
 		writeln(formatInteractiveExitSummary(exitSummary));
-	}
-	if (updateCliAfterExit) {
-		if (!exitSummary) {
-			prepareTerminalForPostTuiOutput();
-		}
-		writeln(
-			"The shared Cline Hub was updated by another Cline installation. Updating this CLI…",
-		);
-		const { checkForUpdates } = await import("../commands/update");
-		const exitCode = await checkForUpdates({ includeKanban: false });
-		writeln(
-			exitCode === 0
-				? "Start cline again to reconnect to the updated Hub."
-				: "Update did not complete. Run 'cline update' manually, then start cline again.",
-		);
 	}
 }
