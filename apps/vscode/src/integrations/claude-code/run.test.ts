@@ -74,12 +74,14 @@ let os = "darwin"
 const { MAX_SYSTEM_PROMPT_LENGTH, runClaudeCode } = proxyquire("./run", {
 	"@/utils/path": {
 		getCwd: () => Promise.resolve(path.resolve("./")),
+		"@noCallThru": true,
 	},
 	"node:os": {
 		platform: () => os,
 	},
 	execa: {
 		execa: mockExeca,
+		"@noCallThru": true,
 	},
 	readline: {
 		createInterface: createMockReadlineInterface,
