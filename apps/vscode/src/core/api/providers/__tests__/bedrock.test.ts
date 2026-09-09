@@ -832,13 +832,11 @@ describe("AwsBedrockHandler", () => {
 
 				handler["getBedrockClient"] = originalGetBedrockClient
 
-				results.should.have.length(2)
+				results.should.have.length(1)
 				results[0].type.should.equal("tool_calls")
 				results[0].tool_call.function.id.should.equal("tool-1")
 				results[0].tool_call.function.name.should.equal("read_file")
-				results[0].tool_call.function.arguments.should.equal('{"path":')
-				results[1].type.should.equal("tool_calls")
-				results[1].tool_call.function.arguments.should.equal('"test.ts"}')
+				results[0].tool_call.function.arguments.should.equal('{"path":"test.ts"}')
 			})
 
 			it("should handle multiple tool calls", async () => {
