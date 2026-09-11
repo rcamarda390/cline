@@ -1,7 +1,13 @@
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
+import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { GatewayResolvedProviderConfig } from "@cline/shared";
+import { wrapLanguageModel } from "ai";
 import { getGeneratedModelsForProvider } from "../../catalog/catalog.generated-access";
+import {
+	bedrockAdaptiveProfileReasoningMiddleware,
+	usesAdaptiveClaudeApplicationProfile,
+} from "./bedrock-application-profile-reasoning";
 import type { ProviderFactoryResult } from "./types";
 
 type BedrockCredentials = {
@@ -231,11 +237,25 @@ export async function createBedrockProviderModule(
 		useCrossRegionInference: config.options?.useCrossRegionInference === true,
 		useGlobalInference: config.options?.useGlobalInference === true,
 	};
+	const customModelBaseId = readOptionalString(
+		config.options?.customModelBaseId,
+	);
 
 	return {
 		operations: {
-			language: (modelId) =>
-				provider(resolveBedrockModelId(modelId, modelIdOptions)),
+			language: (modelId) => {
+				const resolvedModelId = resolveBedrockModelId(modelId, modelIdOptions);
+				const model = provider(resolvedModelId);
+				return usesAdaptiveClaudeApplicationProfile(
+					resolvedModelId,
+					customModelBaseId,
+				)
+					? wrapLanguageModel({
+							model: model as LanguageModelV4,
+							middleware: bedrockAdaptiveProfileReasoningMiddleware,
+						})
+					: model;
+			},
 			imageGeneration: (modelId) => provider.image(modelId),
 		},
 	};
