@@ -1,6 +1,9 @@
 import type { ToolUse } from "@core/assistant-message"
+import { discoverAvailableSkills } from "@core/context/instructions/user-instructions/skills"
 import { formatResponse } from "@core/prompts/responses"
 import { ClineAsk, ClineAskUseMcpServer } from "@shared/ExtensionMessage"
+import { isToolInEffectiveSet, resolveEffectiveMcpTools, resolveMcpToolAvailability } from "@shared/mcpToolPolicy"
+import { getSkillMcpToolDeclarations } from "@shared/skills"
 import { telemetryService } from "@/services/telemetry"
 import { truncateContent } from "@/shared/content-limits"
 import { ClineDefaultTool } from "@/shared/tools"
@@ -77,6 +80,15 @@ export class UseMcpToolHandler implements IFullyManagedTool {
 		}
 
 		config.taskState.consecutiveMistakeCount = 0
+
+		// Reject unavailable tools locally, before approval or the MCP call itself. This covers
+		// both native and legacy/XML call shapes — both converge here with server_name/tool_name
+		// already resolved (see ToolExecutorCoordinator / StreamResponseHandler) — as well as
+		// retries and resumed tasks, since it's re-evaluated on every call rather than cached.
+		const unavailableError = await this.checkToolAvailability(config, server_name, tool_name)
+		if (unavailableError) {
+			return unavailableError
+		}
 
 		// Handle approval flow
 		const completeMessage = JSON.stringify({
@@ -213,5 +225,54 @@ export class UseMcpToolHandler implements IFullyManagedTool {
 		} catch (error) {
 			return `Error executing MCP tool: ${(error as Error)?.message}`
 		}
+	}
+
+	/**
+	 * Returns an error ToolResponse if the requested tool is outside the effective MCP tool set
+	 * for the current mode/skill state, or undefined if the call may proceed. Fast-paths the
+	 * default configuration (Always On, no active skill denying anything) to avoid a skill
+	 * discovery scan on every MCP call when this feature isn't in use.
+	 */
+	private async checkToolAvailability(
+		config: TaskConfig,
+		serverName: string,
+		toolName: string,
+	): Promise<ToolResponse | undefined> {
+		const stateManager = config.services.stateManager
+		const activeSkill = config.taskState.activeSkillMcpPolicy
+		const availability = resolveMcpToolAvailability(
+			stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+			stateManager.getGlobalSettingsKey("mcpToolAvailability"),
+			stateManager.getGlobalSettingsKey("mode"),
+			stateManager.getGlobalSettingsKey("planModeMcpToolAvailability"),
+			stateManager.getGlobalSettingsKey("actModeMcpToolAvailability"),
+		)
+		if (availability === "always_on" && !activeSkill?.disallowed.length) {
+			return undefined
+		}
+
+		const remoteSkillEntries = stateManager.getRemoteConfigSettings().remoteGlobalSkills || []
+		const availableSkills = await discoverAvailableSkills(config.cwd, {
+			remoteSkillEntries,
+			globalSkillsToggles: stateManager.getGlobalSettingsKey("globalSkillsToggles") ?? {},
+			localSkillsToggles: stateManager.getWorkspaceStateKey("localSkillsToggles") ?? {},
+			remoteSkillsToggles: stateManager.getGlobalStateKey("remoteSkillsToggles") ?? {},
+		})
+		const allDeclaredPatterns = availableSkills.flatMap((skill) => {
+			const declarations = getSkillMcpToolDeclarations(skill)
+			return [...declarations.allowed, ...declarations.disallowed]
+		})
+
+		const servers = (config.services.mcpHub.getServers() || []).map((server) => ({
+			serverName: server.name,
+			toolNames: (server.tools ?? []).map((tool) => tool.name),
+		}))
+		const effective = resolveEffectiveMcpTools(servers, availability, allDeclaredPatterns, activeSkill)
+
+		if (!isToolInEffectiveSet(effective, serverName, toolName)) {
+			config.taskState.consecutiveMistakeCount++
+			return `Error: Tool "${toolName}" is not currently available. It may require a skill to be activated first.`
+		}
+		return undefined
 	}
 }

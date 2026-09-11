@@ -12,6 +12,7 @@ import { ClineRulesToggles } from "@shared/cline-rules"
 import { DEFAULT_FOCUS_CHAIN_SETTINGS, FocusChainSettings } from "@shared/FocusChainSettings"
 import { HistoryItem } from "@shared/HistoryItem"
 import { DEFAULT_MCP_DISPLAY_MODE, McpDisplayMode } from "@shared/McpDisplayMode"
+import { DEFAULT_MCP_TOOL_AVAILABILITY, McpToolAvailability } from "@shared/mcpToolPolicy"
 import { WorkspaceRoot } from "@shared/multi-root/types"
 import { GlobalInstructionsFile } from "@shared/remote-config/schema"
 import { Mode } from "@shared/storage/types"
@@ -277,6 +278,13 @@ const USER_SETTINGS_FIELDS = {
 	maxConsecutiveMistakes: { default: 3 as number },
 	strictPlanModeEnabled: { default: false as boolean },
 	hooksEnabled: { default: true as boolean },
+	// Dynamic MCP tool availability. Default "always_on" preserves today's behavior exactly
+	// (every enabled MCP server's tools are always injected) so existing users see no change
+	// unless they opt in. Plan/Act values are undefined until the user sets them explicitly;
+	// the shared value is the fallback while they're unset — see resolveMcpToolAvailability.
+	mcpToolAvailability: { default: DEFAULT_MCP_TOOL_AVAILABILITY as McpToolAvailability },
+	planModeMcpToolAvailability: { default: undefined as McpToolAvailability | undefined },
+	actModeMcpToolAvailability: { default: undefined as McpToolAvailability | undefined },
 	yoloModeToggled: { default: false as boolean },
 	autoApproveAllToggled: { default: false as boolean },
 	useAutoCondense: { default: true as boolean },

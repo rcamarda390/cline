@@ -12,6 +12,7 @@ import { ClineRulesToggles } from "./cline-rules"
 import { FocusChainSettings } from "./FocusChainSettings"
 import { HistoryItem } from "./HistoryItem"
 import { McpDisplayMode } from "./McpDisplayMode"
+import type { McpToolAvailability } from "./mcpToolPolicy"
 import { ClineMessageModelInfo } from "./messages"
 import { OnboardingModelGroup } from "./proto/cline/state"
 import { Mode } from "./storage/types"
@@ -54,6 +55,9 @@ export interface ExtensionState {
 	offlineModeEnabled?: boolean
 	mcpDisplayMode: McpDisplayMode
 	planActSeparateModelsSetting: boolean
+	mcpToolAvailability?: McpToolAvailability
+	planModeMcpToolAvailability?: McpToolAvailability
+	actModeMcpToolAvailability?: McpToolAvailability
 	enableCheckpointsSetting?: boolean
 	platform: Platform
 	environment?: Environment

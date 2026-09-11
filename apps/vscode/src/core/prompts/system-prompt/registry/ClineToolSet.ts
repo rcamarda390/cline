@@ -1,5 +1,6 @@
 import { AgentConfigLoader } from "@core/task/tools/subagent/AgentConfigLoader"
 import { CLINE_MCP_TOOL_IDENTIFIER, McpServer } from "@/shared/mcp"
+import { filterMcpServersToEffectiveTools } from "@/shared/mcpToolPolicy"
 import { ModelFamily } from "@/shared/prompts"
 import { ClineDefaultTool } from "@/shared/tools"
 import { type ClineToolSpec, toolSpecFunctionDeclarations, toolSpecFunctionDefinition, toolSpecInputSchema } from "../spec"
@@ -179,9 +180,15 @@ export class ClineToolSet {
 		// Base set
 		const toolConfigs = ClineToolSet.getEnabledToolSpecs(variant, context)
 
-		// MCP tools
+		// MCP tools, narrowed to the effective (currently exposed) set — see mcpToolPolicy.ts
 		const mcpServers = context.mcpHub?.getServers()?.filter((s) => s.disabled !== true) || []
-		const mcpTools = mcpServers?.flatMap((server) => mcpToolToClineToolSpec(variant.family, server))
+		const effectiveMcpServers = filterMcpServersToEffectiveTools(
+			mcpServers,
+			context.mcpToolAvailability,
+			context.allDeclaredMcpToolPatterns,
+			context.activeSkillMcpPolicy,
+		)
+		const mcpTools = effectiveMcpServers?.flatMap((server) => mcpToolToClineToolSpec(variant.family, server))
 
 		const enabledTools = [...toolConfigs, ...mcpTools].filter(
 			(tool) => typeof tool.description === "string" && tool.description.trim().length > 0,

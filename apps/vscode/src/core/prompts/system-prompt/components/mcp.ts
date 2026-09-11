@@ -1,4 +1,5 @@
 import type { McpServer } from "@/shared/mcp"
+import { filterMcpServersToEffectiveTools } from "@/shared/mcpToolPolicy"
 import { SystemPromptSection } from "../templates/placeholders"
 import { TemplateEngine } from "../templates/TemplateEngine"
 import type { PromptVariant, SystemPromptContext } from "../types"
@@ -38,7 +39,15 @@ export async function getMcp(variant: PromptVariant, context: SystemPromptContex
 	if (servers.length === 0) {
 		return undefined
 	}
-	return await getMcpServers(servers, variant, context)
+	// Narrow each server's tools to the effective (currently exposed) set — see mcpToolPolicy.ts.
+	// Resources/resource templates/prompts are unaffected; only tool visibility is in scope.
+	const effectiveServers = filterMcpServersToEffectiveTools(
+		servers,
+		context.mcpToolAvailability,
+		context.allDeclaredMcpToolPatterns,
+		context.activeSkillMcpPolicy,
+	)
+	return await getMcpServers(effectiveServers, variant, context)
 }
 
 async function getMcpServers(servers: McpServer[], variant: PromptVariant, context: SystemPromptContext): Promise<string> {

@@ -1,5 +1,6 @@
 import { Anthropic } from "@anthropic-ai/sdk"
 import { AssistantMessageContent } from "@core/assistant-message"
+import type { ActiveSkillMcpPolicy } from "@shared/mcpToolPolicy"
 import { ClineAskResponse } from "@shared/WebviewMessage"
 import type { HookExecution } from "./types/HookExecution"
 
@@ -80,4 +81,9 @@ export class TaskState {
 	// Auto-context summarization
 	currentlySummarizing = false
 	lastAutoCompactTriggerIndex?: number
+
+	// Dynamic MCP tool availability: the currently active skill's MCP tool policy, frozen at
+	// activation time and reused for the rest of the task (or until a mode switch / new skill
+	// activation / setting change / resume revalidation replaces it). undefined = no skill active.
+	activeSkillMcpPolicy?: ActiveSkillMcpPolicy
 }

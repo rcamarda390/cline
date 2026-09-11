@@ -1,5 +1,6 @@
 import { buildApiHandler } from "@core/api"
 import { Empty } from "@shared/proto/cline/common"
+import type { McpToolAvailability } from "@shared/mcpToolPolicy"
 import { PlanActMode, McpDisplayMode as ProtoMcpDisplayMode, UpdateSettingsRequest } from "@shared/proto/cline/state"
 import { convertProtoToApiProvider } from "@shared/proto-conversions/models/api-configuration-conversion"
 import { OpenaiReasoningEffort } from "@shared/storage/types"
@@ -146,6 +147,26 @@ export async function updateSettings(controller: Controller, request: UpdateSett
 				telemetryService.captureFeatureToggle(controller.task.ulid, "hooks", isEnabled, controller.task.api.getModel().id)
 			}
 		}
+		// Update dynamic MCP tool availability settings (shared + per-mode)
+		if (request.mcpToolAvailability !== undefined && request.mcpToolAvailability !== "") {
+			controller.stateManager.setGlobalState(
+				"mcpToolAvailability",
+				request.mcpToolAvailability as McpToolAvailability,
+			)
+		}
+		if (request.planModeMcpToolAvailability !== undefined && request.planModeMcpToolAvailability !== "") {
+			controller.stateManager.setGlobalState(
+				"planModeMcpToolAvailability",
+				request.planModeMcpToolAvailability as McpToolAvailability,
+			)
+		}
+		if (request.actModeMcpToolAvailability !== undefined && request.actModeMcpToolAvailability !== "") {
+			controller.stateManager.setGlobalState(
+				"actModeMcpToolAvailability",
+				request.actModeMcpToolAvailability as McpToolAvailability,
+			)
+		}
+
 		// Update yolo mode setting
 		if (request.yoloModeToggled !== undefined) {
 			if (controller.task) {

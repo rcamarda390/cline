@@ -227,6 +227,11 @@ const FeatureSettingsSection = ({ renderSectionHeader }: FeatureSettingsSectionP
 		doubleCheckCompletionEnabled,
 		lazyTeammateModeEnabled,
 		showFeatureTips,
+		mode,
+		planActSeparateModelsSetting,
+		mcpToolAvailability,
+		planModeMcpToolAvailability,
+		actModeMcpToolAvailability,
 	} = useExtensionState()
 
 	const handleFocusChainIntervalChange = useCallback(
@@ -237,6 +242,23 @@ const FeatureSettingsSection = ({ renderSectionHeader }: FeatureSettingsSectionP
 	)
 
 	const isYoloRemoteLocked = remoteConfigSettings?.yoloModeToggled !== undefined
+
+	// Dynamic MCP tool availability: when Plan/Act models are split, this reads and writes the
+	// value for whichever mode the current chat is in (see resolveMcpToolAvailability on the
+	// backend for the same shared-vs-split semantics). Not split -> one shared value everywhere.
+	const effectiveMcpToolAvailability = planActSeparateModelsSetting
+		? (mode === "plan" ? planModeMcpToolAvailability : actModeMcpToolAvailability) ?? mcpToolAvailability
+		: mcpToolAvailability
+	const handleMcpToolAvailabilityChange = useCallback(
+		(value: string) => {
+			if (planActSeparateModelsSetting) {
+				updateSetting(mode === "plan" ? "planModeMcpToolAvailability" : "actModeMcpToolAvailability", value)
+			} else {
+				updateSetting("mcpToolAvailability", value)
+			}
+		},
+		[planActSeparateModelsSetting, mode],
+	)
 
 	// State lookup for mapped features
 	const featureState: Record<string, boolean | undefined> = {
@@ -391,6 +413,28 @@ const FeatureSettingsSection = ({ renderSectionHeader }: FeatureSettingsSectionP
 										<SelectItem value="plain">Plain Text</SelectItem>
 										<SelectItem value="rich">Rich Display</SelectItem>
 										<SelectItem value="markdown">Markdown</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+
+							{/* Optional MCP Tools (dynamic tool availability) */}
+							<div className="space-y-2">
+								<Label className="text-sm font-medium text-foreground">
+									Optional MCP Tools{planActSeparateModelsSetting ? ` (${mode === "plan" ? "Plan" : "Act"} mode)` : ""}
+								</Label>
+								<p className="text-xs text-muted-foreground">
+									Controls when a large MCP server's tools (e.g. one exposing 100+ tools) are injected into the
+									model's context. Dynamic modes keep them hidden until a skill declaring them is activated.
+								</p>
+								<Select onValueChange={handleMcpToolAvailabilityChange} value={effectiveMcpToolAvailability}>
+									<SelectTrigger className="w-full">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="always_on">Always On</SelectItem>
+										<SelectItem value="always_off">Always Off</SelectItem>
+										<SelectItem value="dynamic_compatible">Dynamic — Compatible</SelectItem>
+										<SelectItem value="dynamic_declared_only">Dynamic — Declared Only</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>

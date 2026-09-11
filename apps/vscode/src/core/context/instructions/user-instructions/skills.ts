@@ -1,11 +1,55 @@
 import { getSkillsDirectoriesForScan } from "@core/storage/disk"
+import { parseMcpToolPattern } from "@shared/mcpToolPolicy"
+import type { McpToolPattern } from "@shared/mcpToolPolicy"
 import type { GlobalInstructionsFile } from "@shared/remote-config/schema"
-import type { SkillContent, SkillMetadata } from "@shared/skills"
+import type { SkillContent, SkillMcpToolDeclarations, SkillMetadata } from "@shared/skills"
 import { fileExistsAtPath, isDirectory } from "@utils/fs"
 import * as fs from "fs/promises"
 import * as path from "path"
 import { Logger } from "@/shared/services/Logger"
 import { parseYamlFrontmatter } from "./frontmatter"
+
+/**
+ * Parses `allowed_mcp_tools`/`disallowed_mcp_tools` from a skill's frontmatter data. Fails soft:
+ * malformed entries are dropped with a warning rather than invalidating the whole skill, matching
+ * this file's existing frontmatter-validation behavior (missing name/description just skips the
+ * skill; a bad MCP pattern shouldn't be any stricter than that).
+ */
+function parseSkillMcpToolDeclarations(frontmatter: Record<string, unknown>, skillLabel: string): SkillMcpToolDeclarations {
+	const parseList = (value: unknown, fieldName: string): { declared: boolean; patterns: McpToolPattern[] } => {
+		if (value === undefined) {
+			return { declared: false, patterns: [] }
+		}
+		const rawEntries = Array.isArray(value) ? value : [value]
+		const patterns = rawEntries
+			.filter((entry): entry is string => {
+				if (typeof entry !== "string") {
+					Logger.warn(`Skill "${skillLabel}": ignoring non-string entry in ${fieldName}`)
+					return false
+				}
+				return true
+			})
+			.map((entry) => {
+				const parsed = parseMcpToolPattern(entry)
+				if (!parsed) {
+					Logger.warn(`Skill "${skillLabel}": ignoring malformed ${fieldName} entry "${entry}" (expected "server:tool")`)
+				}
+				return parsed
+			})
+			.filter((p): p is NonNullable<typeof p> => p !== undefined)
+		return { declared: true, patterns }
+	}
+
+	const allowed = parseList(frontmatter.allowed_mcp_tools, "allowed_mcp_tools")
+	const disallowed = parseList(frontmatter.disallowed_mcp_tools, "disallowed_mcp_tools")
+
+	return {
+		allowed: allowed.patterns,
+		disallowed: disallowed.patterns,
+		allowedDeclared: allowed.declared,
+		disallowedDeclared: disallowed.declared,
+	}
+}
 
 /**
  * A remote skill entry after frontmatter validation.
@@ -16,6 +60,7 @@ export interface ValidatedRemoteSkill {
 	description: string
 	alwaysEnabled: boolean
 	contents: string
+	mcpTools: SkillMcpToolDeclarations
 }
 
 export interface SkillToggleState {
@@ -52,6 +97,7 @@ export function parseRemoteSkillEntries(entries: GlobalInstructionsFile[]): Vali
 				description: frontmatter.description as string,
 				alwaysEnabled: entry.alwaysEnabled,
 				contents: entry.contents,
+				mcpTools: parseSkillMcpToolDeclarations(frontmatter, frontmatter.name),
 			}
 		})
 		.filter((e): e is NonNullable<typeof e> => e !== null)
@@ -134,6 +180,7 @@ async function loadSkillMetadata(
 			description: frontmatter.description,
 			path: skillMdPath,
 			source,
+			mcpTools: parseSkillMcpToolDeclarations(frontmatter, skillName),
 		}
 	} catch (error) {
 		Logger.warn(`Failed to load skill at ${skillDir}:`, error)
@@ -174,6 +221,7 @@ export async function discoverSkills(cwd: string, remoteSkillEntries?: GlobalIns
 		description: entry.description,
 		path: `remote:${entry.name}`,
 		source: "global" as const,
+		mcpTools: entry.mcpTools,
 	}))
 
 	// Insert in order: project → disk-global → remote

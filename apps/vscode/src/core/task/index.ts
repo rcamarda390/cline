@@ -45,6 +45,7 @@ import { parseSlashCommands } from "@core/slash-commands";
 import {
 	ensureRulesDirectoryExists,
 	ensureTaskDirectoryExists,
+	getTaskMetadata,
 	GlobalFileNames,
 	getSavedApiConversationHistory,
 	getSavedClineMessages,
@@ -135,6 +136,8 @@ import { Session } from "@/shared/services/Session";
 import { RuleContextBuilder } from "../context/instructions/user-instructions/RuleContextBuilder";
 import { ensureLocalClineDirExists } from "../context/instructions/user-instructions/rule-helpers";
 import { discoverAvailableSkills } from "../context/instructions/user-instructions/skills";
+import { resolveMcpToolAvailability } from "@shared/mcpToolPolicy";
+import { getSkillMcpToolDeclarations } from "@shared/skills";
 import { refreshWorkflowToggles } from "../context/instructions/user-instructions/workflows";
 import type { Controller } from "../controller";
 import { executeHook } from "../hooks/hook-executor";
@@ -1393,6 +1396,50 @@ export class Task {
 		await this.initiateTaskLoop(userContent);
 	}
 
+	/**
+	 * Reconstructs the active skill's MCP tool policy on resume from the snapshot persisted at
+	 * activation time (see UseSkillToolHandler), then revalidates it against current state: if
+	 * the skill no longer exists or is disabled, fail closed to baseline-only for this resumed
+	 * task rather than trusting a stale snapshot. A skill that still exists is trusted as-is —
+	 * its own allow/deny patterns don't need re-validating against live MCP server state here,
+	 * since the effective-tool resolver already re-checks server/tool existence on every use.
+	 */
+	private async reconstructActiveSkillMcpPolicy(): Promise<void> {
+		try {
+			const metadata = await getTaskMetadata(this.taskId);
+			const snapshot = metadata.active_skill_mcp_policy;
+			if (!snapshot) {
+				return;
+			}
+
+			const remoteSkillEntries =
+				this.stateManager.getRemoteConfigSettings().remoteGlobalSkills || [];
+			const availableSkills = await discoverAvailableSkills(this.cwd, {
+				remoteSkillEntries,
+				globalSkillsToggles:
+					this.stateManager.getGlobalSettingsKey("globalSkillsToggles") ?? {},
+				localSkillsToggles:
+					this.stateManager.getWorkspaceStateKey("localSkillsToggles") ?? {},
+				remoteSkillsToggles:
+					this.stateManager.getGlobalStateKey("remoteSkillsToggles") ?? {},
+			});
+			const skillStillEnabled = availableSkills.some(
+				(skill) => skill.name === snapshot.skillName,
+			);
+
+			if (skillStillEnabled) {
+				this.taskState.activeSkillMcpPolicy = snapshot;
+			} else {
+				Logger.warn(
+					`Resumed task ${this.taskId}: skill "${snapshot.skillName}" is no longer available; ` +
+						`falling back to baseline MCP tools for this task.`,
+				);
+			}
+		} catch (error) {
+			Logger.error("Failed to reconstruct active skill MCP policy on resume:", error);
+		}
+	}
+
 	public async resumeTaskFromHistory() {
 		try {
 			await this.clineIgnoreController.initialize();
@@ -1466,6 +1513,8 @@ export class Task {
 
 		this.taskState.isInitialized = true;
 		this.taskState.abort = false; // Reset abort flag when resuming task
+
+		await this.reconstructActiveSkillMcpPolicy();
 
 		const { response, text, images, files } = await this.ask(askType); // calls poststatetowebview
 
@@ -2289,6 +2338,20 @@ export class Task {
 				this.stateManager.getGlobalStateKey("remoteSkillsToggles") ?? {},
 		});
 
+		// Union of every enabled skill's MCP tool declarations, used only to classify which
+		// MCP tools are baseline (always on) vs. dynamically managed — see mcpToolPolicy.ts.
+		const allDeclaredMcpToolPatterns = availableSkills.flatMap((skill) => {
+			const declarations = getSkillMcpToolDeclarations(skill);
+			return [...declarations.allowed, ...declarations.disallowed];
+		});
+		const mcpToolAvailability = resolveMcpToolAvailability(
+			this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+			this.stateManager.getGlobalSettingsKey("mcpToolAvailability"),
+			this.stateManager.getGlobalSettingsKey("mode"),
+			this.stateManager.getGlobalSettingsKey("planModeMcpToolAvailability"),
+			this.stateManager.getGlobalSettingsKey("actModeMcpToolAvailability"),
+		);
+
 		// Snapshot editor tabs so prompt tools can decide whether to include
 		// filetype-specific instructions (e.g. notebooks) without adding bespoke flags.
 		const openTabPaths =
@@ -2309,6 +2372,9 @@ export class Task {
 			supportsBrowserUse,
 			mcpHub: this.mcpHub,
 			skills: availableSkills,
+			mcpToolAvailability,
+			allDeclaredMcpToolPatterns,
+			activeSkillMcpPolicy: this.taskState.activeSkillMcpPolicy,
 			focusChainSettings:
 				this.stateManager.getGlobalSettingsKey("focusChainSettings"),
 			globalClineRulesFileInstructions,

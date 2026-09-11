@@ -6,6 +6,7 @@ import { ApiProviderInfo } from "@/core/api"
 import type { McpHub } from "@/services/mcp/McpHub"
 import type { BrowserSettings } from "@/shared/BrowserSettings"
 import type { FocusChainSettings } from "@/shared/FocusChainSettings"
+import type { ActiveSkillMcpPolicy, McpToolAvailability, McpToolPattern } from "@/shared/mcpToolPolicy"
 import { ModelFamily } from "@/shared/prompts"
 import type { SkillMetadata } from "@/shared/skills"
 import { ClineDefaultTool } from "@/shared/tools"
@@ -126,6 +127,12 @@ export interface SystemPromptContext {
 	readonly enableNativeToolCalls?: boolean
 	readonly enableParallelToolCalling?: boolean
 	readonly terminalExecutionMode?: "vscodeTerminal" | "backgroundExec"
+	/** Dynamic MCP tool availability — see src/shared/mcpToolPolicy.ts. */
+	readonly mcpToolAvailability?: McpToolAvailability
+	/** Union of allowed+disallowed MCP tool patterns across ALL enabled skills (baseline classification input). */
+	readonly allDeclaredMcpToolPatterns?: readonly McpToolPattern[]
+	/** The currently active skill's own MCP tool policy, frozen at activation. */
+	readonly activeSkillMcpPolicy?: ActiveSkillMcpPolicy
 }
 
 /**

@@ -291,6 +291,9 @@ message Settings {
   optional OpenRouterModelInfo plan_mode_vertex_custom_model_info = 185;
   optional bool act_mode_vertex_custom_model_selected = 186;
   optional OpenRouterModelInfo act_mode_vertex_custom_model_info = 187;
+  optional string mcp_tool_availability = 188;
+  optional string plan_mode_mcp_tool_availability = 189;
+  optional string act_mode_mcp_tool_availability = 190;
 }
 
 message State {
@@ -434,6 +437,9 @@ message UpdateSettingsRequest {
   optional bool double_check_completion_enabled = 41;
   optional bool show_feature_tips = 42;
   optional bool lazy_teammate_mode_enabled = 43;
+  optional string mcp_tool_availability = 44;
+  optional string plan_mode_mcp_tool_availability = 45;
+  optional string act_mode_mcp_tool_availability = 46;
 }
 
 message UpdateTerminalConnectionTimeoutRequest {
