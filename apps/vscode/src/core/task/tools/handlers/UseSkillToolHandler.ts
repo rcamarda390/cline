@@ -1,6 +1,10 @@
 import type { ToolUse } from "@core/assistant-message"
 import { discoverAvailableSkills, getSkillContent } from "@core/context/instructions/user-instructions/skills"
-import type { SkillMetadata } from "@shared/skills"
+import { getTaskMetadata, saveTaskMetadata } from "@core/storage/disk"
+import type { ActiveSkillMcpPolicy } from "@shared/mcpToolPolicy"
+import { resolveMcpToolAvailability } from "@shared/mcpToolPolicy"
+import { getSkillMcpToolDeclarations, type SkillMetadata } from "@shared/skills"
+import { Logger } from "@/shared/services/Logger"
 import { telemetryService } from "@/services/telemetry"
 import { ClineDefaultTool } from "@/shared/tools"
 import type { ToolResponse } from "../../index"
@@ -33,6 +37,13 @@ export class UseSkillToolHandler implements IToolHandler, IPartialBlockHandler {
 		if (!skillName) {
 			config.taskState.consecutiveMistakeCount++
 			return `Error: Missing required parameter 'skill_name'. Please provide the name of the skill to activate.`
+		}
+
+		// A skill is already active for this task. Cline's own prompt tells the model not to
+		// call use_skill again, but if it does anyway, reject rather than silently replacing
+		// (or attempting to merge with) the already-active skill's MCP tool policy.
+		if (config.taskState.activeSkillMcpPolicy) {
+			return `Error: Skill "${config.taskState.activeSkillMcpPolicy.skillName}" is already active for this task. Only one skill may be active per task — continue using its instructions instead of activating another skill.`
 		}
 
 		// Discover skills on-demand (lazy loading)
@@ -86,6 +97,8 @@ export class UseSkillToolHandler implements IToolHandler, IPartialBlockHandler {
 				"UseSkillToolHandler.execute",
 			)
 
+			await this.snapshotActiveSkillMcpPolicy(config, skillContent)
+
 			const skillDirNote = skillContent.path.startsWith("remote:")
 				? ""
 				: ` You may access other files in the skill directory at: ${skillContent.path.replace(/SKILL\.md$/, "")}`
@@ -98,6 +111,50 @@ ${skillContent.instructions}
 IMPORTANT: The skill is now loaded. Do NOT call use_skill again for this task. Simply follow the instructions above to complete the user's request.${skillDirNote}`
 		} catch (error) {
 			return `Error loading skill "${skillName}": ${(error as Error)?.message}`
+		}
+	}
+
+	/**
+	 * Freezes the newly-activated skill's MCP tool policy on TaskState (reused for the rest of
+	 * the task — see resolveEffectiveMcpTools) and persists a snapshot to task metadata so a
+	 * resumed task can reconstruct + revalidate it later.
+	 */
+	private async snapshotActiveSkillMcpPolicy(
+		config: TaskConfig,
+		skillContent: { name: string; mcpTools?: SkillMetadata["mcpTools"] },
+	): Promise<void> {
+		const declarations = getSkillMcpToolDeclarations(skillContent)
+		const policy: ActiveSkillMcpPolicy = {
+			skillName: skillContent.name,
+			allowed: declarations.allowed,
+			disallowed: declarations.disallowed,
+			allowedDeclared: declarations.allowedDeclared,
+			disallowedDeclared: declarations.disallowedDeclared,
+		}
+		config.taskState.activeSkillMcpPolicy = policy
+
+		const stateManager = config.services.stateManager
+		const mode = stateManager.getGlobalSettingsKey("mode")
+		const availability = resolveMcpToolAvailability(
+			stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+			stateManager.getGlobalSettingsKey("mcpToolAvailability"),
+			mode,
+			stateManager.getGlobalSettingsKey("planModeMcpToolAvailability"),
+			stateManager.getGlobalSettingsKey("actModeMcpToolAvailability"),
+		)
+		if (availability === "dynamic_compatible" && !declarations.allowedDeclared && !declarations.disallowedDeclared) {
+			Logger.warn(
+				`Skill "${skillContent.name}" has no allowed_mcp_tools/disallowed_mcp_tools declarations; ` +
+					`Dynamic (Compatible) mode is falling back to exposing all enabled MCP tools for this task.`,
+			)
+		}
+
+		try {
+			const metadata = await getTaskMetadata(config.taskId)
+			metadata.active_skill_mcp_policy = policy
+			await saveTaskMetadata(config.taskId, metadata)
+		} catch (error) {
+			Logger.warn(`Failed to persist active skill MCP policy for resume: ${(error as Error)?.message}`)
 		}
 	}
 }

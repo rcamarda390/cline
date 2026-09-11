@@ -901,6 +901,9 @@ export class Controller {
 		const mcpDisplayMode = this.stateManager.getGlobalStateKey("mcpDisplayMode")
 		const telemetrySetting = this.stateManager.getGlobalSettingsKey("telemetrySetting")
 		const planActSeparateModelsSetting = this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting")
+		const mcpToolAvailability = this.stateManager.getGlobalSettingsKey("mcpToolAvailability")
+		const planModeMcpToolAvailability = this.stateManager.getGlobalSettingsKey("planModeMcpToolAvailability")
+		const actModeMcpToolAvailability = this.stateManager.getGlobalSettingsKey("actModeMcpToolAvailability")
 		const enableCheckpointsSetting = this.stateManager.getGlobalSettingsKey("enableCheckpointsSetting")
 		const globalClineRulesToggles = this.stateManager.getGlobalSettingsKey("globalClineRulesToggles")
 		const globalWorkflowToggles = this.stateManager.getGlobalSettingsKey("globalWorkflowToggles")
@@ -981,6 +984,9 @@ export class Controller {
 			mcpDisplayMode,
 			telemetrySetting,
 			planActSeparateModelsSetting,
+			mcpToolAvailability,
+			planModeMcpToolAvailability,
+			actModeMcpToolAvailability,
 			enableCheckpointsSetting: enableCheckpointsSetting ?? true,
 			platform,
 			environment,

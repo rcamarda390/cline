@@ -221,6 +221,60 @@ Content`)
 		})
 	})
 
+	describe("MCP tool declarations in frontmatter", () => {
+		function stubSingleSkill(frontmatterExtra: string) {
+			const skillDir = path.join(GLOBAL_SKILLS_DIR, "jira-skill")
+			const skillMdPath = path.join(skillDir, "SKILL.md")
+
+			fileExistsStub.withArgs(GLOBAL_SKILLS_DIR).resolves(true)
+			fileExistsStub.withArgs(skillMdPath).resolves(true)
+			isDirectoryStub.withArgs(GLOBAL_SKILLS_DIR).resolves(true)
+			readdirStub.withArgs(GLOBAL_SKILLS_DIR).resolves(["jira-skill"])
+			statStub.withArgs(skillDir).resolves({ isDirectory: () => true })
+			readFileStub.withArgs(skillMdPath, "utf-8").resolves(
+				`---\nname: jira-skill\ndescription: Work with Jira\n${frontmatterExtra}\n---\nInstructions`,
+			)
+		}
+
+		it("parses allowed_mcp_tools and disallowed_mcp_tools lists", async () => {
+			stubSingleSkill(
+				"allowed_mcp_tools:\n  - atlassian-mcp:jira_get_issue\n  - atlassian-mcp:jira_read_*\ndisallowed_mcp_tools:\n  - atlassian-mcp:jira_delete_*",
+			)
+			const skills = await discoverSkills(TEST_CWD)
+			expect(skills).to.have.lengthOf(1)
+			expect(skills[0].mcpTools?.allowedDeclared).to.be.true
+			expect(skills[0].mcpTools?.allowed).to.deep.equal([
+				{ server: "atlassian-mcp", toolPattern: "jira_get_issue" },
+				{ server: "atlassian-mcp", toolPattern: "jira_read_*" },
+			])
+			expect(skills[0].mcpTools?.disallowedDeclared).to.be.true
+			expect(skills[0].mcpTools?.disallowed).to.deep.equal([{ server: "atlassian-mcp", toolPattern: "jira_delete_*" }])
+		})
+
+		it("treats a missing field as not declared, distinct from an explicit empty list", async () => {
+			stubSingleSkill("allowed_mcp_tools: []")
+			const skills = await discoverSkills(TEST_CWD)
+			expect(skills[0].mcpTools?.allowedDeclared).to.be.true
+			expect(skills[0].mcpTools?.allowed).to.deep.equal([])
+			expect(skills[0].mcpTools?.disallowedDeclared).to.be.false
+		})
+
+		it("warns and drops a malformed pattern without invalidating the skill", async () => {
+			stubSingleSkill("allowed_mcp_tools:\n  - not-a-valid-pattern")
+			const skills = await discoverSkills(TEST_CWD)
+			expect(skills).to.have.lengthOf(1)
+			expect(skills[0].mcpTools?.allowed).to.deep.equal([])
+			sinon.assert.called(Logger.warn as sinon.SinonStub)
+		})
+
+		it("skills with no MCP frontmatter at all report both fields as not declared", async () => {
+			stubSingleSkill("")
+			const skills = await discoverSkills(TEST_CWD)
+			expect(skills[0].mcpTools?.allowedDeclared).to.be.false
+			expect(skills[0].mcpTools?.disallowedDeclared).to.be.false
+		})
+	})
+
 	describe("getAvailableSkills - Override Resolution", () => {
 		it("should override project skill with global skill of same name", async () => {
 			const globalSkillDir = path.join(GLOBAL_SKILLS_DIR, "coding")
