@@ -30,7 +30,7 @@ interface OpenAICompatibleProviderProps {
  * The OpenAI Compatible provider configuration component
  */
 export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMode }: OpenAICompatibleProviderProps) => {
-	const { apiConfiguration, remoteConfigSettings } = useExtensionState()
+	const { apiConfiguration, remoteConfigSettings, planActSeparateModelsSetting } = useExtensionState()
 	const { handleFieldChange, handleModeFieldChange } = useApiConfigurationHandlers()
 
 	const [modelConfigurationSelected, setModelConfigurationSelected] = useState(false)
@@ -41,6 +41,11 @@ export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMod
 
 	// Get mode-specific fields
 	const { openAiModelInfo } = getModeSpecificFields(apiConfiguration, currentMode)
+	const openAiApiKey = planActSeparateModelsSetting
+		? currentMode === "plan"
+			? apiConfiguration?.planModeOpenAiApiKey ?? apiConfiguration?.openAiApiKey
+			: apiConfiguration?.actModeOpenAiApiKey ?? apiConfiguration?.openAiApiKey
+		: apiConfiguration?.openAiApiKey
 
 	// Debounced function to refresh OpenAI models (prevents excessive API calls while typing)
 	const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -88,7 +93,7 @@ export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMod
 							initialValue={apiConfiguration?.openAiBaseUrl || ""}
 							onChange={(value) => {
 								handleFieldChange("openAiBaseUrl", value)
-								debouncedRefreshOpenAiModels(value, apiConfiguration?.openAiApiKey)
+								debouncedRefreshOpenAiModels(value, openAiApiKey)
 							}}
 							placeholder={"Enter base URL..."}
 							style={{ width: "100%", marginBottom: 10 }}
@@ -102,9 +107,17 @@ export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMod
 			</Tooltip>
 
 			<ApiKeyField
-				initialValue={apiConfiguration?.openAiApiKey || ""}
+				initialValue={openAiApiKey || ""}
 				onChange={(value) => {
-					handleFieldChange("openAiApiKey", value)
+					if (planActSeparateModelsSetting) {
+						handleModeFieldChange(
+							{ plan: "planModeOpenAiApiKey", act: "actModeOpenAiApiKey" },
+							value,
+							currentMode,
+						)
+					} else {
+						handleFieldChange("openAiApiKey", value)
+					}
 					debouncedRefreshOpenAiModels(apiConfiguration?.openAiBaseUrl, value)
 				}}
 				providerName="OpenAI Compatible"

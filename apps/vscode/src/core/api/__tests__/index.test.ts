@@ -10,7 +10,7 @@ import type { Mode } from "@shared/storage/types"
 import sinon from "sinon"
 import { ClineAccountService } from "@/services/account/ClineAccountService"
 import { AuthService } from "@/services/auth/AuthService"
-import { buildApiHandler, resolvePromptCachePreference } from "../index"
+import { buildApiHandler, resolveOpenAiCompatibleApiKey, resolvePromptCachePreference } from "../index"
 
 describe("buildApiHandler", () => {
 	beforeEach(() => {
@@ -75,6 +75,58 @@ describe("buildApiHandler", () => {
 			resolvePromptCachePreference(empty, "act", false, "litellm")!.should.equal(true)
 			resolvePromptCachePreference(empty, "act", false, "oca")!.should.equal(true)
 			resolvePromptCachePreference(empty, "act", false, "vertex")!.should.equal(true)
+		})
+	})
+	describe("OpenAI Compatible API key selection", () => {
+		const configuration = {
+			openAiApiKey: "legacy-key",
+			planModeOpenAiApiKey: "plan-key",
+			actModeOpenAiApiKey: "act-key",
+		} as ApiConfiguration
+
+		it("uses independent Plan and Act keys when model separation is enabled", () => {
+			resolveOpenAiCompatibleApiKey(configuration, "plan", true)!.should.equal("plan-key")
+			resolveOpenAiCompatibleApiKey(configuration, "act", true)!.should.equal("act-key")
+		})
+
+		it("keeps each mode independent when the other mode changes", () => {
+			const changedPlan = { ...configuration, planModeOpenAiApiKey: "new-plan-key" }
+			resolveOpenAiCompatibleApiKey(changedPlan, "act", true)!.should.equal("act-key")
+
+			const changedAct = { ...configuration, actModeOpenAiApiKey: "new-act-key" }
+			resolveOpenAiCompatibleApiKey(changedAct, "plan", true)!.should.equal("plan-key")
+		})
+
+		it("falls back to the legacy shared key until a mode-specific key is written", () => {
+			const legacy = { openAiApiKey: "legacy-key" } as ApiConfiguration
+			resolveOpenAiCompatibleApiKey(legacy, "plan", true)!.should.equal("legacy-key")
+			resolveOpenAiCompatibleApiKey(legacy, "act", true)!.should.equal("legacy-key")
+		})
+
+		it("lets a mode-specific key override the legacy shared key", () => {
+			const planOnly = { openAiApiKey: "legacy-key", planModeOpenAiApiKey: "plan-key" } as ApiConfiguration
+			resolveOpenAiCompatibleApiKey(planOnly, "plan", true)!.should.equal("plan-key")
+			resolveOpenAiCompatibleApiKey(planOnly, "act", true)!.should.equal("legacy-key")
+		})
+
+		it("preserves an explicit clear without resurrecting the legacy shared key", () => {
+			const cleared = { openAiApiKey: "legacy-key", planModeOpenAiApiKey: "" } as ApiConfiguration
+			resolveOpenAiCompatibleApiKey(cleared, "plan", true)!.should.equal("")
+		})
+
+		it("uses only the shared key when model separation is disabled", () => {
+			resolveOpenAiCompatibleApiKey(configuration, "plan", false)!.should.equal("legacy-key")
+			resolveOpenAiCompatibleApiKey(configuration, "act", false)!.should.equal("legacy-key")
+		})
+
+		it("does not select an OpenAI Compatible key for a mixed-provider mode", () => {
+			const mixed = {
+				...configuration,
+				planModeApiProvider: "openai",
+				actModeApiProvider: "bedrock",
+			} as ApiConfiguration
+			const actHandler = buildApiHandler(mixed, "act", true)
+			actHandler.constructor.name.should.equal("AwsBedrockHandler")
 		})
 	})
 	describe("cline-pass provider", () => {

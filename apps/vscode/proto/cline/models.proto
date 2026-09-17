@@ -201,6 +201,8 @@ message ModelsApiSecrets {
   optional string oca_refresh_token = 37;
   optional string minimax_api_key = 38;
   optional string aihubmix_api_key = 39;
+  optional string plan_mode_open_ai_api_key = 40;
+  optional string act_mode_open_ai_api_key = 41;
 }
 
 // API configuration options (non-secret settings)
@@ -617,6 +619,8 @@ message ModelsApiConfiguration {
   optional bool azure_identity = 86;
   optional string wandb_api_key = 87;
   optional bool use_prompt_cache = 88;
+  optional string plan_mode_open_ai_api_key = 89;
+  optional string act_mode_open_ai_api_key = 90;
 
   // Plan mode configurations
   optional ApiProvider plan_mode_api_provider = 100;

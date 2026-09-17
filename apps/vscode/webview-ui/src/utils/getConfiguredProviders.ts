@@ -188,7 +188,10 @@ export function getConfiguredProviders(
 
 	// OpenAI Compatible - requires base URL and API key, OR has model configured
 	if (
-		(apiConfiguration.openAiBaseUrl && apiConfiguration.openAiApiKey) ||
+		(apiConfiguration.openAiBaseUrl &&
+			(apiConfiguration.openAiApiKey ||
+				apiConfiguration.planModeOpenAiApiKey ||
+				apiConfiguration.actModeOpenAiApiKey)) ||
 		apiConfiguration.planModeOpenAiModelId ||
 		apiConfiguration.actModeOpenAiModelId
 	) {
