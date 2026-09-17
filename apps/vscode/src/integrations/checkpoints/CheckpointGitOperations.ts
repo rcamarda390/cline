@@ -27,7 +27,8 @@ interface CheckpointAddResult {
  */
 export class GitOperations {
 	private cwd: string
-	private cachedNestedGitPaths?: string[]
+	private disabledNestedGitPaths = new Set<string>()
+	private nestedGitDisableCycleActive = false
 
 	/**
 	 * Creates a new GitOperations instance.
@@ -147,11 +148,14 @@ export class GitOperations {
 	 * @throws Error if renaming any .git directory fails
 	 */
 	private async findNestedGitPaths(disabled: boolean): Promise<string[]> {
-		const exclusions = getDefaultExclusions().filter((pattern) => pattern !== `.git${GIT_DISABLED_SUFFIX}/`)
+		// Normal checkpoint scans use the same exclusions as git add. Startup recovery deliberately
+		// keeps the historical broad scope so an interrupted older version can restore repositories
+		// inside directories that are now excluded from checkpoints.
+		const ignore = disabled ? [".git", "**/node_modules/**"] : [".git", ...getDefaultExclusions()]
 		return globby(`**/.git${disabled ? GIT_DISABLED_SUFFIX : ""}`, {
 			cwd: this.cwd,
 			onlyDirectories: true,
-			ignore: [".git", ...exclusions],
+			ignore,
 			dot: true,
 			markDirectories: false,
 			suppressErrors: true,
@@ -159,39 +163,57 @@ export class GitOperations {
 	}
 
 	public async renameNestedGitRepos(disable: boolean) {
-		let gitPaths: string[]
-
 		if (disable) {
-			if (!this.cachedNestedGitPaths) {
-				this.cachedNestedGitPaths = await this.findNestedGitPaths(false)
+			// Refresh once per checkpoint so repositories created or removed during a task are reconciled.
+			// The discovered paths are then reused only for this disable/restore cycle.
+			const gitPaths = await this.findNestedGitPaths(false)
+			this.disabledNestedGitPaths.clear()
+			this.nestedGitDisableCycleActive = true
+
+			for (const gitPath of gitPaths) {
+				const originalPath = path.join(this.cwd, gitPath)
+				const disabledPath = originalPath + GIT_DISABLED_SUFFIX
+				try {
+					await fs.rename(originalPath, disabledPath)
+					this.disabledNestedGitPaths.add(gitPath)
+					Logger.log(`CheckpointTracker disabled nested git repo ${gitPath}`)
+				} catch (error) {
+					Logger.error(`CheckpointTracker failed to disable nested git repo ${gitPath}:`, error)
+					throw new Error(
+						`Failed to disable nested git repo ${gitPath}: ${error instanceof Error ? error.message : String(error)}`,
+					)
+				}
 			}
-			gitPaths = this.cachedNestedGitPaths
-		} else if (this.cachedNestedGitPaths) {
-			gitPaths = this.cachedNestedGitPaths
-		} else {
-			// One-time recovery for a prior interrupted disable/enable cycle.
-			gitPaths = (await this.findNestedGitPaths(true)).map((gitPath) =>
-				gitPath.slice(0, -GIT_DISABLED_SUFFIX.length),
-			)
+			return
 		}
+
+		const gitPaths = this.nestedGitDisableCycleActive
+			? [...this.disabledNestedGitPaths]
+			: (await this.findNestedGitPaths(true)).map((gitPath) => gitPath.slice(0, -GIT_DISABLED_SUFFIX.length))
 
 		for (const gitPath of gitPaths) {
 			const originalPath = path.join(this.cwd, gitPath)
 			const disabledPath = originalPath + GIT_DISABLED_SUFFIX
-			const fullPath = disable ? originalPath : disabledPath
-			const newPath = disable ? disabledPath : originalPath
-
 			try {
-				await fs.rename(fullPath, newPath)
-				Logger.log(`CheckpointTracker ${disable ? "disabled" : "enabled"} nested git repo ${gitPath}`)
+				await fs.rename(disabledPath, originalPath)
+				this.disabledNestedGitPaths.delete(gitPath)
+				Logger.log(`CheckpointTracker enabled nested git repo ${gitPath}`)
 			} catch (error) {
-				Logger.error(`CheckpointTracker failed to ${disable ? "disable" : "enable"} nested git repo ${gitPath}:`, error)
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+					// A prior retry may already have restored this path, or the repository may have
+					// been removed. In either case there is nothing left disabled at this path.
+					this.disabledNestedGitPaths.delete(gitPath)
+					continue
+				}
+				Logger.error(`CheckpointTracker failed to enable nested git repo ${gitPath}:`, error)
 				throw new Error(
-					`Failed to ${disable ? "disable" : "enable"} nested git repo ${gitPath}: ${
-						error instanceof Error ? error.message : String(error)
-					}`,
+					`Failed to enable nested git repo ${gitPath}: ${error instanceof Error ? error.message : String(error)}`,
 				)
 			}
+		}
+
+		if (this.nestedGitDisableCycleActive && this.disabledNestedGitPaths.size === 0) {
+			this.nestedGitDisableCycleActive = false
 		}
 	}
 
