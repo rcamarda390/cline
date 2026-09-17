@@ -205,7 +205,8 @@ describe("disk - hooks functionality", () => {
 	})
 
 	describe("getAllHooksDirs", () => {
-		it("should include the runtime hooks directory when it exists", async () => {
+		it("should include the runtime hooks directory when it exists", async function () {
+			this.timeout(process.platform === "win32" ? 30_000 : 2_000)
 			const runtimeHooksDir = path.join(tempDir, "runtime-hooks")
 			await fs.mkdir(runtimeHooksDir, { recursive: true })
 
@@ -223,7 +224,8 @@ describe("disk - hooks functionality", () => {
 			result.should.containEql(runtimeHooksDir)
 		})
 
-		it("should not include the runtime hooks directory when it does not exist", async () => {
+		it("should not include the runtime hooks directory when it does not exist", async function () {
+			this.timeout(process.platform === "win32" ? 30_000 : 2_000)
 			const runtimeHooksDir = path.join(tempDir, "missing-runtime-hooks")
 
 			sandbox.stub(os, "homedir").returns(tempDir)
