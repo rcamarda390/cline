@@ -6,7 +6,7 @@ import * as path from "path"
 import simpleGit, { type SimpleGit } from "simple-git"
 import { telemetryService } from "@/services/telemetry"
 import { Logger } from "@/shared/services/Logger"
-import { getLfsPatterns, writeExcludesFile } from "./CheckpointExclusions"
+import { GIT_DISABLED_SUFFIX, getDefaultExclusions, getLfsPatterns, writeExcludesFile } from "./CheckpointExclusions"
 
 interface CheckpointAddResult {
 	success: boolean
@@ -27,6 +27,7 @@ interface CheckpointAddResult {
  */
 export class GitOperations {
 	private cwd: string
+	private cachedNestedGitPaths?: string[]
 
 	/**
 	 * Creates a new GitOperations instance.
@@ -145,26 +146,40 @@ export class GitOperations {
 	 * @param disable - If true, adds suffix to disable nested git repos. If false, removes suffix to re-enable them.
 	 * @throws Error if renaming any .git directory fails
 	 */
-	public async renameNestedGitRepos(disable: boolean) {
-		// Find all .git directories that are not at the root level
-		const gitPaths = await globby("**/.git" + (disable ? "" : GIT_DISABLED_SUFFIX), {
+	private async findNestedGitPaths(disabled: boolean): Promise<string[]> {
+		const exclusions = getDefaultExclusions().filter((pattern) => pattern !== `.git${GIT_DISABLED_SUFFIX}/`)
+		return globby(`**/.git${disabled ? GIT_DISABLED_SUFFIX : ""}`, {
 			cwd: this.cwd,
 			onlyDirectories: true,
-			ignore: [".git", "**/node_modules/**"], // Ignore root level .git and node_modules (can contain recursive .git dirs that cause 10s+ scans)
+			ignore: [".git", ...exclusions],
 			dot: true,
 			markDirectories: false,
 			suppressErrors: true,
 		})
+	}
 
-		// For each nested .git directory, rename it based on operation
-		for (const gitPath of gitPaths) {
-			const fullPath = path.join(this.cwd, gitPath)
-			let newPath: string
-			if (disable) {
-				newPath = fullPath + GIT_DISABLED_SUFFIX
-			} else {
-				newPath = fullPath.endsWith(GIT_DISABLED_SUFFIX) ? fullPath.slice(0, -GIT_DISABLED_SUFFIX.length) : fullPath
+	public async renameNestedGitRepos(disable: boolean) {
+		let gitPaths: string[]
+
+		if (disable) {
+			if (!this.cachedNestedGitPaths) {
+				this.cachedNestedGitPaths = await this.findNestedGitPaths(false)
 			}
+			gitPaths = this.cachedNestedGitPaths
+		} else if (this.cachedNestedGitPaths) {
+			gitPaths = this.cachedNestedGitPaths
+		} else {
+			// One-time recovery for a prior interrupted disable/enable cycle.
+			gitPaths = (await this.findNestedGitPaths(true)).map((gitPath) =>
+				gitPath.slice(0, -GIT_DISABLED_SUFFIX.length),
+			)
+		}
+
+		for (const gitPath of gitPaths) {
+			const originalPath = path.join(this.cwd, gitPath)
+			const disabledPath = originalPath + GIT_DISABLED_SUFFIX
+			const fullPath = disable ? originalPath : disabledPath
+			const newPath = disable ? disabledPath : originalPath
 
 			try {
 				await fs.rename(fullPath, newPath)
@@ -236,4 +251,3 @@ export class GitOperations {
 	}
 }
 
-export const GIT_DISABLED_SUFFIX = "_disabled"
