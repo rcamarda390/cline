@@ -581,7 +581,7 @@ function createHandlerForProvider(
 export function buildApiHandler(
 	configuration: ApiConfiguration,
 	mode: Mode,
-	planActSeparateModelsSetting = true,
+	planActSeparateModelsSetting: boolean,
 ): ApiHandler {
 	const { planModeApiProvider, actModeApiProvider, ...options } = configuration
 	const apiProvider = mode === "plan" ? planModeApiProvider : actModeApiProvider

@@ -9,12 +9,17 @@ import { ClineDefaultTool } from "@/shared/tools"
 import { AgentConfigLoader } from "../AgentConfigLoader"
 import { SUBAGENT_DEFAULT_ALLOWED_TOOLS, SUBAGENT_SYSTEM_SUFFIX, SubagentBuilder } from "../SubagentBuilder"
 
-function createTaskConfig(mode: "act" | "plan", provider: string): TaskConfig {
+function createTaskConfig(
+	mode: "act" | "plan",
+	provider: string,
+	planActSeparateModelsSetting = false,
+): TaskConfig {
 	return {
 		ulid: "ulid-123",
 		services: {
 			stateManager: {
-				getGlobalSettingsKey: (key: string) => (key === "mode" ? mode : undefined),
+				getGlobalSettingsKey: (key: string) =>
+					key === "mode" ? mode : key === "planActSeparateModelsSetting" ? planActSeparateModelsSetting : undefined,
 				getApiConfiguration: () => ({
 					actModeApiProvider: provider,
 					planModeApiProvider: provider,
@@ -50,11 +55,12 @@ describe("SubagentBuilder", () => {
 		const fakeHandler = { getModel: sinon.stub(), createMessage: sinon.stub() }
 		const buildApiHandlerStub = sinon.stub(api, "buildApiHandler").returns(fakeHandler as never)
 
-		const builder = new SubagentBuilder(createTaskConfig("act", "openai"), "cached-agent")
+		const builder = new SubagentBuilder(createTaskConfig("act", "openai", true), "cached-agent")
 
 		assert.equal(buildApiHandlerStub.callCount, 1)
-		const [effectiveApiConfig, selectedMode] = buildApiHandlerStub.firstCall.args
+		const [effectiveApiConfig, selectedMode, planActSeparateModelsSetting] = buildApiHandlerStub.firstCall.args
 		assert.equal(selectedMode, "act")
+		assert.equal(planActSeparateModelsSetting, true)
 		assert.equal((effectiveApiConfig as Record<string, unknown>).ulid, "ulid-123")
 		assert.equal((effectiveApiConfig as Record<string, unknown>).actModeOpenAiModelId, "gpt-5")
 		assert.equal((effectiveApiConfig as Record<string, unknown>).actModeApiModelId, "act-default")

@@ -30,6 +30,7 @@ describe("buildApiHandler", () => {
 				...configuration,
 			} as ApiConfiguration,
 			mode,
+			true,
 		)
 
 	describe("prompt-cache preference selection", () => {
