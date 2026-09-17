@@ -4,7 +4,11 @@ import { CLINE_RECOMMENDED_MODELS_FALLBACK } from "@shared/cline/recommended-mod
 import { Mode } from "@shared/storage/types"
 import { getModeSpecificFields } from "@/components/settings/utils/providerUtils"
 
-export function validateApiConfiguration(currentMode: Mode, apiConfiguration?: ApiConfiguration): string | undefined {
+export function validateApiConfiguration(
+	currentMode: Mode,
+	apiConfiguration?: ApiConfiguration,
+	planActSeparateModelsSetting = false,
+): string | undefined {
 	if (apiConfiguration) {
 		const {
 			apiProvider,
@@ -79,15 +83,21 @@ export function validateApiConfiguration(currentMode: Mode, apiConfiguration?: A
 				// Authentication is handled via OAuth, not API key
 				// Validation happens at runtime in the handler
 				break
-			case "openai":
+			case "openai": {
+				const openAiApiKey = planActSeparateModelsSetting
+					? currentMode === "plan"
+						? apiConfiguration.planModeOpenAiApiKey ?? apiConfiguration.openAiApiKey
+						: apiConfiguration.actModeOpenAiApiKey ?? apiConfiguration.openAiApiKey
+					: apiConfiguration.openAiApiKey
 				if (
 					!apiConfiguration.openAiBaseUrl ||
-					(!apiConfiguration.openAiApiKey && !apiConfiguration.azureIdentity) ||
+					(!openAiApiKey && !apiConfiguration.azureIdentity) ||
 					!openAiModelId
 				) {
 					return "You must provide a valid base URL, API key, and model ID."
 				}
 				break
+			}
 			case "requesty":
 				if (!apiConfiguration.requestyApiKey) {
 					return "You must provide a valid API key or choose a different provider."

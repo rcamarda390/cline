@@ -24,12 +24,12 @@ vi.mock("../../../context/ExtensionStateContext", async (importOriginal) => {
 	}
 })
 
-const mockExtensionState = (apiConfiguration: Partial<ApiConfiguration>) => {
+const mockExtensionState = (apiConfiguration: Partial<ApiConfiguration>, planActSeparateModelsSetting = false) => {
 	vi.mocked(useExtensionState).mockReturnValue({
 		apiConfiguration,
 		setApiConfiguration: vi.fn(),
 		requestyModels: {},
-		planActSeparateModelsSetting: false,
+		planActSeparateModelsSetting,
 	} as any)
 }
 
@@ -186,6 +186,48 @@ describe("OpenApiInfoOptions", () => {
 		fireEvent.click(screen.getByText("Model Configuration"))
 		const modelInput = screen.getByText("Max Output Tokens")
 		expect(modelInput).toBeInTheDocument()
+	})
+
+	it("shows independent OpenAI Compatible API keys when switching Plan and Act", () => {
+		const apiConfiguration = {
+			planModeApiProvider: "openai",
+			actModeApiProvider: "openai",
+			openAiApiKey: "legacy-key",
+			planModeOpenAiApiKey: "plan-key",
+			actModeOpenAiApiKey: "act-key",
+		} as Partial<ApiConfiguration>
+		mockExtensionState(apiConfiguration, true)
+
+		const { rerender } = render(
+			<ExtensionStateContextProvider>
+				<ApiOptions currentMode="plan" showModelOptions={true} />
+			</ExtensionStateContextProvider>,
+		)
+		expect(screen.getByPlaceholderText("Enter API Key...")).toHaveValue("plan-key")
+
+		rerender(
+			<ExtensionStateContextProvider>
+				<ApiOptions currentMode="act" showModelOptions={true} />
+			</ExtensionStateContextProvider>,
+		)
+		expect(screen.getByPlaceholderText("Enter API Key...")).toHaveValue("act-key")
+	})
+
+	it("shows the shared OpenAI Compatible API key when model separation is disabled", () => {
+		mockExtensionState({
+			planModeApiProvider: "openai",
+			actModeApiProvider: "openai",
+			openAiApiKey: "shared-key",
+			planModeOpenAiApiKey: "plan-key",
+			actModeOpenAiApiKey: "act-key",
+		})
+
+		render(
+			<ExtensionStateContextProvider>
+				<ApiOptions currentMode="plan" showModelOptions={true} />
+			</ExtensionStateContextProvider>,
+		)
+		expect(screen.getByPlaceholderText("Enter API Key...")).toHaveValue("shared-key")
 	})
 })
 

@@ -49,13 +49,20 @@ export class SubagentBuilder {
 		this.allowedTools = this.resolveAllowedTools(this.agentConfig.tools)
 
 		const mode = this.baseConfig.services.stateManager.getGlobalSettingsKey("mode")
+		const planActSeparateModelsSetting = this.baseConfig.services.stateManager.getGlobalSettingsKey(
+			"planActSeparateModelsSetting",
+		)
 		const apiConfiguration = this.baseConfig.services.stateManager.getApiConfiguration()
 		const effectiveApiConfiguration = {
 			...apiConfiguration,
 			ulid: this.baseConfig.ulid,
 		} as Record<string, unknown>
 		this.applyModelOverride(effectiveApiConfiguration, mode, this.agentConfig.modelId)
-		this.apiHandler = buildApiHandler(effectiveApiConfiguration as typeof apiConfiguration, mode)
+		this.apiHandler = buildApiHandler(
+			effectiveApiConfiguration as typeof apiConfiguration,
+			mode,
+			planActSeparateModelsSetting,
+		)
 	}
 
 	getApiHandler(): ReturnType<typeof buildApiHandler> {

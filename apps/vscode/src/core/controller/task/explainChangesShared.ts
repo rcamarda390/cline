@@ -70,6 +70,7 @@ export async function openDiffView(title: string, changedFiles: ChangedFile[]): 
  */
 export async function setupCommentController(
 	apiConfiguration: ApiConfiguration,
+	planActSeparateModelsSetting: boolean,
 	changedFiles: ChangedFile[],
 	conversationContext: string,
 ) {
@@ -83,6 +84,7 @@ export async function setupCommentController(
 	commentController.setOnReplyCallback(async (filePath, startLine, endLine, replyText, existingComments, onChunk) => {
 		await handleCommentReply(
 			apiConfiguration,
+			planActSeparateModelsSetting,
 			filePath,
 			startLine,
 			endLine,
@@ -106,6 +108,7 @@ export async function setupCommentController(
  */
 export async function streamAIExplanationComments(
 	apiConfiguration: ApiConfiguration,
+	planActSeparateModelsSetting: boolean,
 	diffContent: string,
 	contextDescription: string,
 	changedFiles: ChangedFile[],
@@ -120,7 +123,7 @@ export async function streamAIExplanationComments(
 		actModeThinkingBudgetTokens: 0,
 		planModeThinkingBudgetTokens: 0,
 	}
-	const apiHandler = buildApiHandler(configWithoutThinking, "act")
+	const apiHandler = buildApiHandler(configWithoutThinking, "act", planActSeparateModelsSetting)
 
 	const fileCount = changedFiles.length
 	const maxCommentsPerFile = fileCount > 3 ? 1 : 3
@@ -291,6 +294,7 @@ Output your explanation comments now using the @@@ format:`
  */
 async function handleCommentReply(
 	apiConfiguration: ApiConfiguration,
+	planActSeparateModelsSetting: boolean,
 	filePath: string,
 	startLine: number,
 	endLine: number,
@@ -318,7 +322,7 @@ async function handleCommentReply(
 	const afterLines = file.after.split("\n")
 	const codeSnippet = afterLines.slice(startLine, endLine + 1).join("\n")
 
-	const apiHandler = buildApiHandler(configWithoutThinking, "act")
+	const apiHandler = buildApiHandler(configWithoutThinking, "act", planActSeparateModelsSetting)
 
 	const systemPrompt = `${EXPLAINER_SYSTEM_PROMPT}
 

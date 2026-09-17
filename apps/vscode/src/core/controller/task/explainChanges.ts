@@ -169,12 +169,19 @@ export async function explainChanges(controller: Controller, request: ExplainCha
 			return Empty.create({})
 		}
 
+		const planActSeparateModelsSetting = controller.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting")
+
 		// Get conversation summary for context
 		const apiConversationHistory = messageStateHandler.getApiConversationHistory()
 		const conversationSummary = stringifyConversationHistory(apiConversationHistory)
 
 		// Set up the comment controller with reply handler
-		const commentController = await setupCommentController(apiConfiguration, changedFiles, conversationSummary)
+		const commentController = await setupCommentController(
+			apiConfiguration,
+			planActSeparateModelsSetting,
+			changedFiles,
+			conversationSummary,
+		)
 
 		// Build the diff content for the AI
 		const diffContent = buildDiffContent(changedFiles)
@@ -195,6 +202,7 @@ export async function explainChanges(controller: Controller, request: ExplainCha
 		// Each comment will open its virtual doc and scroll to show the comment (if 3+ files)
 		await streamAIExplanationComments(
 			apiConfiguration,
+			planActSeparateModelsSetting,
 			diffContent,
 			conversationSummary,
 			changedFiles,

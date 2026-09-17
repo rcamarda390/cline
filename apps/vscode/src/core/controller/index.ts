@@ -581,7 +581,11 @@ export class Controller {
 			await fetchRemoteConfig(this)
 
 			if (this.task) {
-				this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+				this.task.api = buildApiHandler(
+					{ ...updatedConfig, ulid: this.task.ulid },
+					currentMode,
+					this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+				)
 			}
 
 			await this.postStateToWebview()
@@ -632,7 +636,11 @@ export class Controller {
 			this.stateManager.setGlobalState("welcomeViewCompleted", true)
 
 			if (this.task) {
-				this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+				this.task.api = buildApiHandler(
+					{ ...updatedConfig, ulid: this.task.ulid },
+					currentMode,
+					this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+				)
 			}
 
 			await this.postStateToWebview()
@@ -754,7 +762,11 @@ export class Controller {
 
 		await this.postStateToWebview()
 		if (this.task) {
-			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+			this.task.api = buildApiHandler(
+					{ ...updatedConfig, ulid: this.task.ulid },
+					currentMode,
+					this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+				)
 		}
 		// Dont send settingsButtonClicked because its bad ux if user is on welcome
 	}
@@ -774,7 +786,11 @@ export class Controller {
 		this.stateManager.setApiConfiguration(updatedConfig)
 		await this.postStateToWebview()
 		if (this.task) {
-			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+			this.task.api = buildApiHandler(
+					{ ...updatedConfig, ulid: this.task.ulid },
+					currentMode,
+					this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+				)
 		}
 	}
 
@@ -814,7 +830,11 @@ export class Controller {
 		await this.postStateToWebview()
 		this.accountService
 		if (this.task) {
-			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+			this.task.api = buildApiHandler(
+					{ ...updatedConfig, ulid: this.task.ulid },
+					currentMode,
+					this.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
+				)
 		}
 	}
 

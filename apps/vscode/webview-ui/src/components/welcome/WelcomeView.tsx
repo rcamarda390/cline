@@ -8,7 +8,7 @@ import { AccountServiceClient, StateServiceClient } from "@/services/grpc-client
 import { validateApiConfiguration } from "@/utils/validate"
 
 const WelcomeView = memo(() => {
-	const { apiConfiguration, mode } = useExtensionState()
+	const { apiConfiguration, mode, planActSeparateModelsSetting } = useExtensionState()
 	const [apiErrorMessage, setApiErrorMessage] = useState<string | undefined>(undefined)
 	const [showApiOptions, setShowApiOptions] = useState(false)
 	const [isLoading, setIsLoading] = useState(false)
@@ -33,8 +33,8 @@ const WelcomeView = memo(() => {
 	}
 
 	useEffect(() => {
-		setApiErrorMessage(validateApiConfiguration(mode, apiConfiguration))
-	}, [apiConfiguration, mode])
+		setApiErrorMessage(validateApiConfiguration(mode, apiConfiguration, planActSeparateModelsSetting))
+	}, [apiConfiguration, mode, planActSeparateModelsSetting])
 
 	return (
 		<div className="fixed inset-0 p-0 flex flex-col">

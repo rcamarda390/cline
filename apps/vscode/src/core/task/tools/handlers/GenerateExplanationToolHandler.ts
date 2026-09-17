@@ -84,6 +84,9 @@ export class GenerateExplanationToolHandler implements IToolHandler, IPartialBlo
 
 		// Get API configuration
 		const apiConfiguration = config.services.stateManager.getApiConfiguration()
+		const planActSeparateModelsSetting = config.services.stateManager.getGlobalSettingsKey(
+			"planActSeparateModelsSetting",
+		)
 		if (!apiConfiguration) {
 			await config.callbacks.say(
 				"generate_explanation",
@@ -207,7 +210,12 @@ export class GenerateExplanationToolHandler implements IToolHandler, IPartialBlo
 			const conversationContext = stringifyConversationHistory(apiConversationHistory)
 
 			// Set up the comment controller with reply handler
-			const commentController = await setupCommentController(apiConfiguration, changedFiles, conversationContext)
+			const commentController = await setupCommentController(
+				apiConfiguration,
+				planActSeparateModelsSetting,
+				changedFiles,
+				conversationContext,
+			)
 
 			// Build the diff content for the AI
 			const diffContent = buildDiffContent(changedFiles)
@@ -225,6 +233,7 @@ export class GenerateExplanationToolHandler implements IToolHandler, IPartialBlo
 			// Each comment will open its virtual doc and scroll to show the comment (if 3+ files)
 			const commentCount = await streamAIExplanationComments(
 				apiConfiguration,
+				planActSeparateModelsSetting,
 				diffContent,
 				`${title}\n\n${conversationContext}`,
 				changedFiles,

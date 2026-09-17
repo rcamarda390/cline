@@ -193,10 +193,11 @@ async function performCommitMsgGeneration(controller: Controller, gitDiff: strin
 		// Get the current API configuration
 		// Set to use Act mode for now by default
 		const apiConfiguration = controller.stateManager.getApiConfiguration()
+		const planActSeparateModelsSetting = controller.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting")
 		const currentMode = "act"
 
 		// Build the API handler
-		const apiHandler = buildApiHandler(apiConfiguration, currentMode)
+		const apiHandler = buildApiHandler(apiConfiguration, currentMode, planActSeparateModelsSetting)
 
 		// Create a system prompt
 		const systemPrompt = PROMPT.system

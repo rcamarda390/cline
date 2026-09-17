@@ -54,7 +54,10 @@ export async function updateSettings(controller: Controller, request: UpdateSett
 					...convertedApiConfigurationFromProto,
 					ulid: controller.task.ulid,
 				}
-				controller.task.api = buildApiHandler(apiConfigForHandler, currentMode)
+				const planActSeparateModelsSetting =
+					request.planActSeparateModelsSetting ??
+					controller.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting")
+				controller.task.api = buildApiHandler(apiConfigForHandler, currentMode, planActSeparateModelsSetting)
 			}
 		}
 

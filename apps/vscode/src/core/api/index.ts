@@ -127,6 +127,20 @@ export function resolveAwsBedrockUsePromptCache(
 	return resolvePromptCachePreference(configuration, mode, planActSeparateModelsSetting, "bedrock")
 }
 
+export function resolveOpenAiCompatibleApiKey(
+	configuration: ApiConfiguration,
+	mode: Mode,
+	planActSeparateModelsSetting: boolean,
+): string | undefined {
+	if (!planActSeparateModelsSetting) {
+		return configuration.openAiApiKey
+	}
+
+	return mode === "plan"
+		? configuration.planModeOpenAiApiKey ?? configuration.openAiApiKey
+		: configuration.actModeOpenAiApiKey ?? configuration.openAiApiKey
+}
+
 function createHandlerForProvider(
 	apiProvider: string | undefined,
 	options: Omit<ApiConfiguration, "apiProvider">,
@@ -567,11 +581,12 @@ function createHandlerForProvider(
 export function buildApiHandler(
 	configuration: ApiConfiguration,
 	mode: Mode,
-	planActSeparateModelsSetting = true,
+	planActSeparateModelsSetting: boolean,
 ): ApiHandler {
 	const { planModeApiProvider, actModeApiProvider, ...options } = configuration
 	const apiProvider = mode === "plan" ? planModeApiProvider : actModeApiProvider
 	options.usePromptCache = resolvePromptCachePreference(configuration, mode, planActSeparateModelsSetting, apiProvider)
+	options.openAiApiKey = resolveOpenAiCompatibleApiKey(configuration, mode, planActSeparateModelsSetting)
 
 	// Validate thinking budget tokens against model's maxTokens to prevent API errors
 	// wrapped in a try-catch for safety, but this should never throw
