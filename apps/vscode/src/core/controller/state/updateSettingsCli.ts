@@ -122,7 +122,10 @@ export async function updateSettingsCli(controller: Controller, request: UpdateS
 					...controller.stateManager.getApiConfiguration(),
 					ulid: controller.task.ulid,
 				}
-				controller.task.api = buildApiHandler(apiConfigForHandler, currentMode)
+				const planActSeparateModelsSetting = controller.stateManager.getGlobalSettingsKey(
+					"planActSeparateModelsSetting",
+				)
+				controller.task.api = buildApiHandler(apiConfigForHandler, currentMode, planActSeparateModelsSetting)
 			}
 
 			// Update telemetry setting
