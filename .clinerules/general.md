@@ -12,6 +12,10 @@ This file is the secret sauce for working effectively in this codebase. It captu
 
 **What NOT to add:** Stuff you can figure out from reading a few files, obvious patterns, or standard practices. This file should be high-signal, not comprehensive.
 
+## PR & Branch Naming
+- PR titles must be short and describe the actual change (e.g. `Bump 4.0.12 prompt patch version to .13`), not generic text.
+- When you control the branch name (not auto-assigned by session infra), name it `<type>/<short-change-slug>` (e.g. `fix/prompt-patch-version-bump`)—not random word pairs.
+
 ## Miscellaneous
 - This is a VS Code extension—check `package.json` for available scripts before trying to verify builds (e.g., `npm run compile`, not `npm run build`).
 - When creating PRs, contributors should not create changelog-entry files. Maintainers handle release versioning and changelog curation during the release process.
