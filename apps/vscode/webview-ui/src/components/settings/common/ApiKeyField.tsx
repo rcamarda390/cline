@@ -1,5 +1,17 @@
 import { VSCodeLink, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
+import { useState } from "react"
 import { useDebouncedInput } from "../utils/useDebouncedInput"
+
+/**
+ * Masks a value, leaving only the last 4 characters visible (e.g. "••••••••abcd").
+ * Short values (<= 4 chars) are masked entirely to avoid revealing the whole key.
+ */
+function maskApiKey(value: string): string {
+	if (value.length <= 4) {
+		return "•".repeat(value.length)
+	}
+	return "•".repeat(value.length - 4) + value.slice(-4)
+}
 
 /**
  * Props for the ApiKeyField component
@@ -25,16 +37,23 @@ export const ApiKeyField = ({
 	helpText,
 }: ApiKeyFieldProps) => {
 	const [localValue, setLocalValue] = useDebouncedInput(initialValue, onChange)
+	const [isFocused, setIsFocused] = useState(false)
+
+	// While editing, show the real value so the user can type/paste normally.
+	// Once unfocused, mask everything but the last 4 characters so a saved key stays identifiable.
+	const displayValue = isFocused ? localValue : maskApiKey(localValue)
 
 	return (
 		<div>
 			<VSCodeTextField
+				onBlur={() => setIsFocused(false)}
+				onFocus={() => setIsFocused(true)}
 				onInput={(e: any) => setLocalValue(e.target.value)}
 				placeholder={placeholder}
 				required={true}
 				style={{ width: "100%" }}
-				type="password"
-				value={localValue}>
+				type="text"
+				value={displayValue}>
 				<span style={{ fontWeight: 500 }}>{providerName} API Key</span>
 			</VSCodeTextField>
 			<p
