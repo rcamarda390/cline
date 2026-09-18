@@ -267,7 +267,11 @@ console.log(JSON.stringify({
 	})
 
 	describe("PostToolUse Hook", () => {
-		it("should receive execution results", async () => {
+		it("should receive execution results", async function () {
+			if (process.platform === "win32") {
+				this.timeout(WINDOWS_HOOK_TEST_TIMEOUT_MS)
+			}
+
 			const hookPath = path.join(tempDir, ".clinerules", "hooks", "PostToolUse")
 			const hookScript = `#!/usr/bin/env node
 const input = JSON.parse(require('fs').readFileSync(0, 'utf-8'));
