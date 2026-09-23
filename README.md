@@ -135,6 +135,41 @@ npm install @cline/sdk
 | **Kanban** | Web-based multi-agent task board. | [`cline/kanban`](https://github.com/cline/kanban) | [CHANGELOG.md](https://github.com/cline/kanban/blob/main/CHANGELOG.md) |
 | **Docs site** | Public documentation pages. | [`docs/`](https://docs.cline.bot/) | - |
 
+## 4.0.12 Prompt-Patch Enhancement Blog
+
+This fork preserves the Cline 4.0.12 VS Code deployment line for environments that depend on VS Code 1.98.2, while adding targeted provider, reliability, air-gap, and build improvements. The patched extension is distributed as a numbered `4.0.12-prompt-patch.N` VSIX and is not published to the Marketplace.
+
+### Provider and model fixes
+
+- Added provider-neutral prompt-cache preferences with independent shared, Plan, and Act settings. Split Plan/Act mode no longer leaks one mode's cache choice into the other, while legacy Bedrock settings remain an upgrade fallback.
+- Exposed prompt caching consistently across Bedrock, Anthropic, LiteLLM, OpenAI-compatible, and Vertex providers, subject to each model's capability gate.
+- Corrected adaptive-thinking detection for AWS Bedrock application-inference-profile ARNs by using the underlying custom model identifier.
+- Added native AWS Bedrock Converse tool calling for NVIDIA Nemotron 3 Super 120B, including required tool schemas, sampling defaults, profile-ARN routing, and GovCloud routing.
+- Buffered streamed Bedrock native-tool JSON fragments until the content block is complete, preventing incomplete Nemotron tool arguments from reaching validation.
+- Isolated OpenAI-compatible API keys for Plan and Act when separate models are enabled. Shared-mode behavior and legacy-key fallback remain compatible, and secrets continue using Cline's existing secret storage.
+- Updated API-key fields to show only the last four characters when blurred, while revealing the value during editing.
+
+### Reliability and deployment fixes
+
+- Bounded nested-repository checkpoint discovery, reused discovery results during restore, made partial recovery idempotent, and preserved broad startup recovery for older disabled repositories.
+- Added offline mode for air-gapped deployments. It suppresses startup authentication restore, remote configuration, telemetry initialization, model catalogs, and marketplace requests while preserving local operation.
+- Honored disabled MCP marketplace policy before any marketplace request.
+- Reduced successful empty-hook output to debug-level logging and routed log severity correctly through VS Code's `LogOutputChannel` without duplicated timestamps or levels.
+- Fixed the missing `TODO_SECTION` prompt component and ensured it respects disabled focus-chain settings.
+- Improved Windows CI stability for hook and task-history tests with platform-appropriate timeouts and state-transition waits.
+
+### MCP and workflow enhancements
+
+- Added opt-in, skill-scoped MCP tool availability. Skills can allow or deny individual tools or wildcard groups; policies are resolved per tool, deny rules win, and the active policy is frozen to protect prompt-cache stability and revalidated when a task resumes.
+- Added fail-soft parsing for MCP tool declarations so malformed skill metadata is warned about and ignored rather than breaking the skill.
+- Added repository guidance for descriptive PR titles and `<type>/<short-change-slug>` branches where the agent controls branch naming.
+- Added fail-closed prompt-patch build identity checks covering the manifest version, workflow version, VSIX name, checksum, engine constraint, and lockfile alignment.
+- Repaired the 4.0.12 extension lockfile so `npm ci` uses the committed dependency graph instead of reconstructing it during CI.
+
+### Verification and attribution
+
+The changes were validated through focused provider, prompt, checkpoint, hook, webview, typecheck, lint, packaging, checksum, and cross-platform E2E gates as applicable to each change. Work was performed by OpenAI Codex and Claude Code agents using GPT-5.x-family models; each pull request records its specific agent attribution and validation scope.
+
 ## Edits Code Across Your Project
 
 Cline reads your project structure, understands the relationships between files, and makes coordinated changes across your codebase. It monitors linter and compiler errors as it works, fixing issues like missing imports, type mismatches, and syntax errors before you even see them. In VS Code and JetBrains, every edit shows up as a diff you can review, modify, or revert. All changes are tracked with checkpoints, so you can easily undo the agent's work.
