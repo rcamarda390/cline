@@ -137,7 +137,7 @@ npm install @cline/sdk
 
 ## 4.0.12 Prompt-Patch Enhancement Blog
 
-This fork preserves the Cline 4.0.12 VS Code deployment line for environments that depend on VS Code 1.98.2, while adding targeted provider, reliability, air-gap, and build improvements. The patched extension is distributed as a numbered `4.0.12-prompt-patch.N` VSIX and is not published to the Marketplace.
+This fork preserves the Cline 4.0.12 VS Code deployment line for environments that depend on VS Code 1.98.2, while adding targeted provider, reliability, air-gap, and build improvements. The patched extension is distributed as a numbered `4.0.13-patched-vN` VSIX (current: `4.0.13-patched-v14`) and is not published to the Marketplace.
 
 ### Provider and model fixes
 

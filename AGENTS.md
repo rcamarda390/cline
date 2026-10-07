@@ -1,11 +1,11 @@
 # Deployment constraint
 
-This fork builds the Cline **4.0.12** patch line for an air-gapped deployment on
+This fork builds the Cline **4.0.13** patch line for an air-gapped deployment on
 **VS Code 1.98.2**. Do not merge newer upstream releases onto `main`, raise the
 extension's VS Code engine requirement, or change the compatibility test target
 without explicit approval. Backport individual fixes instead.
 
-Use `.github/workflows/build-v4.0.12-prompt-patch.yml` to produce the deployment
+Use `.github/workflows/build-v4.0.13-patched.yml` to produce the deployment
 VSIX. Keep its patch version, the extension manifest, and package lock in sync.
 Run compatibility tests on VS Code 1.98.2, not the moving `stable` release.
 
