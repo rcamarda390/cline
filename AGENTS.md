@@ -7,6 +7,8 @@ without explicit approval. Backport individual fixes instead.
 
 Use `.github/workflows/build-v4.0.13-patched.yml` to produce the deployment
 VSIX. Keep its patch version, the extension manifest, and package lock in sync.
+Bump the `-vN` suffix in every PR that merges to `main` (each merge triggers a
+build, and consumers detect updates by version change).
 Run compatibility tests on VS Code 1.98.2, not the moving `stable` release.
 
 The previous 4.1.16 main is preserved at

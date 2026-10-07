@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PATCH_VERSION: 4.0.13-patched-v14
+  PATCH_VERSION: 4.0.13-patched-v15
 jobs:
   build-vsix:
     runs-on: ubuntu-latest
