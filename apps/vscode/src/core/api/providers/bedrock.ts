@@ -363,6 +363,14 @@ export class AwsBedrockHandler implements ApiHandler {
 	 * For custom models, returns the raw model ID without any encoding.
 	 */
 	async getModelId(): Promise<string> {
+		// GovCloud serves Claude models only through the us-gov. inference profile, never the bare ID
+		if (
+			!this.options.awsBedrockCustomSelected &&
+			this.getRegion().startsWith("us-gov-") &&
+			this.getModel().id.startsWith("anthropic.")
+		) {
+			return `us-gov.${this.getModel().id}`
+		}
 		if (!this.options.awsBedrockCustomSelected && this.options.awsUseCrossRegionInference) {
 			// GovCloud has no global profile; route through us-gov. instead
 			if (

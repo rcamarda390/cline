@@ -1141,6 +1141,18 @@ describe("AwsBedrockHandler", () => {
 			}
 		})
 
+		it("should apply GovCloud prefix to Claude 5.5 models without the cross-region toggle", async () => {
+			const govHandler = new AwsBedrockHandler({
+				...mockOptions,
+				awsUseCrossRegionInference: false,
+				apiModelId: "anthropic.claude-sonnet-5-5",
+				awsRegion: "us-gov-west-1",
+			})
+
+			const modelId = await govHandler.getModelId()
+			modelId.should.equal("us-gov.anthropic.claude-sonnet-5-5")
+		})
+
 		it("should not use global inference for GovCloud Claude 5.5 models", async () => {
 			const govHandler = new AwsBedrockHandler({
 				...mockOptions,
