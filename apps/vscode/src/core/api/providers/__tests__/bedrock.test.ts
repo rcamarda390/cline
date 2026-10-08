@@ -1127,6 +1127,45 @@ describe("AwsBedrockHandler", () => {
 			modelId.should.equal("us-gov.nvidia.nemotron-super-3-120b")
 		})
 
+		it("should apply GovCloud geo inference prefix for Claude 5.5 models", async () => {
+			for (const apiModelId of ["anthropic.claude-sonnet-5-5", "anthropic.claude-haiku-5-5"]) {
+				const govHandler = new AwsBedrockHandler({
+					...mockOptions,
+					awsUseCrossRegionInference: true,
+					apiModelId,
+					awsRegion: "us-gov-west-1",
+				})
+
+				const modelId = await govHandler.getModelId()
+				modelId.should.equal(`us-gov.${apiModelId}`)
+			}
+		})
+
+		it("should apply GovCloud prefix to Claude 5.5 models without the cross-region toggle", async () => {
+			const govHandler = new AwsBedrockHandler({
+				...mockOptions,
+				awsUseCrossRegionInference: false,
+				apiModelId: "anthropic.claude-sonnet-5-5",
+				awsRegion: "us-gov-west-1",
+			})
+
+			const modelId = await govHandler.getModelId()
+			modelId.should.equal("us-gov.anthropic.claude-sonnet-5-5")
+		})
+
+		it("should not use global inference for GovCloud Claude 5.5 models", async () => {
+			const govHandler = new AwsBedrockHandler({
+				...mockOptions,
+				awsUseCrossRegionInference: true,
+				awsUseGlobalInference: true,
+				apiModelId: "anthropic.claude-sonnet-5-5",
+				awsRegion: "us-gov-west-1",
+			})
+
+			const modelId = await govHandler.getModelId()
+			modelId.should.equal("us-gov.anthropic.claude-sonnet-5-5")
+		})
+
 		it("should apply EU cross-region prefix", async () => {
 			const euOptions: AwsBedrockHandlerOptions = {
 				...mockOptions,

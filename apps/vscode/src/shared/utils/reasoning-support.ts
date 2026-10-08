@@ -16,6 +16,7 @@ export function isClaudeAdaptiveThinkingModel(modelId?: string): boolean {
 	const adaptiveVersions = ["4-6", "4.6", "4-7", "4.7", "4-8", "4.8"]
 	return (
 		id.includes("claude-fable-5") ||
+		id.includes("claude-haiku-5") ||
 		id.includes("claude-sonnet-5") ||
 		id.includes("claude-5-sonnet") ||
 		id.includes("claude-opus-5") ||
