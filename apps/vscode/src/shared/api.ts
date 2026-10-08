@@ -185,17 +185,17 @@ export const anthropicDefaultModelId: AnthropicModelId = "claude-sonnet-5"
 export const ANTHROPIC_MIN_THINKING_BUDGET = 1_024
 export const ANTHROPIC_MAX_THINKING_BUDGET = 6_000
 export const anthropicModels = {
-	// ponytail: Haiku 5.5 and Sonnet 5.5 prices are OpenRouter list prices (AWS price not confirmed). Verify and update.
+	// Rates are the internal GovCloud rates the team pays (supplied by user, not checked against a public price list). The 1h cache write rate is not stored (no field).
 	"claude-haiku-5-5": {
 		maxTokens: 128_000,
 		contextWindow: 1_000_000,
 		supportsImages: true,
 		supportsPromptCache: true,
 		supportsReasoning: true,
-		inputPrice: 0.1,
-		outputPrice: 0.5,
-		cacheWritesPrice: 0.125,
-		cacheReadsPrice: 0.01,
+		inputPrice: 0.12,
+		outputPrice: 0.6,
+		cacheWritesPrice: 0.15,
+		cacheReadsPrice: 0.012,
 	},
 	"claude-sonnet-5-5": {
 		maxTokens: 128_000,
@@ -203,10 +203,10 @@ export const anthropicModels = {
 		supportsImages: true,
 		supportsPromptCache: true,
 		supportsReasoning: true,
-		inputPrice: 2.0,
-		outputPrice: 10.0,
-		cacheWritesPrice: 2.5,
-		cacheReadsPrice: 0.1,
+		inputPrice: 2.4,
+		outputPrice: 12,
+		cacheWritesPrice: 3,
+		cacheReadsPrice: 0.12,
 	},
 	"claude-sonnet-5-5:1m": {
 		maxTokens: 128_000,
@@ -214,10 +214,10 @@ export const anthropicModels = {
 		supportsImages: true,
 		supportsPromptCache: true,
 		supportsReasoning: true,
-		inputPrice: 2.0,
-		outputPrice: 10.0,
-		cacheWritesPrice: 2.5,
-		cacheReadsPrice: 0.1,
+		inputPrice: 2.4,
+		outputPrice: 12,
+		cacheWritesPrice: 3,
+		cacheReadsPrice: 0.12,
 	},
 	"claude-sonnet-5": {
 		maxTokens: 128_000,
@@ -1175,7 +1175,7 @@ export const bedrockModels = {
 		cacheWritesPrice: 5,
 		cacheReadsPrice: 0.2,
 	},
-	// GovCloud (us-gov-west-1) rates, AWS GovCloud pricing supplied by user
+	// Rates are the internal GovCloud rates the team pays (supplied by user, not checked against a public price list). The 1h cache write rate is not stored (no field).
 	"anthropic.claude-sonnet-5-5": {
 		maxTokens: 128000,
 		contextWindow: 200000,
