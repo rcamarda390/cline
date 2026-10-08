@@ -40,7 +40,10 @@ describe("disk - hooks functionality", () => {
 		}
 	})
 
-	describe("getWorkspaceHooksDirs", () => {
+	describe("getWorkspaceHooksDirs", function () {
+		// Windows CI disk I/O can exceed the 2s default; a timed-out test resumes after afterEach and leaves its sinon stub wrapped, failing the rest of the suite.
+		this.timeout(10000)
+
 		it("should return empty array when no workspace roots exist", async () => {
 			sandbox.stub(StateManager, "get").returns({
 				getGlobalStateKey: () => undefined,
