@@ -188,7 +188,7 @@ export const anthropicModels = {
 	// Rates are the internal GovCloud rates the team pays (supplied by user, not checked against a public price list). The 1h cache write rate is not stored (no field).
 	"claude-haiku-5-5": {
 		maxTokens: 128_000,
-		contextWindow: 1_000_000,
+		contextWindow: 200_000,
 		supportsImages: true,
 		supportsPromptCache: true,
 		supportsReasoning: true,
@@ -1202,7 +1202,7 @@ export const bedrockModels = {
 	},
 	"anthropic.claude-haiku-5-5": {
 		maxTokens: 128000,
-		contextWindow: 1000000,
+		contextWindow: 200000,
 		supportsImages: true,
 		supportsPromptCache: true,
 		supportsReasoning: true,
