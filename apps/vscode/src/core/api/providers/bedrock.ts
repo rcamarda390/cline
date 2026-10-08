@@ -364,7 +364,12 @@ export class AwsBedrockHandler implements ApiHandler {
 	 */
 	async getModelId(): Promise<string> {
 		if (!this.options.awsBedrockCustomSelected && this.options.awsUseCrossRegionInference) {
-			if (this.getModel().info.supportsGlobalEndpoint && this.options.awsUseGlobalInference) {
+			// GovCloud has no global profile; route through us-gov. instead
+			if (
+				this.getModel().info.supportsGlobalEndpoint &&
+				this.options.awsUseGlobalInference &&
+				!this.getRegion().startsWith("us-gov-")
+			) {
 				return `global.${this.getModel().id}`
 			}
 			const region = this.getRegion()

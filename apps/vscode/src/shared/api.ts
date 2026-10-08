@@ -185,6 +185,40 @@ export const anthropicDefaultModelId: AnthropicModelId = "claude-sonnet-5"
 export const ANTHROPIC_MIN_THINKING_BUDGET = 1_024
 export const ANTHROPIC_MAX_THINKING_BUDGET = 6_000
 export const anthropicModels = {
+	// ponytail: Haiku 5.5 and Sonnet 5.5 prices are OpenRouter list prices (AWS price not confirmed). Verify and update.
+	"claude-haiku-5-5": {
+		maxTokens: 128_000,
+		contextWindow: 1_000_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		inputPrice: 0.1,
+		outputPrice: 0.5,
+		cacheWritesPrice: 0.125,
+		cacheReadsPrice: 0.01,
+	},
+	"claude-sonnet-5-5": {
+		maxTokens: 128_000,
+		contextWindow: 200_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		inputPrice: 2.0,
+		outputPrice: 10.0,
+		cacheWritesPrice: 2.5,
+		cacheReadsPrice: 0.1,
+	},
+	"claude-sonnet-5-5:1m": {
+		maxTokens: 128_000,
+		contextWindow: 1_000_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		inputPrice: 2.0,
+		outputPrice: 10.0,
+		cacheWritesPrice: 2.5,
+		cacheReadsPrice: 0.1,
+	},
 	"claude-sonnet-5": {
 		maxTokens: 128_000,
 		contextWindow: 200_000,
@@ -1143,6 +1177,18 @@ export const bedrockModels = {
 	},
 	"anthropic.claude-sonnet-5-5": {
 		maxTokens: 128000,
+		contextWindow: 200000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		supportsGlobalEndpoint: true,
+		inputPrice: 2,
+		outputPrice: 10,
+		cacheWritesPrice: 2.5,
+		cacheReadsPrice: 0.1,
+	},
+	"anthropic.claude-sonnet-5-5:1m": {
+		maxTokens: 128000,
 		contextWindow: 1000000,
 		supportsImages: true,
 		supportsPromptCache: true,
@@ -1151,7 +1197,20 @@ export const bedrockModels = {
 		inputPrice: 2,
 		outputPrice: 10,
 		cacheWritesPrice: 2.5,
-		cacheReadsPrice: 0.2,
+		cacheReadsPrice: 0.1,
+	},
+	// ponytail: Haiku 5.5 prices are OpenRouter list prices (AWS Marketplace price not confirmed). Verify and update.
+	"anthropic.claude-haiku-5-5": {
+		maxTokens: 128000,
+		contextWindow: 1000000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		supportsGlobalEndpoint: true,
+		inputPrice: 0.1,
+		outputPrice: 0.5,
+		cacheWritesPrice: 0.125,
+		cacheReadsPrice: 0.01,
 	},
 	"nvidia.nemotron-nano-12b-v2": {
 		maxTokens: 8192,
