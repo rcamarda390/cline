@@ -343,14 +343,19 @@ export class E2ETestHelper {
  * - Configures VS Code with disabled updates, workspace trust, and welcome screens
  */
 export const e2e = test
-	.extend<{ server: ClineApiServerMock | null }>({
-		server: async ({}, use) => {
-			// Start server if it doesn't exist
-			if (!ClineApiServerMock.globalSharedServer) {
-				await ClineApiServerMock.startGlobalServer()
-			}
-			await use(ClineApiServerMock.globalSharedServer)
-		},
+	.extend<{}, { server: ClineApiServerMock | null }>({
+		// Worker-scoped and stopped on teardown: an open listening socket keeps the Playwright worker alive past its teardown timeout.
+		server: [
+			async ({}, use) => {
+				// Start server if it doesn't exist
+				if (!ClineApiServerMock.globalSharedServer) {
+					await ClineApiServerMock.startGlobalServer()
+				}
+				await use(ClineApiServerMock.globalSharedServer)
+				await ClineApiServerMock.stopGlobalServer()
+			},
+			{ scope: "worker" },
+		],
 	})
 	.extend<E2ETestDirectories>({
 		workspaceDir: async ({}, use) => {
