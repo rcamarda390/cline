@@ -197,6 +197,17 @@ export const anthropicModels = {
 		cacheWritesPrice: 0.15,
 		cacheReadsPrice: 0.012,
 	},
+	"claude-haiku-5-5:1m": {
+		maxTokens: 128_000,
+		contextWindow: 1_000_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		inputPrice: 0.12,
+		outputPrice: 0.6,
+		cacheWritesPrice: 0.15,
+		cacheReadsPrice: 0.012,
+	},
 	"claude-sonnet-5-5": {
 		maxTokens: 128_000,
 		contextWindow: 200_000,
