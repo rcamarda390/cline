@@ -893,6 +893,18 @@ export const bedrockModels = {
 		cacheWritesPrice: 0.15,
 		cacheReadsPrice: 0.012,
 	},
+	"anthropic.claude-haiku-5-5:1m": {
+		maxTokens: 128000,
+		contextWindow: 1000000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		supportsGlobalEndpoint: true,
+		inputPrice: 0.12,
+		outputPrice: 0.6,
+		cacheWritesPrice: 0.15,
+		cacheReadsPrice: 0.012,
+	},
 	"anthropic.claude-opus-4-1-20250805-v1:0": {
 		maxTokens: 32_000,
 		contextWindow: 200_000,
