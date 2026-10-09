@@ -419,6 +419,36 @@ describe("AwsBedrockHandler", () => {
 		})
 	})
 
+	describe("Claude Haiku 5.5 1M context", () => {
+		it("should send the 1M beta with the stripped model id", async () => {
+			const handler = new AwsBedrockHandler({
+				...mockOptions,
+				apiModelId: "anthropic.claude-haiku-5-5:1m",
+				awsUseCrossRegionInference: false,
+			})
+			const rawModelId = await handler.getModelId()
+			rawModelId.should.equal("anthropic.claude-haiku-5-5:1m")
+			bedrockModels["anthropic.claude-haiku-5-5:1m"].contextWindow.should.equal(1_000_000)
+
+			let capturedCommand: any
+			handler["executeConverseStream"] = async function* (command: any) {
+				capturedCommand = command
+			}
+			const generator = handler["createAnthropicMessage"](
+				"system",
+				[],
+				"anthropic.claude-haiku-5-5",
+				handler.getModel(),
+				true,
+			)
+			for await (const _ of generator) {
+				// drain
+			}
+			capturedCommand.input.modelId.should.equal("anthropic.claude-haiku-5-5")
+			capturedCommand.input.additionalModelRequestFields.anthropic_beta.should.deepEqual(["context-1m-2025-08-07"])
+		})
+	})
+
 	describe("executeConverseStream", () => {
 		let handler: AwsBedrockHandler
 

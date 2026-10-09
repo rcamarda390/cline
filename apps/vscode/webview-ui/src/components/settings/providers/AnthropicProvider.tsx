@@ -92,6 +92,14 @@ export const AnthropicProvider = ({ showModelOptions, isPopup, currentMode }: An
 						selectedModelId={selectedModelId}
 					/>
 
+					{/* Context window switcher for Claude Haiku 5.5 */}
+					<ContextWindowSwitcher
+						base1mModelId={`claude-haiku-5-5${CLAUDE_SONNET_1M_SUFFIX}`}
+						base200kModelId="claude-haiku-5-5"
+						onModelChange={handleModelChange}
+						selectedModelId={selectedModelId}
+					/>
+
 					{/* Context window switcher for Claude Sonnet 5 */}
 					<ContextWindowSwitcher
 						base1mModelId={`claude-sonnet-5${CLAUDE_SONNET_1M_SUFFIX}`}
