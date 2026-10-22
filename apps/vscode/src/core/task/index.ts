@@ -1144,7 +1144,7 @@ export class Task {
 		const enableParallelSetting = this.stateManager.getGlobalSettingsKey(
 			"enableParallelToolCalling",
 		);
-		const providerInfo = this.getCurrentProviderInfo();
+		const providerInfo = this.getMatchingProviderInfo();
 		return isParallelToolCallingEnabled(enableParallelSetting, providerInfo);
 	}
 
@@ -2106,11 +2106,20 @@ export class Task {
 		) as string;
 		const providerId = configuredProviderId;
 		const customPrompt = this.stateManager.getGlobalSettingsKey("customPrompt");
+		return { model, providerId, customPrompt, mode };
+	}
+
+	/** Provider info for prompt/tool matching only; metadata keeps the real (ARN) model id. */
+	private getMatchingProviderInfo(): ApiProviderInfo {
+		const info = this.getCurrentProviderInfo();
 		return {
-			model: withBedrockBaseModelId(model, providerId, mode, apiConfig),
-			providerId,
-			customPrompt,
-			mode,
+			...info,
+			model: withBedrockBaseModelId(
+				info.model,
+				info.providerId,
+				info.mode,
+				this.stateManager.getApiConfiguration(),
+			),
 		};
 	}
 
@@ -2385,7 +2394,7 @@ export class Task {
 		const promptContext: SystemPromptContext = {
 			cwd: this.cwd,
 			ide,
-			providerInfo,
+			providerInfo: this.getMatchingProviderInfo(),
 			editorTabs,
 			supportsBrowserUse,
 			mcpHub: this.mcpHub,
@@ -4101,7 +4110,7 @@ export class Task {
 					ulid,
 					focusChainSettings,
 					useNativeToolCalls,
-					providerInfo,
+					this.getMatchingProviderInfo(),
 					mcpPromptFetcher,
 				);
 

@@ -371,12 +371,7 @@ export class SubagentRunner {
 			) as string;
 			const providerInfo = {
 				providerId,
-				model: withBedrockBaseModelId(
-					api.getModel(),
-					providerId,
-					mode,
-					apiConfiguration,
-				),
+				model: api.getModel(),
 				mode,
 				customPrompt:
 					this.baseConfig.services.stateManager.getGlobalSettingsKey(
@@ -433,7 +428,15 @@ export class SubagentRunner {
 					: availableSkills;
 
 			const context: SystemPromptContext = {
-				providerInfo,
+				providerInfo: {
+					...providerInfo,
+					model: withBedrockBaseModelId(
+						providerInfo.model,
+						providerId,
+						mode,
+						apiConfiguration,
+					),
+				},
 				cwd: this.baseConfig.cwd,
 				ide: host?.platform || "Unknown",
 				skills,
