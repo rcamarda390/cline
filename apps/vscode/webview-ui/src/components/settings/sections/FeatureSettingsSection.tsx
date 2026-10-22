@@ -423,8 +423,8 @@ const FeatureSettingsSection = ({ renderSectionHeader }: FeatureSettingsSectionP
 									Optional MCP Tools{planActSeparateModelsSetting ? ` (${mode === "plan" ? "Plan" : "Act"} mode)` : ""}
 								</Label>
 								<p className="text-xs text-muted-foreground">
-									Controls when a large MCP server's tools (e.g. one exposing 100+ tools) are injected into the
-									model's context. Dynamic modes keep them hidden until a skill declaring them is activated.
+									Controls when MCP tools are injected into the model's context. A server that any enabled skill
+									references is managed: in Dynamic modes its tools stay hidden until an active skill allows them.
 								</p>
 								<Select onValueChange={handleMcpToolAvailabilityChange} value={effectiveMcpToolAvailability}>
 									<SelectTrigger className="w-full">

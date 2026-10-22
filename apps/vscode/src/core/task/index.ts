@@ -1404,7 +1404,7 @@ export class Task {
 	/**
 	 * Reconstructs the active skill's MCP tool policy on resume from the snapshot persisted at
 	 * activation time (see UseSkillToolHandler), then revalidates it against current state: if
-	 * the skill no longer exists or is disabled, fail closed to baseline-only for this resumed
+	 * the skill no longer exists or is disabled, fail closed to baseline servers only for this resumed
 	 * task rather than trusting a stale snapshot. A skill that still exists is trusted as-is —
 	 * its own allow/deny patterns don't need re-validating against live MCP server state here,
 	 * since the effective-tool resolver already re-checks server/tool existence on every use.
@@ -1437,7 +1437,7 @@ export class Task {
 			} else {
 				Logger.warn(
 					`Resumed task ${this.taskId}: skill "${snapshot.skillName}" is no longer available; ` +
-						`falling back to baseline MCP tools for this task.`,
+						`falling back to baseline MCP servers for this task.`,
 				);
 			}
 		} catch (error) {
@@ -2366,7 +2366,7 @@ export class Task {
 		});
 
 		// Union of every enabled skill's MCP tool declarations, used only to classify which
-		// MCP tools are baseline (always on) vs. dynamically managed — see mcpToolPolicy.ts.
+		// MCP servers are baseline (always on) vs. managed by a skill — see mcpToolPolicy.ts.
 		const allDeclaredMcpToolPatterns = availableSkills.flatMap((skill) => {
 			const declarations = getSkillMcpToolDeclarations(skill);
 			return [...declarations.allowed, ...declarations.disallowed];

@@ -129,7 +129,7 @@ export interface SystemPromptContext {
 	readonly terminalExecutionMode?: "vscodeTerminal" | "backgroundExec"
 	/** Dynamic MCP tool availability — see src/shared/mcpToolPolicy.ts. */
 	readonly mcpToolAvailability?: McpToolAvailability
-	/** Union of allowed+disallowed MCP tool patterns across ALL enabled skills (baseline classification input). */
+	/** Union of allowed+disallowed MCP tool patterns across ALL enabled skills (server classification input). */
 	readonly allDeclaredMcpToolPatterns?: readonly McpToolPattern[]
 	/** The currently active skill's own MCP tool policy, frozen at activation. */
 	readonly activeSkillMcpPolicy?: ActiveSkillMcpPolicy
