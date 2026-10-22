@@ -5,8 +5,9 @@ import type { McpServer } from "./mcp"
  *
  * Goal: large MCP servers (e.g. an Atlassian server exposing 100+ tools) don't have to be
  * injected into every request's tool schema/prompt just because they're enabled. A skill can
- * declare which of a server's tools it needs; until that skill is active, only "baseline" tools
- * (tools no enabled skill has ever declared) are exposed.
+ * declare which of a server's tools it needs. Once ANY enabled skill references a server, that
+ * server is "managed": until a skill that allows a tool is active, the tool is not exposed.
+ * Servers no enabled skill references stay "baseline" and are exposed in full.
  *
  * This is visibility filtering only, not an authorization boundary — MCP server `disabled`,
  * tool `autoApprove`, and the approval flow remain the real gatekeepers.
@@ -99,22 +100,13 @@ export function isToolInEffectiveSet(effective: EffectiveMcpToolSet, serverName:
 }
 
 /**
- * Per-tool baseline classification (see design decision): a tool is "baseline" (always exposed
- * regardless of skill activation) unless SOME enabled skill's allow/deny declarations reference
- * it specifically. This is deliberately per-tool, not per-server — one skill declaring
- * `agentmemory:search_notes` must not pull the rest of `agentmemory`'s tools out of baseline.
- */
-function isBaselineTool(allDeclaredPatterns: readonly McpToolPattern[], serverName: string, toolName: string): boolean {
-	return !matchesAny(allDeclaredPatterns, serverName, toolName)
-}
-
-/**
  * Resolves the effective (model-visible) MCP tool set.
  *
  * @param servers Enabled MCP servers with their current tool lists (already `disabled`-filtered).
  * @param availability The Always On / Always Off / Dynamic setting in effect for the active mode.
  * @param allDeclaredPatterns Union of allowed+disallowed patterns across ALL enabled skills
- *   (not just the active one) — used only to classify which tools are baseline vs dynamic-managed.
+ *   (not just the active one). Used only to classify servers: a server named by any pattern
+ *   here is managed; the tool-name part of a pattern does not matter for classification.
  * @param activeSkill The currently active skill's own policy, if a skill is active this task.
  */
 export function resolveEffectiveMcpTools(
@@ -125,12 +117,18 @@ export function resolveEffectiveMcpTools(
 ): EffectiveMcpToolSet {
 	const result: EffectiveMcpToolSet = new Map()
 
+	// Server-level classification: a server referenced by ANY enabled skill is managed, even if
+	// its pattern matches no current tool. Exact server-key match only. Unmanaged servers are
+	// baseline and fully exposed in every mode.
+	const managedServers = new Set(allDeclaredPatterns.map((p) => p.server))
+
 	// Compatible mode's broad fallback applies only when the active skill declared nothing at
 	// all (a legacy/unmigrated skill) — not when it explicitly declared an empty allow list.
 	const activeSkillHasNoDeclarations =
 		!activeSkill || (!activeSkill.allowedDeclared && !activeSkill.disallowedDeclared)
 
 	for (const server of servers) {
+		const baseline = !managedServers.has(server.serverName)
 		const exposedTools = new Set<string>()
 
 		for (const toolName of server.toolNames) {
@@ -139,7 +137,7 @@ export function resolveEffectiveMcpTools(
 				continue // deny always wins, in every mode
 			}
 
-			const baseline = isBaselineTool(allDeclaredPatterns, server.serverName, toolName)
+			// Tool selection inside a managed server stays per tool: only the active skill's allows count.
 			const allowedByActiveSkill = activeSkill ? matchesAny(activeSkill.allowed, server.serverName, toolName) : false
 
 			let include: boolean

@@ -1,8 +1,8 @@
 import type { McpToolPattern } from "./mcpToolPolicy"
 
 /**
- * A skill's parsed MCP tool declarations, used both for baseline classification (does ANY
- * enabled skill reference this tool) and, once this skill is active, for its own effective set.
+ * A skill's parsed MCP tool declarations, used both for server classification (does ANY
+ * enabled skill reference this server) and, once this skill is active, for its own effective set.
  */
 export interface SkillMcpToolDeclarations {
 	allowed: McpToolPattern[]
@@ -16,7 +16,7 @@ export interface SkillMcpToolDeclarations {
  * Skill metadata loaded at startup for discovery.
  * Only name, description, and MCP tool declarations are parsed from frontmatter initially —
  * the declarations are cheap (frontmatter is already parsed for name/description) and are
- * needed up front so baseline MCP tool classification works before any skill is activated.
+ * needed up front so MCP server classification works before any skill is activated.
  *
  * `mcpTools` is optional (rather than defaulted at every call site) so existing code — and
  * tests — constructing a bare `{ name, description, path, source }` keeps working; treat a
