@@ -154,7 +154,8 @@
 							"core-workflows/checkpoints",
 							"cli/agent-teams",
 							"features/subagents",
-							"features/optional-mcp-tools"
+							"features/optional-mcp-tools",
+							"features/optional-mcp-tools-how-it-works"
 						]
 					},
 					{
