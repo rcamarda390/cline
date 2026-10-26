@@ -1073,6 +1073,7 @@ export class Controller {
 			lazyTeammateModeEnabled,
 			showFeatureTips,
 			showUserMessageTimestamps: this.stateManager.getGlobalSettingsKey("showUserMessageTimestamps"),
+			showJournalIdOnCopy: this.stateManager.getGlobalSettingsKey("showJournalIdOnCopy"),
 			banners,
 			welcomeBanners,
 			openAiCodexIsAuthenticated,

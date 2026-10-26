@@ -2,7 +2,9 @@ import { NotepadTextIcon } from "lucide-react"
 import { memo } from "react"
 import { CopyButton } from "@/components/common/CopyButton"
 import MarkdownBlock from "@/components/common/MarkdownBlock"
+import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
+import { withJournalId } from "@/utils/format"
 
 interface PlanCompletionOutputProps {
 	text: string
@@ -15,6 +17,7 @@ interface PlanCompletionOutputProps {
  * Uses grayscale colors to distinguish from Act Mode's green success theme
  */
 const PlanCompletionOutputRow = memo(({ text, headClassNames }: PlanCompletionOutputProps) => {
+	const { currentTaskItem, showJournalIdOnCopy } = useExtensionState()
 	return (
 		<div className="rounded-sm border border-description/50 overflow-visible bg-code p-2 pt-3">
 			{/* Header */}
@@ -23,7 +26,10 @@ const PlanCompletionOutputRow = memo(({ text, headClassNames }: PlanCompletionOu
 					<NotepadTextIcon className="size-2" />
 					<span className="text-foreground font-bold">Plan Created</span>
 				</div>
-				<CopyButton ariaLabel="Copy response" textToCopy={text || ""} />
+				<CopyButton
+					ariaLabel="Copy response"
+					onCopy={() => withJournalId(text, currentTaskItem?.id, showJournalIdOnCopy)}
+				/>
 			</div>
 
 			{/* Content */}
