@@ -156,3 +156,30 @@ describe("rule loading with symlinked rule files", () => {
 		}
 	})
 })
+
+describe("disabled rule toggles", () => {
+	it("keeps a disabled rule out of instructions across reloads and content edits", async () => {
+		const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "cline-rules-toggle-test-"))
+		try {
+			const rulesDir = path.join(tmp, ".clinerules")
+			const rule = path.join(rulesDir, "off.md")
+			await fs.mkdir(rulesDir, { recursive: true })
+			await fs.writeFile(rule, "original text")
+
+			const persisted = await synchronizeRuleToggles(rulesDir, { [rule]: false }, "")
+			expect(persisted[rule]).to.equal(false)
+
+			const files = await readDirectoryRecursive(rulesDir, "")
+			const before = await getRuleFilesTotalContentWithMetadata(files, rulesDir, persisted)
+			expect(before.content).to.not.contain("original text")
+
+			await fs.writeFile(rule, "edited text")
+			const reloaded = await synchronizeRuleToggles(rulesDir, persisted, "")
+			const after = await getRuleFilesTotalContentWithMetadata(files, rulesDir, reloaded)
+			expect(reloaded[rule]).to.equal(false)
+			expect(after.content).to.not.contain("edited text")
+		} finally {
+			await fs.rm(tmp, { recursive: true, force: true })
+		}
+	})
+})
