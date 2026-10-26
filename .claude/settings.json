@@ -1,14 +1,25 @@
 {
-	"hooks": {
-		"SessionStart": [
-			{
-				"hooks": [
-					{
-						"type": "command",
-						"command": "$CLAUDE_PROJECT_DIR/.claude/hooks/claude-code-for-web-setup.sh"
-					}
-				]
-			}
-		]
-	}
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/claude-code-for-web-setup.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "extraKnownMarketplaces": {
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "ponytail@ponytail": true
+  }
 }
