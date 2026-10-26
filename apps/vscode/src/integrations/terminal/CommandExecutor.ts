@@ -113,7 +113,9 @@ export class CommandExecutor {
 
 		// Get terminal and run command
 		const terminalInfo = await manager.getOrCreateTerminal(this.cwd)
-		terminalInfo.terminal.show()
+		// Reveal without taking keyboard focus: focusing the terminal mid-command would
+		// send the user's in-progress chat input to the shell.
+		terminalInfo.terminal.show(true)
 		const process = manager.runCommand(terminalInfo, command)
 
 		// Reset cancellation flag and track the current process

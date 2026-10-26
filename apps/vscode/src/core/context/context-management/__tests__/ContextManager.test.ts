@@ -445,6 +445,13 @@ describe("ContextManager", () => {
 			expect(result).to.equal(true)
 		})
 
+		it("does not compact when the model context window is unknown", () => {
+			const api = { getModel: () => ({ id: "custom-model", info: {} }) } as any
+			const clineMessages: ClineMessage[] = [createApiReqMessage({ tokensIn: 190_000, tokensOut: 5_000 })]
+
+			expect(contextManager.shouldCompactContextWindow(clineMessages, api, 0, 0.75)).to.equal(false)
+		})
+
 		it("falls back to maxAllowedSize when threshold is undefined", () => {
 			const api = createMockApi(200_000)
 			// 155K tokens — above 0.75 threshold (150K) but below maxAllowedSize (160K)

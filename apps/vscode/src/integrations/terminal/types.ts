@@ -123,8 +123,8 @@ export interface ITerminal {
 	}
 	/** Send text to the terminal */
 	sendText(text: string, addNewLine?: boolean): void
-	/** Show the terminal */
-	show(): void
+	/** Show the terminal; pass true to reveal it without taking keyboard focus */
+	show(preserveFocus?: boolean): void
 	/** Hide the terminal */
 	hide(): void
 	/** Dispose of the terminal */

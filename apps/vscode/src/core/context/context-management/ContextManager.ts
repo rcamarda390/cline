@@ -153,6 +153,12 @@ export class ContextManager {
 		previousApiReqIndex: number,
 		thresholdPercentage?: number,
 	): boolean {
+		// Unknown model limit: getContextWindowInfo would fall back to a guessed 128K window,
+		// which can compact a custom model on its first requests. Skip auto-compaction instead.
+		// ponytail: upgrade path is a user-set context window for custom models.
+		if (!api.getModel().info.contextWindow) {
+			return false
+		}
 		if (previousApiReqIndex >= 0) {
 			const previousRequestText = clineMessages[previousApiReqIndex]?.text
 			if (previousRequestText) {

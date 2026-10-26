@@ -444,6 +444,11 @@ export class Controller {
 
 				return true
 			}
+			// Task has not sent its first request yet: cancelling would drop the first prompt.
+			// The mode and API handler above already apply to that request.
+			if (this.task.taskState.apiRequestCount === 0) {
+				return false
+			}
 			this.cancelTask()
 			return false
 		}
