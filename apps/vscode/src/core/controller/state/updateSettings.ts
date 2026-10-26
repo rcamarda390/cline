@@ -380,6 +380,10 @@ export async function updateSettings(controller: Controller, request: UpdateSett
 			controller.stateManager.setGlobalState("showUserMessageTimestamps", request.showUserMessageTimestamps)
 		}
 
+		if (request.showJournalIdOnCopy !== undefined) {
+			controller.stateManager.setGlobalState("showJournalIdOnCopy", request.showJournalIdOnCopy)
+		}
+
 		// Post updated state to webview
 		await controller.postStateToWebview()
 

@@ -284,6 +284,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		lazyTeammateModeEnabled: false,
 		showFeatureTips: true,
 		showUserMessageTimestamps: true,
+		showJournalIdOnCopy: false,
 		globalSkillsToggles: {},
 		localSkillsToggles: {},
 

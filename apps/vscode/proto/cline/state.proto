@@ -297,6 +297,7 @@ message Settings {
   optional string plan_mode_mcp_tool_availability = 189;
   optional string act_mode_mcp_tool_availability = 190;
   optional bool show_user_message_timestamps = 191;
+  optional bool show_journal_id_on_copy = 192;
 }
 
 message State {
@@ -443,6 +444,7 @@ message UpdateSettingsRequest {
   optional string mcp_tool_availability = 44;
   optional string plan_mode_mcp_tool_availability = 45;
   optional string act_mode_mcp_tool_availability = 46;
+  optional bool show_journal_id_on_copy = 48;
   optional bool show_user_message_timestamps = 47;
 }
 

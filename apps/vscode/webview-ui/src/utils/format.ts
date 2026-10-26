@@ -74,3 +74,20 @@ export function formatSeconds(seconds?: number): string {
 
 	return `${mins}:${secs}`
 }
+
+/**
+ * Prepends a journal header to copied text so the source window and task are visible on paste.
+ * Uses the copy-time local wall clock with its UTC offset.
+ */
+export function withJournalId(text: string, taskId: string | undefined, enabled: boolean | undefined): string {
+	if (!enabled || !taskId) {
+		return text
+	}
+
+	const now = new Date()
+	const offset = -now.getTimezoneOffset()
+	const abs = Math.abs(offset)
+	const local = new Date(now.getTime() + offset * 60000).toISOString().slice(0, 16).replace("T", " ")
+	const tz = `UTC${offset < 0 ? "-" : "+"}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`
+	return `[src=ext | task=${taskId.slice(0, 8)} | ${local} ${tz}]\n${text}`
+}

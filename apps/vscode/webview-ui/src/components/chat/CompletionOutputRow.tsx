@@ -1,13 +1,15 @@
-import { memo } from "react"
-import { cn } from "@/lib/utils"
-import { MarkdownRow } from "./MarkdownRow"
 import { Int64Request } from "@shared/proto/cline/common"
 import { CheckIcon } from "lucide-react"
+import { memo } from "react"
 import { PLATFORM_CONFIG, PlatformType } from "@/config/platform.config"
+import { useExtensionState } from "@/context/ExtensionStateContext"
+import { cn } from "@/lib/utils"
 import { TaskServiceClient } from "@/services/grpc-client"
+import { withJournalId } from "@/utils/format"
 import { CopyButton } from "../common/CopyButton"
 import SuccessButton from "../common/SuccessButton"
 import { QuoteButtonState } from "./ChatRow"
+import { MarkdownRow } from "./MarkdownRow"
 import QuoteButton from "./QuoteButton"
 
 interface CompletionOutputRowProps {
@@ -36,6 +38,7 @@ export const CompletionOutputRow = memo(
 		messageTs,
 		handleQuoteClick,
 	}: CompletionOutputRowProps) => {
+		const { currentTaskItem, showJournalIdOnCopy } = useExtensionState()
 		return (
 			<div>
 				<div className="rounded-sm border border-success/20 overflow-visible bg-success/10 p-2 pt-3">
@@ -45,7 +48,11 @@ export const CompletionOutputRow = memo(
 							<CheckIcon className="size-3 text-success" />
 							<span className="text-success font-bold">Task Completed</span>
 						</div>
-						<CopyButton ariaLabel="Copy response" className="text-success" textToCopy={text} />
+						<CopyButton
+							ariaLabel="Copy response"
+							className="text-success"
+							onCopy={() => withJournalId(text, currentTaskItem?.id, showJournalIdOnCopy)}
+						/>
 					</div>
 					{/* Content */}
 					<div className="w-full relative border-t-1 border-description/20 rounded-b-sm">

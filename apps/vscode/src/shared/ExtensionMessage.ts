@@ -116,6 +116,7 @@ export interface ExtensionState {
 	lazyTeammateModeEnabled?: boolean
 	showFeatureTips?: boolean
 	showUserMessageTimestamps?: boolean
+	showJournalIdOnCopy?: boolean
 	banners?: BannerCardData[]
 	welcomeBanners?: BannerCardData[]
 	openAiCodexIsAuthenticated?: boolean

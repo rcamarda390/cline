@@ -10,7 +10,7 @@ interface GeneralSettingsSectionProps {
 }
 
 const GeneralSettingsSection = ({ renderSectionHeader }: GeneralSettingsSectionProps) => {
-	const { telemetrySetting, remoteConfigSettings, showUserMessageTimestamps } = useExtensionState()
+	const { telemetrySetting, remoteConfigSettings, showUserMessageTimestamps, showJournalIdOnCopy } = useExtensionState()
 
 	return (
 		<div>
@@ -21,6 +21,11 @@ const GeneralSettingsSection = ({ renderSectionHeader }: GeneralSettingsSectionP
 					checked={showUserMessageTimestamps !== false}
 					onChange={(e: any) => updateSetting("showUserMessageTimestamps", e.target.checked === true)}>
 					Show timestamp below my messages
+				</VSCodeCheckbox>
+				<VSCodeCheckbox
+					checked={showJournalIdOnCopy === true}
+					onChange={(e: any) => updateSetting("showJournalIdOnCopy", e.target.checked === true)}>
+					Include journal ID when copying
 				</VSCodeCheckbox>
 
 				<div className="mb-[5px]">
