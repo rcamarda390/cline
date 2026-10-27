@@ -10,7 +10,6 @@ import { normalizeApiConfiguration } from "@/components/settings/utils/providerU
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { useShowNavbar } from "@/context/PlatformContext"
 import { FileServiceClient, UiServiceClient } from "@/services/grpc-client"
-import { withJournalId } from "@/utils/format"
 import { Navbar } from "../menu/Navbar"
 import AutoApproveBar from "./auto-approve-menu/AutoApproveBar"
 // Import utilities and hooks from the new structure
@@ -55,8 +54,6 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 		currentFocusChainChecklist,
 		focusChainSettings,
 		hooksEnabled,
-		currentTaskItem,
-		showJournalIdOnCopy,
 	} = useExtensionState()
 	const isProdHostedApp = userInfo?.apiBaseUrl === "https://app.cline.bot"
 	const shouldShowQuickWins = isProdHostedApp && (!taskHistory || taskHistory.length < QUICK_WINS_HISTORY_THRESHOLD)
@@ -158,8 +155,7 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 
 					if (textToCopy !== null) {
 						try {
-							const journaled = withJournalId(textToCopy, currentTaskItem?.id, showJournalIdOnCopy)
-							FileServiceClient.copyToClipboard(StringRequest.create({ value: journaled })).catch((err) => {
+							FileServiceClient.copyToClipboard(StringRequest.create({ value: textToCopy })).catch((err) => {
 								console.error("Error copying to clipboard:", err)
 							})
 							e.preventDefault()
@@ -175,7 +171,7 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 		return () => {
 			document.removeEventListener("copy", handleCopy)
 		}
-	}, [currentTaskItem?.id, showJournalIdOnCopy])
+	}, [])
 	// Button state is now managed by useButtonState hook
 
 	// handleFocusChange is already provided by chatState

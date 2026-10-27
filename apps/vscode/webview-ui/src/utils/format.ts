@@ -79,8 +79,12 @@ export function formatSeconds(seconds?: number): string {
  * Prepends a journal header to copied text so the source window and task are visible on paste.
  * Uses the copy-time local wall clock with its UTC offset.
  */
-export function withJournalId(text: string, taskId: string | undefined, enabled: boolean | undefined): string {
-	if (!enabled || !taskId) {
+export function withJournalId(
+	text: string | undefined,
+	taskId: string | undefined,
+	enabled: boolean | undefined,
+): string | undefined {
+	if (!enabled || !taskId || !text) {
 		return text
 	}
 
