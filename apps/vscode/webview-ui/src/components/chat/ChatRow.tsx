@@ -49,6 +49,7 @@ import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
 import { FileServiceClient, UiServiceClient } from "@/services/grpc-client"
 import { findMatchingResourceOrTemplate, getMcpServerDisplayName } from "@/utils/mcp"
+import { withJournalId } from "@/utils/format"
 import CodeAccordian, { cleanPathPrefix } from "../common/CodeAccordian"
 import { CommandOutputContent, CommandOutputRow } from "./CommandOutputRow"
 import { CompletionOutputRow } from "./CompletionOutputRow"
@@ -160,6 +161,8 @@ export const ChatRowContent = memo(
 			vscodeTerminalExecutionMode,
 			clineMessages,
 			showFeatureTips,
+			currentTaskItem,
+			showJournalIdOnCopy,
 		} = useExtensionState()
 		const [seeNewChangesDisabled, setSeeNewChangesDisabled] = useState(false)
 		const [explainChangesDisabled, setExplainChangesDisabled] = useState(false)
@@ -883,7 +886,7 @@ export const ChatRowContent = memo(
 								onMouseUp={handleMouseUp}
 								position="bottom-right"
 								ref={contentRef}
-								textToCopy={message.text}>
+								onCopy={() => withJournalId(message.text, currentTaskItem?.id, showJournalIdOnCopy)}>
 								<div className="flex items-center">
 									<div className={cn("flex-1 min-w-0 pl-1")}>
 										<MarkdownRow markdown={message.text} showCursor={false} />
@@ -1222,7 +1225,7 @@ export const ChatRowContent = memo(
 									onMouseUp={handleMouseUp}
 									position="bottom-right"
 									ref={contentRef}
-									textToCopy={question}>
+									onCopy={() => withJournalId(question, currentTaskItem?.id, showJournalIdOnCopy)}>
 									<MarkdownRow markdown={question} />
 									{quoteButtonState.visible && (
 										<QuoteButton

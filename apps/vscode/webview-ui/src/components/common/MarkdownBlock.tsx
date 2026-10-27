@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
 import { FileServiceClient, StateServiceClient } from "@/services/grpc-client"
+import { withJournalId } from "@/utils/format"
 import { CopyButton } from "./CopyButton"
 import UnsafeImage from "./UnsafeImage"
 
@@ -313,6 +314,7 @@ const remarkPreventBoldFilenames = () => {
 
 const PreWithCopyButton = ({ children, ...preProps }: React.HTMLAttributes<HTMLPreElement>) => {
 	const preRef = useRef<HTMLPreElement>(null)
+	const { currentTaskItem, showJournalIdOnCopy } = useExtensionState()
 
 	const handleCopy = () => {
 		if (preRef.current) {
@@ -322,7 +324,7 @@ const PreWithCopyButton = ({ children, ...preProps }: React.HTMLAttributes<HTMLP
 			if (!textToCopy) {
 				return
 			}
-			return textToCopy
+			return withJournalId(textToCopy, currentTaskItem?.id, showJournalIdOnCopy)
 		}
 		return null
 	}
