@@ -19,5 +19,6 @@ ${skillsList}
 To use a skill:
 1. Match the user's request to a skill based on its description
 2. Call use_skill with the skill_name parameter set to the exact skill name
-3. Follow the instructions returned by the tool`
+3. Follow the instructions returned by the tool
+4. Load another skill if the task also matches it; avoid reloading one you already loaded`
 }

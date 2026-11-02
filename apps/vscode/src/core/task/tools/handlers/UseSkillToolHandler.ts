@@ -1,13 +1,12 @@
 import type { ToolUse } from "@core/assistant-message"
 import { discoverAvailableSkills, getSkillContent } from "@core/context/instructions/user-instructions/skills"
-import { getTaskMetadata, saveTaskMetadata } from "@core/storage/disk"
-import type { ActiveSkillMcpPolicy } from "@shared/mcpToolPolicy"
-import { resolveMcpToolAvailability } from "@shared/mcpToolPolicy"
+import { freezeSkillMcpPolicy, resolveMcpToolAvailability } from "@shared/mcpToolPolicy"
 import { getSkillMcpToolDeclarations, type SkillMetadata } from "@shared/skills"
 import { Logger } from "@/shared/services/Logger"
 import { telemetryService } from "@/services/telemetry"
 import { ClineDefaultTool } from "@/shared/tools"
 import type { ToolResponse } from "../../index"
+import { persistSkillMcpPolicyState } from "../../skillMcpPolicy"
 import type { IPartialBlockHandler, IToolHandler } from "../ToolExecutorCoordinator"
 import type { TaskConfig } from "../types/TaskConfig"
 import type { StronglyTypedUIHelpers } from "../types/UIHelpers"
@@ -37,13 +36,6 @@ export class UseSkillToolHandler implements IToolHandler, IPartialBlockHandler {
 		if (!skillName) {
 			config.taskState.consecutiveMistakeCount++
 			return `Error: Missing required parameter 'skill_name'. Please provide the name of the skill to activate.`
-		}
-
-		// A skill is already active for this task. Cline's own prompt tells the model not to
-		// call use_skill again, but if it does anyway, reject rather than silently replacing
-		// (or attempting to merge with) the already-active skill's MCP tool policy.
-		if (config.taskState.activeSkillMcpPolicy) {
-			return `Error: Skill "${config.taskState.activeSkillMcpPolicy.skillName}" is already active for this task. Only one skill may be active per task — continue using its instructions instead of activating another skill.`
 		}
 
 		// Discover skills on-demand (lazy loading)
@@ -108,30 +100,30 @@ export class UseSkillToolHandler implements IToolHandler, IPartialBlockHandler {
 ${skillContent.instructions}
 
 ---
-IMPORTANT: The skill is now loaded. Do NOT call use_skill again for this task. Simply follow the instructions above to complete the user's request.${skillDirNote}`
+This skill is loaded. Follow its relevant instructions.
+You may load another relevant skill when needed.
+Avoid repeatedly loading the same skill unless its instructions are needed again.${skillDirNote}`
 		} catch (error) {
 			return `Error loading skill "${skillName}": ${(error as Error)?.message}`
 		}
 	}
 
 	/**
-	 * Freezes the newly-activated skill's MCP tool policy on TaskState (reused for the rest of
-	 * the task — see resolveEffectiveMcpTools) and persists a snapshot to task metadata so a
-	 * resumed task can reconstruct + revalidate it later.
+	 * Adds the newly-loaded skill's frozen MCP tool policy to the task's loaded collection (see
+	 * aggregateSkillMcpPolicies) and persists it for resume. Reloading an already-loaded skill is a
+	 * no-op for policy: no duplicate entry, no reorder, no metadata write. The check-and-insert is
+	 * synchronous, so concurrent activations cannot lose each other's entries.
 	 */
 	private async snapshotActiveSkillMcpPolicy(
 		config: TaskConfig,
 		skillContent: { name: string; mcpTools?: SkillMetadata["mcpTools"] },
 	): Promise<void> {
-		const declarations = getSkillMcpToolDeclarations(skillContent)
-		const policy: ActiveSkillMcpPolicy = {
-			skillName: skillContent.name,
-			allowed: declarations.allowed,
-			disallowed: declarations.disallowed,
-			allowedDeclared: declarations.allowedDeclared,
-			disallowedDeclared: declarations.disallowedDeclared,
+		const policies = config.taskState.loadedSkillMcpPolicies
+		if (policies.some((p) => p.skillName === skillContent.name)) {
+			return
 		}
-		config.taskState.activeSkillMcpPolicy = policy
+		const declarations = getSkillMcpToolDeclarations(skillContent)
+		policies.push(freezeSkillMcpPolicy(skillContent.name, declarations))
 
 		const stateManager = config.services.stateManager
 		const mode = stateManager.getGlobalSettingsKey("mode")
@@ -145,16 +137,10 @@ IMPORTANT: The skill is now loaded. Do NOT call use_skill again for this task. S
 		if (availability === "dynamic_compatible" && !declarations.allowedDeclared && !declarations.disallowedDeclared) {
 			Logger.warn(
 				`Skill "${skillContent.name}" has no allowed_mcp_tools/disallowed_mcp_tools declarations; ` +
-					`Dynamic (Compatible) mode is falling back to exposing all enabled MCP tools for this task.`,
+					`Dynamic (Compatible) mode exposes all enabled MCP tools unless another loaded skill declares them.`,
 			)
 		}
 
-		try {
-			const metadata = await getTaskMetadata(config.taskId)
-			metadata.active_skill_mcp_policy = policy
-			await saveTaskMetadata(config.taskId, metadata)
-		} catch (error) {
-			Logger.warn(`Failed to persist active skill MCP policy for resume: ${(error as Error)?.message}`)
-		}
+		await persistSkillMcpPolicyState(config.taskState, config.taskId)
 	}
 }

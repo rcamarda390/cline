@@ -1,7 +1,7 @@
 import { expect } from "chai"
 import { describe, it } from "mocha"
 import type { McpHub } from "@/services/mcp/McpHub"
-import { ActiveSkillMcpPolicy, McpToolPattern, parseMcpToolPattern } from "@/shared/mcpToolPolicy"
+import { aggregateSkillMcpPolicies, McpPolicyDeclarations, McpToolPattern, parseMcpToolPattern } from "@/shared/mcpToolPolicy"
 import { getSystemPrompt } from "../index"
 import type { SystemPromptContext } from "../types"
 import { mockProviderInfo } from "./test-fixtures"
@@ -33,8 +33,7 @@ const declared: McpToolPattern[] = ["future-mcp:future_000", "future-mcp:future_
 	if (!parsed) throw new Error(`Expected "${raw}" to parse`)
 	return parsed
 })
-const workingSkill: ActiveSkillMcpPolicy = {
-	skillName: "future-task",
+const workingSkill: McpPolicyDeclarations = {
 	allowed: declared,
 	disallowed: [],
 	allowedDeclared: true,
@@ -43,7 +42,7 @@ const workingSkill: ActiveSkillMcpPolicy = {
 
 function contextFor(
 	enableNativeToolCalls: boolean,
-	activeSkillMcpPolicy: ActiveSkillMcpPolicy | undefined,
+	activeSkillMcpPolicy: McpPolicyDeclarations | undefined,
 	provider: Partial<typeof mockProviderInfo> = {},
 ): SystemPromptContext {
 	return {
@@ -101,5 +100,30 @@ describe("Optional MCP Tools: outgoing tool definitions", () => {
 		const { systemPrompt } = await getSystemPrompt(contextFor(false, undefined))
 		expect(systemPrompt.includes("future_000")).to.be.false
 		expect(systemPrompt.includes("atl_000")).to.be.true
+	})
+
+	it("A, then B, then denying C: native schemas and XML prompt agree on exactly the same tools", async () => {
+		const pol = (allow: string[], deny: string[] = []) => ({
+			skillName: "x",
+			allowed: allow.map((r) => parseMcpToolPattern(r)!),
+			disallowed: deny.map((r) => parseMcpToolPattern(r)!),
+			allowedDeclared: true,
+			disallowedDeclared: deny.length > 0,
+		})
+		const agg = aggregateSkillMcpPolicies([
+			pol(["future-mcp:future_000", "future-mcp:future_001"]),
+			pol(["future-mcp:future_002", "future-mcp:future_003"]),
+			pol([], ["future-mcp:future_001"]),
+		])
+		const { tools } = await getSystemPrompt(contextFor(true, agg, nativeProvider))
+		const names = (tools as any[]).map((tool) => (tool?.function?.name ?? tool?.name) as string)
+		const nativeFuture = names
+			.filter((n) => n.startsWith("futureuid"))
+			.map((n) => n.slice(-10))
+			.sort()
+		expect(nativeFuture).to.deep.equal(["future_000", "future_002", "future_003"])
+		const { systemPrompt } = await getSystemPrompt(contextFor(false, agg))
+		for (const t of ["future_000", "future_002", "future_003"]) expect(systemPrompt.includes(t), t).to.be.true
+		for (const t of ["future_001", "future_004"]) expect(systemPrompt.includes(t), t).to.be.false
 	})
 })

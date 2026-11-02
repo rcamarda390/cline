@@ -1,6 +1,7 @@
 import { expect } from "chai"
 import { describe, it } from "mocha"
 import {
+	aggregateSkillMcpPolicies,
 	ActiveSkillMcpPolicy,
 	EffectiveMcpToolSet,
 	isToolInEffectiveSet,
@@ -8,6 +9,7 @@ import {
 	McpServerToolSet,
 	McpToolPattern,
 	parseMcpToolPattern,
+	parseSkillMcpPolicyMetadata,
 	resolveEffectiveMcpTools,
 	resolveMcpToolAvailability,
 } from "../mcpToolPolicy"
@@ -333,6 +335,144 @@ describe("mcpToolPolicy", () => {
 		it("G: empty declarations reference no server", () => {
 			const effective = resolveEffectiveMcpTools(everything, "dynamic_declared_only", [], policy("empty", [], []))
 			expect(total(effective)).to.equal(374)
+		})
+	})
+
+	describe("multiple loaded skills (aggregate policy)", () => {
+		const MODES = ["always_on", "always_off", "dynamic_compatible", "dynamic_declared_only"] as const
+		const future: McpServerToolSet = {
+			serverName: "future-mcp",
+			toolNames: Array.from({ length: 250 }, (_, i) => `future_${String(i + 1).padStart(3, "0")}`),
+		}
+		const base: McpServerToolSet = { serverName: "base-mcp", toolNames: ["b1", "b2"] }
+		const t = (...n: number[]) => n.map((i) => `future-mcp:future_${String(i).padStart(3, "0")}`)
+		const classify = [...t(1, 2, 3, 4, 5), ...t(2)].map(pattern)
+		const recall = policy("recall", t(1, 2, 3), [])
+		const audit = policy("audit", t(4, 5), [])
+		const denyTwo = policy("deny", [], t(2), { disallowedDeclared: true })
+		const plain = policy("routing", [], [], { allowedDeclared: false, disallowedDeclared: false })
+		const visible = (ps: ActiveSkillMcpPolicy[], mode: (typeof MODES)[number], failed = false) =>
+			[
+				...(resolveEffectiveMcpTools([future, base], mode, classify, aggregateSkillMcpPolicies(ps, failed)).get(
+					"future-mcp",
+				) ?? []),
+			].sort()
+
+		it("worked example: 3 + 2 allows = 5 visible; a third skill denying one leaves 4", () => {
+			expect(visible([recall], "dynamic_declared_only")).to.have.length(3)
+			expect(visible([recall, audit], "dynamic_declared_only")).to.have.length(5)
+			expect(visible([recall, audit, denyTwo], "dynamic_declared_only")).to.have.length(4)
+			expect(visible([denyTwo, recall, audit], "dynamic_declared_only")).to.deep.equal(
+				visible([recall, audit, denyTwo], "dynamic_declared_only"),
+			)
+			expect(visible([recall, audit, denyTwo], "dynamic_declared_only")).to.not.include("future_002")
+		})
+
+		it("overlapping allows do not duplicate; unloaded skills grant nothing", () => {
+			const overlap = policy("overlap", t(3, 4), [])
+			expect(aggregateSkillMcpPolicies([recall, overlap])?.allowed).to.have.length(4)
+			expect(visible([recall, overlap], "dynamic_declared_only")).to.have.length(4)
+			expect(visible([recall], "dynamic_declared_only")).to.not.include("future_004")
+		})
+
+		it("a plain skill loaded after a declared one does not widen Compatible", () => {
+			expect(visible([recall, plain], "dynamic_compatible")).to.have.length(3)
+			expect(visible([plain, recall], "dynamic_compatible")).to.have.length(3)
+		})
+
+		it("only plain skills keep Compatible's broad fallback; Declared Only never does", () => {
+			expect(visible([plain], "dynamic_compatible")).to.have.length(250)
+			expect(visible([plain], "dynamic_declared_only")).to.have.length(0)
+			expect(visible([], "dynamic_compatible")).to.have.length(250)
+		})
+
+		it("explicit empty allow list and deny-only stay declared (no allow-all)", () => {
+			const empty = policy("empty", [], [], { allowedDeclared: true })
+			expect(visible([empty, plain], "dynamic_compatible")).to.have.length(0)
+			expect(visible([denyTwo], "dynamic_compatible")).to.have.length(0)
+		})
+
+		it("mode semantics hold with accumulated policies", () => {
+			expect(visible([recall, audit, denyTwo], "always_on")).to.have.length(249)
+			expect(visible([recall, audit], "always_off")).to.have.length(0)
+			expect(visible([recall, audit, denyTwo], "always_off")).to.have.length(0)
+		})
+
+		it("failed restoration hides managed tools in Dynamic modes, never Compatible fallback", () => {
+			expect(visible([plain], "dynamic_compatible", true)).to.have.length(0)
+			expect(visible([], "dynamic_compatible", true)).to.have.length(0)
+			expect(visible([], "dynamic_declared_only", true)).to.have.length(0)
+			expect(visible([], "always_on", true)).to.have.length(250)
+			expect(
+				resolveEffectiveMcpTools([future, base], "dynamic_compatible", classify, aggregateSkillMcpPolicies([], true)).get(
+					"base-mcp",
+				)?.size,
+			).to.equal(2)
+		})
+
+		it("baseline servers are unaffected", () => {
+			const e = resolveEffectiveMcpTools(
+				[future, base],
+				"dynamic_declared_only",
+				classify,
+				aggregateSkillMcpPolicies([recall]),
+			)
+			expect(e.get("base-mcp")?.size).to.equal(2)
+		})
+
+		it("aggregate is a detached, deterministic copy", () => {
+			const a = aggregateSkillMcpPolicies([recall, audit, recall])
+			expect(a?.allowed.map((p) => p.toolPattern)).to.deep.equal([
+				"future_001",
+				"future_002",
+				"future_003",
+				"future_004",
+				"future_005",
+			])
+			expect(a?.allowed[0]).to.not.equal(recall.allowed[0])
+			expect(aggregateSkillMcpPolicies([])).to.be.undefined
+		})
+	})
+
+	describe("parseSkillMcpPolicyMetadata", () => {
+		const a = policy("a", ["s:x"], [])
+		const b = policy("b", ["s:y"], [])
+		it("restores v2 state with several entries", () => {
+			expect(parseSkillMcpPolicyMetadata({ skill_mcp_policy_state: { version: 2, policies: [a, b] } })).to.deep.equal({
+				policies: [a, b],
+				corrupt: false,
+			})
+		})
+		it("migrates a legacy singular snapshot to one entry", () => {
+			expect(parseSkillMcpPolicyMetadata({ active_skill_mcp_policy: a })).to.deep.equal({ policies: [a], corrupt: false })
+		})
+		it("empty v2 state overrides a stale legacy field; never double counts", () => {
+			expect(
+				parseSkillMcpPolicyMetadata({ skill_mcp_policy_state: { version: 2, policies: [] }, active_skill_mcp_policy: a }),
+			).to.deep.equal({ policies: [], corrupt: false })
+			expect(
+				parseSkillMcpPolicyMetadata({ skill_mcp_policy_state: { version: 2, policies: [a] }, active_skill_mcp_policy: a })
+					.policies,
+			).to.have.length(1)
+		})
+		it("flags unsupported/malformed state as corrupt and keeps valid siblings", () => {
+			expect(parseSkillMcpPolicyMetadata({ skill_mcp_policy_state: { version: 3, policies: [a] } }).corrupt).to.be.true
+			expect(parseSkillMcpPolicyMetadata({ skill_mcp_policy_state: "junk" }).corrupt).to.be.true
+			expect(parseSkillMcpPolicyMetadata({ active_skill_mcp_policy: { skillName: 1 } }).corrupt).to.be.true
+			const r = parseSkillMcpPolicyMetadata({ skill_mcp_policy_state: { version: 2, policies: [a, { bad: true }] } })
+			expect(r.corrupt).to.be.true
+			expect(r.policies).to.deep.equal([a])
+		})
+		it("a persisted restoreFailed marker survives and keeps the state flagged", () => {
+			expect(
+				parseSkillMcpPolicyMetadata({ skill_mcp_policy_state: { version: 2, policies: [a], restoreFailed: true } }),
+			).to.deep.equal({
+				policies: [a],
+				corrupt: true,
+			})
+		})
+		it("no metadata means nothing loaded and not corrupt", () => {
+			expect(parseSkillMcpPolicyMetadata({})).to.deep.equal({ policies: [], corrupt: false })
 		})
 	})
 
