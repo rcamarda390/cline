@@ -4,6 +4,7 @@ import { formatResponse } from "@core/prompts/responses"
 import { ClineAsk, ClineAskUseMcpServer } from "@shared/ExtensionMessage"
 import { isToolInEffectiveSet, resolveEffectiveMcpTools, resolveMcpToolAvailability } from "@shared/mcpToolPolicy"
 import { getSkillMcpToolDeclarations } from "@shared/skills"
+import { getAggregateSkillMcpPolicy } from "../../skillMcpPolicy"
 import { telemetryService } from "@/services/telemetry"
 import { truncateContent } from "@/shared/content-limits"
 import { ClineDefaultTool } from "@/shared/tools"
@@ -230,7 +231,7 @@ export class UseMcpToolHandler implements IFullyManagedTool {
 	/**
 	 * Returns an error ToolResponse if the requested tool is outside the effective MCP tool set
 	 * for the current mode/skill state, or undefined if the call may proceed. Fast-paths the
-	 * default configuration (Always On, no active skill denying anything) to avoid a skill
+	 * default configuration (Always On, no loaded skill denying anything) to avoid a skill
 	 * discovery scan on every MCP call when this feature isn't in use.
 	 */
 	private async checkToolAvailability(
@@ -239,7 +240,7 @@ export class UseMcpToolHandler implements IFullyManagedTool {
 		toolName: string,
 	): Promise<ToolResponse | undefined> {
 		const stateManager = config.services.stateManager
-		const activeSkill = config.taskState.activeSkillMcpPolicy
+		const activeSkill = getAggregateSkillMcpPolicy(config.taskState)
 		const availability = resolveMcpToolAvailability(
 			stateManager.getGlobalSettingsKey("planActSeparateModelsSetting"),
 			stateManager.getGlobalSettingsKey("mcpToolAvailability"),
@@ -248,6 +249,7 @@ export class UseMcpToolHandler implements IFullyManagedTool {
 			stateManager.getGlobalSettingsKey("actModeMcpToolAvailability"),
 		)
 		if (availability === "always_on" && !activeSkill?.disallowed.length) {
+			// aggregate denies from ALL loaded skills
 			return undefined
 		}
 

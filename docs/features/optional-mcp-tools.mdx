@@ -4,7 +4,7 @@ sidebarTitle: "Optional MCP Tools"
 description: "Keep a large MCP server's tools out of the model's context until a skill that needs them is activated."
 ---
 
-Every enabled MCP server normally injects all of its tools into every request. A server with 100+ tools (for example an Atlassian server) costs a lot of context on every chat, even when the task never touches it. **Optional MCP Tools** hides those tools by default and exposes them only when a skill that declares them is activated.
+Every enabled MCP server normally injects all of its tools into every request. A server with 100+ tools (for example an Atlassian server) costs a lot of context on every chat, even when the task never touches it. **Optional MCP Tools** hides those tools by default and exposes them only when a skill that declares them is loaded. A task can load several skills; their declarations accumulate.
 
 The feature is opt-in. The default (**Always On**) behaves exactly as before.
 
@@ -18,8 +18,8 @@ For a step-by-step explanation with diagrams and worked examples, see [How It Wo
 |---|---|
 | **Always On** (default) | Every enabled server's tools are exposed. A skill's `disallowed_mcp_tools` still applies. |
 | **Always Off** | Only tools of *baseline* servers are exposed (see below). Every tool of a managed server is hidden. |
-| **Dynamic — Compatible** | Tools of managed servers are hidden until an active skill allows them. Falls back to exposing **everything** when no skill is active, or the active skill declares nothing. |
-| **Dynamic — Declared Only** | Tools of managed servers are hidden until an active skill allows them. No fallback. |
+| **Dynamic — Compatible** | Tools of managed servers are hidden until a loaded skill allows them. Falls back to exposing **everything** only when no loaded skill declares `allowed_mcp_tools` or `disallowed_mcp_tools`. |
+| **Dynamic — Declared Only** | Tools of managed servers are hidden until a loaded skill allows them. No fallback. |
 
 ## Declaring tools in a skill
 
@@ -40,7 +40,7 @@ disallowed_mcp_tools:
 - Format is `server:tool_name`. The server part is the MCP server's config key. Split happens on the **first** colon.
 - `*` matches any run of characters (`jira_*`, `*_page`). No other glob syntax.
 - A single string is accepted in place of a list.
-- **Deny wins** over allow when the active skill matches both.
+- **Deny wins** over allow when any loaded skill denies the tool, even if another loaded skill allows it.
 - Malformed entries are logged and ignored; the skill still loads.
 - Any valid entry names a server, so it makes that **whole server** managed, even if the pattern matches no current tool. See the next section.
 - Declaring a field as an empty list (`allowed_mcp_tools: []`) counts as *declared*; omitting it counts as *not declared*. This matters for Compatible mode.
@@ -48,34 +48,46 @@ disallowed_mcp_tools:
 ## How a tool's visibility is decided
 
 1. **Server classification (per server).** A server is *managed* if **any enabled skill** (active or not) has an `allowed_mcp_tools` or `disallowed_mcp_tools` entry naming that server, even if the entry matches no current tool. Every other server is *baseline*. Disabled skills don't count, and server names match exactly.
-2. **Deny.** If the active skill's `disallowed_mcp_tools` matches a tool, that tool is hidden in every mode.
+2. **Deny.** If any loaded skill's `disallowed_mcp_tools` matches a tool, that tool is hidden in every mode.
 3. **Mode rule:**
    - Always On → exposed
    - Always Off → exposed for baseline servers only
-   - Dynamic — Compatible → exposed for baseline servers. For a managed server, exposed if no skill is active, the active skill declared nothing, or the active skill allows the tool.
-   - Dynamic — Declared Only → exposed for baseline servers. For a managed server, exposed only if the active skill allows the tool.
+   - Dynamic — Compatible → exposed for baseline servers. For a managed server, exposed if no loaded skill declares anything, or any loaded skill allows the tool.
+   - Dynamic — Declared Only → exposed for baseline servers. For a managed server, exposed only if any loaded skill allows the tool.
 
-Selection inside a managed server is still per tool: only the active skill's `allowed_mcp_tools` pick which of its tools are sent.
+Selection inside a managed server is still per tool: only loaded skills' `allowed_mcp_tools` pick which of its tools are sent.
 
 <Warning>
 **Nothing is hidden unless a skill declares it.** If no skill lists `atlassian:*`, every Atlassian tool is baseline and stays visible in every mode, so there is no context saving. Declare the heavy server's tools in the skills that need them.
 </Warning>
 
 <Note>
-**Compatible does not save context at chat start.** With no active skill it exposes everything. Use **Declared Only** if the goal is to keep a large server's tools out of the context until a skill is activated.
+**Compatible does not save context at chat start.** With no loaded skill declaring anything it exposes everything. Use **Declared Only** if the goal is to keep a large server's tools out of the context until a skill is activated.
 </Note>
 
 <Warning>
-**Declaring one tool manages the whole server.** If one skill declares `agentmemory:search_notes`, every agentmemory tool becomes managed. In Dynamic modes they stay hidden unless the active skill allows them, so any other skill that needs agentmemory must allow those tools too. Servers that no enabled skill references, such as Gnosis or Atlassian in this example, stay fully exposed.
+**Declaring one tool manages the whole server.** If one skill declares `agentmemory:search_notes`, every agentmemory tool becomes managed. In Dynamic modes they stay hidden unless a loaded skill allows them, so any other skill that needs agentmemory must allow those tools too. Servers that no enabled skill references, such as Gnosis or Atlassian in this example, stay fully exposed.
 
-A deny-only entry also manages its server. Under both Dynamic modes, an active skill with only `disallowed_mcp_tools` for a server exposes **none** of that server's tools. Deny is not allow-all.
+A deny-only entry also manages its server. Under both Dynamic modes, loaded skills with only `disallowed_mcp_tools` for a server exposes **none** of that server's tools. Deny is not allow-all.
 </Warning>
+
+## Example: several skills in one task
+
+A managed server exposes 250 tools, in Declared Only:
+
+1. A recall skill allows tools 1–3 → **3** visible.
+2. An audit skill allows tools 4–5 → **5** visible.
+3. A third skill denies tool 2 → **4** visible (1, 3, 4, 5). Loading the denying skill first gives the same result.
+
+The other 245 stay hidden throughout.
 
 ## Lifecycle
 
-- **One skill per task.** Calling `use_skill` a second time returns an error. The first skill's policy stays.
-- **Frozen at activation.** The active skill's patterns are snapshotted on the task (`TaskState.activeSkillMcpPolicy`) and written to task metadata as `active_skill_mcp_policy`. The tool list therefore stays stable across turns, which keeps the prompt prefix cacheable.
-- **Resume.** On resuming a task the snapshot is reloaded. If the skill is no longer enabled, the policy is dropped: only baseline servers are fully exposed, and in Declared Only the managed servers stay hidden.
+- **Multiple skills per task.** Each successful `use_skill` adds that skill's policy to the task (`TaskState.loadedSkillMcpPolicies`). Only **loaded** skills contribute allows or denies; installed-but-unloaded skills grant nothing. All **enabled** skills still classify which servers are managed.
+- **Allows accumulate; denies accumulate and win.** Allowed patterns are unioned. A deny from any loaded skill hides the tool regardless of load order, for the rest of the task. A plain skill (no declarations) loaded after a declared one does **not** widen Compatible: once any loaded skill declares either field, the broad fallback no longer applies.
+- **Repeat loads.** Loading an already-loaded skill returns its instructions again but changes no policy and writes no metadata. Instructions already delivered stay in the conversation; policy aggregation is separate from that.
+- **Frozen at activation.** Each skill's patterns are snapshotted when it loads and written to task metadata as `skill_mcp_policy_state` (`{ version: 2, policies: [...] }`). Edited skill files do not change a loaded skill's policy; start a new task to pick up changes. The tool list stays stable between intentional changes, which keeps the prompt prefix cacheable. Loading another skill adds context and can change the tool schema, so provider prompt caches may be invalidated at that point.
+- **Resume.** On resume each snapshot is revalidated individually: entries whose skill is no longer enabled are dropped, the rest are kept. The legacy single `active_skill_mcp_policy` field is read as one entry and replaced by the new format on next write. Corrupt or unsupported state fails closed: managed tools stay hidden in Dynamic modes for that task (it never becomes the Compatible fallback).
 - **Mode switch / setting change.** The availability value is re-resolved on each request, so switching Plan↔Act or changing the dropdown takes effect on the next request. The frozen skill policy is kept.
 - **Hidden tool call.** If the model calls a hidden tool anyway, `UseMcpToolHandler` rejects it locally before the approval prompt with `Tool "<name>" is not currently available. It may require a skill to be activated first.` This counts toward consecutive mistakes.
 
@@ -96,8 +108,8 @@ A deny-only entry also manages its server. Under both Dynamic modes, an active s
 
 | Symptom | Cause |
 |---|---|
-| Atlassian tools still load every chat | No enabled skill references the server (baseline), or mode is Always On / Compatible with no active skill. |
-| A tool "is not currently available" | Its server is managed by some skill and the active skill doesn't allow the tool, or no skill is active. Activate the right skill. |
+| Atlassian tools still load every chat | No enabled skill references the server (baseline), or mode is Always On / Compatible with no loaded skill declaring anything. |
+| A tool "is not currently available" | Its server is managed by some skill and no loaded skill allows the tool (or a loaded skill denies it). Load the right skill. |
 | A server's tools disappeared after adding a skill | That skill references the server, which makes all of its tools managed. Allow them in every skill that uses the server. |
 | Skill's patterns ignored | Check the warning in the logs for a malformed entry; the pattern needs `server:tool`. Server part must equal the MCP server's config key. |
 | Setting change seems ignored | With Plan/Act split, the dropdown edits only the current mode's value. |

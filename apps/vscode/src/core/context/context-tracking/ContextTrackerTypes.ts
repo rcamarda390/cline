@@ -1,4 +1,4 @@
-import type { ActiveSkillMcpPolicy } from "@shared/mcpToolPolicy"
+import type { ActiveSkillMcpPolicy, SkillMcpPolicyState } from "@shared/mcpToolPolicy"
 
 // Type definitions for FileContextTracker
 export interface FileMetadataEntry {
@@ -31,6 +31,8 @@ export interface TaskMetadata {
 	files_in_context: FileMetadataEntry[]
 	model_usage: ModelMetadataEntry[]
 	environment_history: EnvironmentMetadataEntry[]
-	/** Snapshot of the active skill's MCP tool policy at the moment it activated, for resume. */
+	/** Versioned snapshot of every loaded skill's frozen MCP tool policy, for resume. */
+	skill_mcp_policy_state?: SkillMcpPolicyState
+	/** @deprecated Legacy single-skill snapshot; read for migration only, removed when v2 state is written. */
 	active_skill_mcp_policy?: ActiveSkillMcpPolicy
 }

@@ -6,7 +6,7 @@ import { ApiProviderInfo } from "@/core/api"
 import type { McpHub } from "@/services/mcp/McpHub"
 import type { BrowserSettings } from "@/shared/BrowserSettings"
 import type { FocusChainSettings } from "@/shared/FocusChainSettings"
-import type { ActiveSkillMcpPolicy, McpToolAvailability, McpToolPattern } from "@/shared/mcpToolPolicy"
+import type { McpPolicyDeclarations, McpToolAvailability, McpToolPattern } from "@/shared/mcpToolPolicy"
 import { ModelFamily } from "@/shared/prompts"
 import type { SkillMetadata } from "@/shared/skills"
 import { ClineDefaultTool } from "@/shared/tools"
@@ -132,7 +132,8 @@ export interface SystemPromptContext {
 	/** Union of allowed+disallowed MCP tool patterns across ALL enabled skills (server classification input). */
 	readonly allDeclaredMcpToolPatterns?: readonly McpToolPattern[]
 	/** The currently active skill's own MCP tool policy, frozen at activation. */
-	readonly activeSkillMcpPolicy?: ActiveSkillMcpPolicy
+	/** Aggregate of all skills loaded this task (see aggregateSkillMcpPolicies). */
+	readonly activeSkillMcpPolicy?: McpPolicyDeclarations
 }
 
 /**

@@ -82,8 +82,12 @@ export class TaskState {
 	currentlySummarizing = false
 	lastAutoCompactTriggerIndex?: number
 
-	// Dynamic MCP tool availability: the currently active skill's MCP tool policy, frozen at
-	// activation time and reused for the rest of the task (or until a mode switch / new skill
-	// activation / setting change / resume revalidation replaces it). undefined = no skill active.
-	activeSkillMcpPolicy?: ActiveSkillMcpPolicy
+	// Dynamic MCP tool availability: policies of every skill successfully loaded this task, each frozen
+	// at activation time (keyed by skillName, insertion-ordered). Aggregated via aggregateSkillMcpPolicies.
+	loadedSkillMcpPolicies: ActiveSkillMcpPolicy[] = []
+	// True when persisted policy state was corrupt/unrestorable on resume: Dynamic modes keep managed
+	// tools hidden (no Compatible fallback) until a valid policy is established.
+	skillMcpPolicyRestoreFailed = false
+	// Serializes metadata writes of the policy collection (tool calls may run concurrently).
+	skillMcpPolicyPersistChain: Promise<void> = Promise.resolve()
 }

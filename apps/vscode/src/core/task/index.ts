@@ -141,6 +141,8 @@ import { ensureLocalClineDirExists } from "../context/instructions/user-instruct
 import { discoverAvailableSkills } from "../context/instructions/user-instructions/skills";
 import { resolveMcpToolAvailability } from "@shared/mcpToolPolicy";
 import { getSkillMcpToolDeclarations } from "@shared/skills";
+import { parseSkillMcpPolicyMetadata } from "@shared/mcpToolPolicy";
+import { getAggregateSkillMcpPolicy, persistSkillMcpPolicyState } from "./skillMcpPolicy";
 import { refreshWorkflowToggles } from "../context/instructions/user-instructions/workflows";
 import type { Controller } from "../controller";
 import { executeHook } from "../hooks/hook-executor";
@@ -1402,18 +1404,26 @@ export class Task {
 	}
 
 	/**
-	 * Reconstructs the active skill's MCP tool policy on resume from the snapshot persisted at
-	 * activation time (see UseSkillToolHandler), then revalidates it against current state: if
-	 * the skill no longer exists or is disabled, fail closed to baseline servers only for this resumed
-	 * task rather than trusting a stale snapshot. A skill that still exists is trusted as-is —
-	 * its own allow/deny patterns don't need re-validating against live MCP server state here,
-	 * since the effective-tool resolver already re-checks server/tool existence on every use.
+	 * Rebuilds the loaded skills' MCP policies on resume from the v2 snapshot (or the legacy
+	 * singular one), starting from clean in-memory state. Each entry is revalidated individually
+	 * against currently enabled skills: unavailable ones are dropped, valid ones keep their frozen
+	 * declarations. Corrupt metadata fails closed (managed tools hidden in Dynamic modes) rather
+	 * than falling into Compatible's undeclared fallback.
 	 */
 	private async reconstructActiveSkillMcpPolicy(): Promise<void> {
+		this.taskState.loadedSkillMcpPolicies = [];
+		this.taskState.skillMcpPolicyRestoreFailed = false;
 		try {
 			const metadata = await getTaskMetadata(this.taskId);
-			const snapshot = metadata.active_skill_mcp_policy;
-			if (!snapshot) {
+			const parsed = parseSkillMcpPolicyMetadata(metadata);
+			if (parsed.corrupt) {
+				this.taskState.skillMcpPolicyRestoreFailed = true;
+				Logger.warn(
+					`Resumed task ${this.taskId}: stored skill MCP policy state is corrupt or unsupported; ` +
+						`managed MCP tools stay hidden in Dynamic modes.`,
+				);
+			}
+			if (parsed.policies.length === 0) {
 				return;
 			}
 
@@ -1428,20 +1438,24 @@ export class Task {
 				remoteSkillsToggles:
 					this.stateManager.getGlobalStateKey("remoteSkillsToggles") ?? {},
 			});
-			const skillStillEnabled = availableSkills.some(
-				(skill) => skill.name === snapshot.skillName,
-			);
-
-			if (skillStillEnabled) {
-				this.taskState.activeSkillMcpPolicy = snapshot;
-			} else {
-				Logger.warn(
-					`Resumed task ${this.taskId}: skill "${snapshot.skillName}" is no longer available; ` +
-						`falling back to baseline MCP servers for this task.`,
-				);
+			const enabled = new Set(availableSkills.map((skill) => skill.name));
+			for (const snapshot of parsed.policies) {
+				if (enabled.has(snapshot.skillName)) {
+					this.taskState.loadedSkillMcpPolicies.push(snapshot);
+				} else {
+					Logger.warn(
+						`Resumed task ${this.taskId}: skill "${snapshot.skillName}" is no longer available; ` +
+							`dropping its MCP tool policy.`,
+					);
+				}
+			}
+			if (this.taskState.loadedSkillMcpPolicies.length !== parsed.policies.length) {
+				await persistSkillMcpPolicyState(this.taskState, this.taskId);
 			}
 		} catch (error) {
-			Logger.error("Failed to reconstruct active skill MCP policy on resume:", error);
+			// Unknown restore state: fail closed rather than broaden visibility.
+			this.taskState.skillMcpPolicyRestoreFailed = true;
+			Logger.error("Failed to reconstruct loaded skill MCP policies on resume:", error);
 		}
 	}
 
@@ -2401,7 +2415,7 @@ export class Task {
 			skills: availableSkills,
 			mcpToolAvailability,
 			allDeclaredMcpToolPatterns,
-			activeSkillMcpPolicy: this.taskState.activeSkillMcpPolicy,
+			activeSkillMcpPolicy: getAggregateSkillMcpPolicy(this.taskState),
 			focusChainSettings:
 				this.stateManager.getGlobalSettingsKey("focusChainSettings"),
 			globalClineRulesFileInstructions,

@@ -13,9 +13,9 @@ Three rules decide everything:
 
 1. A server is **managed** if any **enabled** skill names it in `allowed_mcp_tools` or `disallowed_mcp_tools`. Otherwise it is **baseline**.
 2. **Baseline servers** are sent in full, in every mode.
-3. **Managed servers** send only the tools the **active** skill allows (Declared Only), or fall back to everything (Compatible, when there is no active skill or the skill declares nothing), or nothing (Always Off).
+3. **Managed servers** send only the tools the **loaded** skills allow (Declared Only), or fall back to everything (Compatible, only when no loaded skill declares anything), or nothing (Always Off).
 
-A tool matched by the active skill's deny list is never sent.
+A tool matched by any loaded skill's deny list is never sent. A task can load several skills: allows and denies accumulate, and deny wins.
 </Note>
 
 <Tip>
@@ -27,13 +27,13 @@ A tool matched by the active skill's deny list is never sent.
 | Term | Meaning | Where it comes from |
 |---|---|---|
 | **Enabled skill** | A skill that discovery returns and that is toggled on | `discoverAvailableSkills()` |
-| **Active skill** | The one skill activated for this task with `use_skill` | `TaskState.activeSkillMcpPolicy` |
+| **Loaded skills** | Every skill successfully loaded this task with `use_skill`, each frozen at load | `TaskState.loadedSkillMcpPolicies`, aggregated by `aggregateSkillMcpPolicies` |
 | **Managed server** | A server key that appears in any enabled skill's valid allow or deny entry | `managedServers` in `resolveEffectiveMcpTools()` |
 | **Baseline server** | Any connected server no enabled skill names | Everything else |
-| **Allowed tool** | Matched by the active skill's `allowed_mcp_tools` | `activeSkill.allowed` |
-| **Denied tool** | Matched by the active skill's `disallowed_mcp_tools` | `activeSkill.disallowed` |
+| **Allowed tool** | Matched by any loaded skill's `allowed_mcp_tools` | `activeSkill.allowed` |
+| **Denied tool** | Matched by any loaded skill's `disallowed_mcp_tools` | `activeSkill.disallowed` |
 | **Declared** | The field is present in frontmatter, even as an empty list | `allowedDeclared`, `disallowedDeclared` |
-| **noDeclarations** | There is no active skill, or it has neither field | `activeSkillHasNoDeclarations` |
+| **noDeclarations** | No loaded skill has either field | `activeSkillHasNoDeclarations` |
 
 ## Configuration
 
@@ -85,47 +85,47 @@ The only wildcard is `*`, which matches any run of characters, including none. S
 
 ```mermaid
 flowchart TD
-    A["One server and one tool"] --> B{"Denied by active skill?"}
+    A["One server and one tool"] --> B{"Denied by any loaded skill?"}
     B -- yes --> X1["Omit in every mode"]
     B -- no --> C{"Server managed?"}
     C -- "no, baseline" --> I0["Include in every mode"]
     C -- "yes, managed" --> D{"Mode"}
     D -- "Always On" --> I1["Include"]
     D -- "Always Off" --> X2["Omit"]
-    D -- "Compatible" --> E{"No active skill, or it declares nothing?"}
+    D -- "Compatible" --> E{"No loaded skill declares anything?"}
     E -- yes --> I2["Include"]
-    E -- no --> F{"Active skill allows tool?"}
+    E -- no --> F{"Any loaded skill allows tool?"}
     F -- yes --> I3["Include"]
     F -- no --> X3["Omit"]
-    D -- "Declared Only" --> G{"Active skill allows tool?"}
+    D -- "Declared Only" --> G{"Any loaded skill allows tool?"}
     G -- yes --> I4["Include"]
     G -- no --> X4["Omit"]
 ```
 
 ### Decision matrix
 
-Rows are the active skill's state. Columns are the mode. Each cell applies to a **managed** server's tool that is not denied.
+Rows are the aggregate state of all loaded skills. Columns are the mode. Each cell applies to a **managed** server's tool that is not denied.
 
-| Active skill state | Always On | Always Off | Compatible | Declared Only |
+| Loaded skills state | Always On | Always Off | Compatible | Declared Only |
 |---|---|---|---|---|
-| No active skill | Include | Omit | **Include** | Omit |
-| Active skill, no declarations (legacy) | Include | Omit | **Include** | Omit |
-| Active skill allows this tool | Include | Omit | Include | **Include** |
-| Active skill declares, does not allow this tool | Include | Omit | Omit | Omit |
-| Active skill has deny-only entries | Include | Omit | Omit | Omit |
-| Active skill has an explicit empty allow list | Include | Omit | Omit | Omit |
+| No loaded skill | Include | Omit | **Include** | Omit |
+| Loaded skills, none declare (legacy) | Include | Omit | **Include** | Omit |
+| A loaded skill allows this tool | Include | Omit | Include | **Include** |
+| Loaded skills declare, none allows this tool | Include | Omit | Omit | Omit |
+| Loaded skills have deny-only entries | Include | Omit | Omit | Omit |
+| Loaded skills have an explicit empty allow list | Include | Omit | Omit | Omit |
 
 Two rows matter most:
 
-- **Compatible** widens to everything only when the active skill declares nothing. A deny-only skill counts as declaring, so its managed server contributes only tools it allows: none.
-- **Declared Only** never widens. Managed tools appear only when the active skill allows them.
+- **Compatible** widens to everything only when no loaded skill declares anything. A deny-only skill counts as declaring, so its managed server contributes only tools it allows: none.
+- **Declared Only** never widens. Managed tools appear only when a loaded skill allows them.
 
-For a **baseline** server, every mode includes every tool, unless the active skill denies it.
+For a **baseline** server, every mode includes every tool, unless a loaded skill denies it.
 
 | Server kind | Always On | Always Off | Compatible | Declared Only |
 |---|---|---|---|---|
 | Baseline | Include | Include | Include | Include |
-| Managed, tool denied by active skill | Omit | Omit | Omit | Omit |
+| Managed, tool denied by a loaded skill | Omit | Omit | Omit | Omit |
 
 ### Why server-level
 
@@ -177,15 +177,15 @@ sequenceDiagram
     H-->>M: Error: not currently available, mistake count +1
 ```
 
-Key point: the **active** policy is frozen when the skill activates. The **classification** is recomputed on every request from the currently enabled skills.
+Key point: each loaded skill's policy is frozen when it loads; the aggregate is rebuilt from them. The **classification** is recomputed on every request from the currently enabled skills.
 
 | Event | What happens | Notes |
 |---|---|---|
-| Task starts | No active policy | Baseline and managed servers are still classified from enabled skills |
-| First `use_skill` | Policy frozen and persisted | A second `use_skill` returns an error; the first policy stays |
+| Task starts | No loaded policies | Baseline and managed servers are still classified from enabled skills |
+| Each new `use_skill` | That skill's policy frozen, added, persisted | Earlier policies stay; reloading a loaded skill changes nothing |
 | Every request | Enabled skills rediscovered, managed set recomputed, mode re-resolved | Changing mode or the dropdown applies on the next request |
-| Resume, skill still enabled | Snapshot restored | Frozen allows and denies are reused |
-| Resume, skill disabled or removed | Snapshot dropped, warning logged | See the note below |
+| Resume, skill still enabled | Entry restored (per entry) | Frozen allows and denies are reused |
+| Resume, skill disabled or removed | Only that entry dropped, warning logged | See the note below |
 | Model calls a hidden tool | Rejected before the approval prompt | Counts toward consecutive mistakes |
 
 <Warning>
@@ -220,9 +220,9 @@ Declarations that worked per tool now have wider effects. Check this table befor
 
 | Existing declarations | Before this change | After this change |
 |---|---|---|
-| Skill A allows `agentmemory:search_notes` | Only `search_notes` hidden in Declared Only; 53 others visible | All 54 agentmemory tools hidden unless the active skill allows them |
+| Skill A allows `agentmemory:search_notes` | Only `search_notes` hidden in Declared Only; 53 others visible | All 54 agentmemory tools hidden unless a loaded skill allows them |
 | Skill A allows `atlassian:jira_*`; skill B uses `confluence_get_page` without declaring it | `confluence_get_page` visible | Hidden while skill A is active, because Atlassian is managed |
-| Deny-only `future-mcp:x` in Compatible | Everything except `x` visible | No `future-mcp` tools while that skill is active |
+| Deny-only `future-mcp:x` in Compatible | Everything except `x` visible | No `future-mcp` tools while a loaded skill denies them |
 | Always Off, skill allows one tool of server S | Undeclared tools of S visible | All of S hidden, even with the skill active |
 
 To keep a server usable across skills, either add its tools to every skill that needs them, or use Always On.
@@ -231,7 +231,7 @@ To keep a server usable across skills, either add its tools to every skill that 
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Tool missing from a request | Its server is managed and the active skill does not allow it | Activate a skill that allows the tool, or allow it in the skill you use |
+| Tool missing from a request | Its server is managed and no loaded skill allows it | Load a skill that allows the tool, or allow it in a skill you load |
 | Tool missing with no skill involved | Mode is Declared Only or Always Off, and some enabled skill names its server | Allow the tool in the skill that needs it, or switch to Always On |
 | Savings never appeared | The pattern names a server key that does not match the config key, so the real server stays baseline | Check the config key, then the warning log for malformed entries |
 | Whole server vanished after adding a skill | That skill names the server, so all of its tools are managed | Expected. Allow its tools in each skill that uses the server |
@@ -270,17 +270,17 @@ npx cross-env TS_NODE_PROJECT=./tsconfig.unit-test.json mocha --no-config --requ
 ### Not covered by automated tests
 
 - The "disabled skill does not classify its server" rule is enforced by skill discovery, not the resolver. The resolver test only checks what happens when the caller passes no declarations.
-- Resume and activation are exercised by code review, not by an automated test.
+- Live VS Code behavior is not covered by automated tests; resolver, aggregation, metadata migration, activation handler and native/XML prompt agreement are.
 
 ## File map
 
 | Concern | File | Function or export |
 |---|---|---|
-| Resolver, classification, pattern matching | `apps/vscode/src/shared/mcpToolPolicy.ts` | `resolveEffectiveMcpTools`, `filterMcpServersToEffectiveTools`, `resolveMcpToolAvailability` |
+| Aggregation, migration, resolver, classification, pattern matching | `apps/vscode/src/shared/mcpToolPolicy.ts` | `aggregateSkillMcpPolicies`, `parseSkillMcpPolicyMetadata`, `resolveEffectiveMcpTools`, `filterMcpServersToEffectiveTools`, `resolveMcpToolAvailability` |
 | Frontmatter parsing | `apps/vscode/src/core/context/instructions/user-instructions/skills.ts` | `parseSkillMcpToolDeclarations` |
 | Declaration accessors | `apps/vscode/src/shared/skills.ts` | `getSkillMcpToolDeclarations` |
 | Prompt context (managed set input) | `apps/vscode/src/core/task/index.ts` | Prompt context build |
-| Activation and freeze | `apps/vscode/src/core/task/tools/handlers/UseSkillToolHandler.ts` | `snapshotActiveSkillMcpPolicy` |
+| Activation and freeze | `apps/vscode/src/core/task/tools/handlers/UseSkillToolHandler.ts` | `snapshotActiveSkillMcpPolicy` (adds to the loaded collection) |
 | Resume | `apps/vscode/src/core/task/index.ts` | `reconstructActiveSkillMcpPolicy` |
 | Native tool schemas | `apps/vscode/src/core/prompts/system-prompt/registry/ClineToolSet.ts` | `getNativeTools` |
 | XML / legacy prompt | `apps/vscode/src/core/prompts/system-prompt/components/mcp.ts` | `getMcp` |
