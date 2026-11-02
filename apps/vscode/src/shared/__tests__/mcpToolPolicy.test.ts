@@ -463,6 +463,14 @@ describe("mcpToolPolicy", () => {
 			expect(r.corrupt).to.be.true
 			expect(r.policies).to.deep.equal([a])
 		})
+		it("a persisted restoreFailed marker survives and keeps the state flagged", () => {
+			expect(
+				parseSkillMcpPolicyMetadata({ skill_mcp_policy_state: { version: 2, policies: [a], restoreFailed: true } }),
+			).to.deep.equal({
+				policies: [a],
+				corrupt: true,
+			})
+		})
 		it("no metadata means nothing loaded and not corrupt", () => {
 			expect(parseSkillMcpPolicyMetadata({})).to.deep.equal({ policies: [], corrupt: false })
 		})

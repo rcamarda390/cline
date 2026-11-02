@@ -18,7 +18,11 @@ export function persistSkillMcpPolicyState(taskState: TaskState, taskId: string)
 	const run = async (): Promise<boolean> => {
 		try {
 			const metadata = await getTaskMetadata(taskId)
-			metadata.skill_mcp_policy_state = { version: 2, policies: taskState.loadedSkillMcpPolicies.map((p) => ({ ...p })) }
+			metadata.skill_mcp_policy_state = {
+				version: 2,
+				policies: taskState.loadedSkillMcpPolicies.map((p) => ({ ...p })),
+				...(taskState.skillMcpPolicyRestoreFailed ? { restoreFailed: true } : {}),
+			}
 			delete metadata.active_skill_mcp_policy
 			await saveTaskMetadata(taskId, metadata)
 			return true

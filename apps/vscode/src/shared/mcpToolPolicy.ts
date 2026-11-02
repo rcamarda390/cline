@@ -92,6 +92,8 @@ export interface ActiveSkillMcpPolicy extends McpPolicyDeclarations {
 export interface SkillMcpPolicyState {
 	version: 2
 	policies: ActiveSkillMcpPolicy[]
+	/** Set when an earlier restore failed; keeps the fail-closed marker across save/resume. */
+	restoreFailed?: boolean
 }
 
 const patternKey = (p: McpToolPattern) => `${p.server}\u0000${p.toolPattern}`
@@ -184,7 +186,7 @@ export function parseSkillMcpPolicyMetadata(metadata: {
 			return { policies: [], corrupt: true }
 		}
 		const valid = state.policies.filter(isActiveSkillMcpPolicy)
-		return { policies: dedupeBySkill(valid), corrupt: valid.length !== state.policies.length }
+		return { policies: dedupeBySkill(valid), corrupt: state.restoreFailed === true || valid.length !== state.policies.length }
 	}
 	const legacy = metadata.active_skill_mcp_policy
 	if (legacy === undefined) return { policies: [], corrupt: false }
