@@ -61,6 +61,7 @@ export const config = createVariant(ModelFamily.NEXT_GEN)
 		ClineDefaultTool.MCP_USE,
 		ClineDefaultTool.MCP_ACCESS,
 		ClineDefaultTool.ASK,
+		ClineDefaultTool.ASK_MULTI_SELECT,
 		ClineDefaultTool.ATTEMPT,
 		ClineDefaultTool.PLAN_MODE,
 		ClineDefaultTool.MCP_DOCS,

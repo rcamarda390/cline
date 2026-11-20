@@ -54,6 +54,7 @@ export const config = createVariant(ModelFamily.NATIVE_NEXT_GEN)
 	)
 	.tools(
 		ClineDefaultTool.ASK,
+		ClineDefaultTool.ASK_MULTI_SELECT,
 		ClineDefaultTool.BASH,
 		ClineDefaultTool.FILE_READ,
 		ClineDefaultTool.FILE_NEW,

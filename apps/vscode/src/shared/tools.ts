@@ -7,6 +7,7 @@ export type ClineTool = OpenAITool | AnthropicTool | GoogleTool
 // Define available tool ids
 export enum ClineDefaultTool {
 	ASK = "ask_followup_question",
+	ASK_MULTI_SELECT = "ask_followup_question_multi_select",
 	ATTEMPT = "attempt_completion",
 	BASH = "execute_command",
 	FILE_EDIT = "replace_in_file",
@@ -60,6 +61,7 @@ export const READ_ONLY_TOOLS = [
 	ClineDefaultTool.LIST_CODE_DEF,
 	ClineDefaultTool.BROWSER,
 	ClineDefaultTool.ASK,
+	ClineDefaultTool.ASK_MULTI_SELECT,
 	ClineDefaultTool.WEB_SEARCH,
 	ClineDefaultTool.WEB_FETCH,
 	ClineDefaultTool.USE_SKILL,

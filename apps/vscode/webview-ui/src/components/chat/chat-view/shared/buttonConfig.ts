@@ -1,4 +1,4 @@
-import type { ClineMessage, ClineSayTool } from "@shared/ExtensionMessage"
+import type { ClineAskQuestion, ClineMessage, ClineSayTool } from "@shared/ExtensionMessage"
 import type { Mode } from "@shared/storage/types"
 
 /**
@@ -264,6 +264,14 @@ export function getButtonConfig(message: ClineMessage | undefined, _mode: Mode =
 
 			// Standard approvals
 			case "followup":
+				try {
+					const question = JSON.parse(message.text ?? "{}") as ClineAskQuestion | null
+					if (question?.multiSelectId) {
+						return { ...BUTTON_CONFIGS.followup, sendingDisabled: true }
+					}
+				} catch {
+					// Legacy questions can contain plain text.
+				}
 				return BUTTON_CONFIGS.followup
 			case "browser_action_launch":
 				return BUTTON_CONFIGS.browser_action_launch
