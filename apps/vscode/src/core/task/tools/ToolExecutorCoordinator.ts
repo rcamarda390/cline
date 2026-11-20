@@ -5,6 +5,7 @@ import type { ToolResponse } from "../index"
 import { AccessMcpResourceHandler } from "./handlers/AccessMcpResourceHandler"
 import { ActModeRespondHandler } from "./handlers/ActModeRespondHandler"
 import { ApplyPatchHandler } from "./handlers/ApplyPatchHandler"
+import { AskFollowupQuestionMultiSelectToolHandler } from "./handlers/AskFollowupQuestionMultiSelectToolHandler"
 import { AskFollowupQuestionToolHandler } from "./handlers/AskFollowupQuestionToolHandler"
 import { AttemptCompletionHandler } from "./handlers/AttemptCompletionHandler"
 import { BrowserToolHandler } from "./handlers/BrowserToolHandler"
@@ -78,6 +79,7 @@ export class ToolExecutorCoordinator {
 
 	private readonly toolHandlersMap: Record<ClineDefaultTool, (v: ToolValidator) => IToolHandler | undefined> = {
 		[ClineDefaultTool.ASK]: (_v: ToolValidator) => new AskFollowupQuestionToolHandler(),
+		[ClineDefaultTool.ASK_MULTI_SELECT]: (_v: ToolValidator) => new AskFollowupQuestionMultiSelectToolHandler(),
 		[ClineDefaultTool.ATTEMPT]: (_v: ToolValidator) => new AttemptCompletionHandler(),
 		[ClineDefaultTool.BASH]: (v: ToolValidator) => new ExecuteCommandToolHandler(v),
 		[ClineDefaultTool.FILE_EDIT]: (v: ToolValidator) =>

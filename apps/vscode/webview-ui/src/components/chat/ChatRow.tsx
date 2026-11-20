@@ -39,6 +39,7 @@ import {
 } from "lucide-react"
 import { MouseEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSize } from "react-use"
+import { MultiSelectOptions } from "@/components/chat/MultiSelectOptions"
 import { OptionsButtons } from "@/components/chat/OptionsButtons"
 import { CheckmarkControl } from "@/components/common/CheckmarkControl"
 import { WithCopyButton } from "@/components/common/CopyButton"
@@ -1200,8 +1201,12 @@ export const ChatRowContent = memo(
 						let question: string | undefined
 						let options: string[] | undefined
 						let selected: string | undefined
+						let multiSelectId: string | undefined
+						let selectedOptions: string[] | undefined
 						try {
 							const parsedMessage = JSON.parse(message.text || "{}") as ClineAskQuestion
+							multiSelectId = parsedMessage.multiSelectId
+							selectedOptions = parsedMessage.selectedOptions
 							question = parsedMessage.question
 							options = parsedMessage.options
 							selected = parsedMessage.selected
@@ -1238,15 +1243,25 @@ export const ChatRowContent = memo(
 									)}
 								</WithCopyButton>
 								<div className="pt-3">
-									<OptionsButtons
-										inputValue={inputValue}
-										isActive={
-											(isLast && lastModifiedMessage?.ask === "followup") ||
-											(!selected && options && options.length > 0)
-										}
-										options={options}
-										selected={selected}
-									/>
+									{multiSelectId && options ? (
+										<MultiSelectOptions
+											id={multiSelectId}
+											isActive={isLast && !message.partial && lastModifiedMessage?.ts === message.ts}
+											key={multiSelectId}
+											options={options}
+											selectedOptions={selectedOptions}
+										/>
+									) : (
+										<OptionsButtons
+											inputValue={inputValue}
+											isActive={
+												(isLast && lastModifiedMessage?.ask === "followup") ||
+												(!selected && options && options.length > 0)
+											}
+											options={options}
+											selected={selected}
+										/>
+									)}
 								</div>
 							</div>
 						)

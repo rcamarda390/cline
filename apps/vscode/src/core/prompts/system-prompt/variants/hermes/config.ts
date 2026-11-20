@@ -48,6 +48,7 @@ export const config = createVariant(ModelFamily.HERMES)
 		ClineDefaultTool.MCP_USE,
 		ClineDefaultTool.MCP_ACCESS,
 		ClineDefaultTool.ASK,
+		ClineDefaultTool.ASK_MULTI_SELECT,
 		ClineDefaultTool.ATTEMPT,
 		ClineDefaultTool.NEW_TASK,
 		ClineDefaultTool.PLAN_MODE,

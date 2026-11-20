@@ -123,6 +123,7 @@ import {
 import { ClineError, ClineErrorType, ErrorService } from "@/services/error";
 import { telemetryService } from "@/services/telemetry";
 import { ClineClient } from "@/shared/cline";
+import type { ClineAskQuestion } from "@shared/ExtensionMessage";
 import type {
 	ClineAssistantContent,
 	ClineContent,
@@ -967,12 +968,55 @@ export class Task {
 		return result;
 	}
 
+	private answeredMultiSelectId?: string;
+
+	private currentMultiSelectQuestion(): ClineAskQuestion | undefined {
+		const last = this.messageStateHandler.getClineMessages().at(-1);
+		if (last?.ask !== "followup" || last.partial || last.ts !== this.taskState.lastMessageTs) {
+			return undefined;
+		}
+		try {
+			const question = JSON.parse(last.text ?? "{}") as ClineAskQuestion | null;
+			return question?.multiSelectId && !question.selectedOptions ? question : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	async submitMultiSelectAnswer(text: string | undefined): Promise<void> {
+		const question = this.currentMultiSelectQuestion();
+		const submission = JSON.parse(text ?? "null") as { id?: unknown; indices?: unknown } | null;
+		const indices = submission?.indices;
+		const options = question?.options;
+		if (
+			this.taskState.abort ||
+			!question ||
+			!options ||
+			this.answeredMultiSelectId === question.multiSelectId ||
+			submission?.id !== question.multiSelectId ||
+			!Array.isArray(indices) ||
+			indices.length === 0 ||
+			indices.length > options.length ||
+			new Set(indices).size !== indices.length ||
+			!indices.every((index) => Number.isInteger(index) && index >= 0 && index < options.length)
+		) {
+			throw new Error("The checkbox answer is invalid or the question is no longer active.");
+		}
+		this.answeredMultiSelectId = question.multiSelectId;
+		const selected = options.filter((_label, index) => indices.includes(index));
+		this.taskState.askResponseText = JSON.stringify({ selected });
+		this.taskState.askResponse = "messageResponse";
+	}
+
 	async handleWebviewAskResponse(
 		askResponse: ClineAskResponse,
 		text?: string,
 		images?: string[],
 		files?: string[],
 	) {
+		if (this.currentMultiSelectQuestion()) {
+			return;
+		}
 		this.taskState.askResponse = askResponse;
 		this.taskState.askResponseText = text;
 		this.taskState.askResponseImages = images;
@@ -2439,6 +2483,7 @@ export class Task {
 			workspaceRoots,
 			isSubagentRun: false,
 			isCliEnvironment,
+			supportsMultiSelectQuestions: host.clineType === ClineClient.VSCode,
 			enableNativeToolCalls:
 				modelRequiresNativeToolCalls(providerInfo.model.info) ||
 				this.stateManager.getGlobalStateKey("nativeToolCallEnabled"),

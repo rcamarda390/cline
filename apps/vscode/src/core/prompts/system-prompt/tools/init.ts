@@ -4,6 +4,7 @@ import { access_mcp_resource_variants } from "./access_mcp_resource"
 import { act_mode_respond_variants } from "./act_mode_respond"
 import { apply_patch_variants } from "./apply_patch"
 import { ask_followup_question_variants } from "./ask_followup_question"
+import { askFollowupQuestionMultiSelect } from "./ask_followup_question_multi_select"
 import { attempt_completion_variants } from "./attempt_completion"
 import { browser_action_variants } from "./browser_action"
 import { execute_command_variants } from "./execute_command"
@@ -35,6 +36,7 @@ export function registerClineToolSets(): void {
 		...access_mcp_resource_variants,
 		...act_mode_respond_variants,
 		...ask_followup_question_variants,
+		askFollowupQuestionMultiSelect,
 		...attempt_completion_variants,
 		...browser_action_variants,
 		...execute_command_variants,
