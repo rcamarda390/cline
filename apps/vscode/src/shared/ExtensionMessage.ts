@@ -345,6 +345,8 @@ export interface ClineAskQuestion {
 	question: string
 	options?: string[]
 	selected?: string
+	multiSelectId?: string
+	selectedOptions?: string[]
 }
 
 export interface ClineAskNewTask {

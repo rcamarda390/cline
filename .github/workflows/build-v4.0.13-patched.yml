@@ -1,6 +1,11 @@
 name: Build Cline 4.0.13 Patched
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/vscode/**"
+      - ".github/workflows/build-v4.0.13-patched.yml"
   push:
     branches:
       - v4.0.12-airgapped
@@ -11,12 +16,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PATCH_VERSION: 4.0.13-patched-v32
+  PATCH_VERSION: 4.0.13-patched-v33
 jobs:
   build-vsix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - name: Enforce 4.0.13 deployment line
         run: node -e 'const p=require("./apps/vscode/package.json"); if (!/^4\.0\.13-patched-v[0-9]+$/.test(p.version) || p.version !== process.env.PATCH_VERSION || p.engines.vscode !== "^1.84.0") throw new Error("Only the Cline 4.0.13 / VS Code 1.98.2 deployment line may be built")'
       - uses: actions/setup-node@v4
@@ -38,7 +46,7 @@ jobs:
         run: npm run test:webview
       - name: Run hook, prompt, Bedrock and marketplace regressions
         working-directory: apps/vscode
-        run: npx cross-env TS_NODE_PROJECT=./tsconfig.unit-test.json mocha --no-config --require ts-node/register --require tsconfig-paths/register --require ./src/test/requires.ts --timeout 20000 --exit src/test/chat-usability.test.ts src/test/hook-executor.test.ts 'src/core/hooks/__tests__/*.test.ts' 'src/core/prompts/system-prompt/__tests__/*.test.ts' src/core/api/providers/__tests__/bedrock.test.ts src/utils/__tests__/model-utils.test.ts src/test/core/controller/marketplace-filtering.test.ts
+        run: npx cross-env TS_NODE_PROJECT=./tsconfig.unit-test.json mocha --no-config --require ts-node/register --require tsconfig-paths/register --require ./src/test/requires.ts --timeout 20000 --exit src/test/chat-usability.test.ts src/core/task/__tests__/Task.multiSelectAnswer.test.ts src/test/hook-executor.test.ts 'src/core/hooks/__tests__/*.test.ts' 'src/core/prompts/system-prompt/__tests__/*.test.ts' src/core/api/providers/__tests__/bedrock.test.ts src/utils/__tests__/model-utils.test.ts src/test/core/controller/marketplace-filtering.test.ts
       - name: Check chat scrolling in Chromium
         working-directory: apps/vscode
         run: |

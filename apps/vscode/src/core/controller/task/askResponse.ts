@@ -18,6 +18,11 @@ export async function askResponse(controller: Controller, request: AskResponseRe
 			return Empty.create()
 		}
 
+		if (request.responseType === "multiSelectResponse") {
+			await controller.task.submitMultiSelectAnswer(request.text)
+			return Empty.create()
+		}
+
 		// Map the string responseType to the ClineAskResponse enum
 		let responseType: ClineAskResponse
 		switch (request.responseType) {
